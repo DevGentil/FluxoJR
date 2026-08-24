@@ -1,0 +1,150 @@
+// Prisma schema - Sistema de Fluxo de Caixa (FluxoJR)
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum EntryType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionSource {
+  MANUAL
+  IMPORT
+  SCHEDULED
+}
+
+enum ScheduledType {
+  PAYABLE
+  RECEIVABLE
+}
+
+enum ScheduledStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELED
+}
+
+// Empresa da holding. Hoje o sistema opera com uma única Company, mas o
+// modelo já suporta múltiplas empresas sem alteração de schema.
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  cnpj      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts        Account[]
+  categories      Category[]
+  transactions    Transaction[]
+  scheduledEntries ScheduledEntry[]
+  importBatches   ImportBatch[]
+}
+
+model Account {
+  id             String   @id @default(cuid())
+  name           String
+  bank           String?
+  type           String   @default("Conta Corrente")
+  initialBalance Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  transactions     Transaction[]
+  scheduledEntries ScheduledEntry[]
+}
+
+model Category {
+  id         String    @id @default(cuid())
+  name       String
+  type       EntryType
+  costCenter String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  transactions     Transaction[]
+  scheduledEntries ScheduledEntry[]
+}
+
+model Transaction {
+  id          String            @id @default(cuid())
+  date        DateTime
+  amount      Decimal           @db.Decimal(14, 2)
+  type        EntryType
+  description String
+  source      TransactionSource @default(MANUAL)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  importBatchId String?
+  importBatch   ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+
+  scheduledEntry ScheduledEntry?
+
+  @@index([companyId, date])
+  @@index([accountId])
+}
+
+// Contas a pagar (PAYABLE) e a receber (RECEIVABLE) - lançamentos previstos.
+// Ao serem baixados (status PAID), geram uma Transaction vinculada.
+model ScheduledEntry {
+  id          String          @id @default(cuid())
+  type        ScheduledType
+  description String
+  amount      Decimal         @db.Decimal(14, 2)
+  dueDate     DateTime
+  status      ScheduledStatus @default(PENDING)
+  paidDate    DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  accountId String?
+  account   Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  transactionId String?      @unique
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, dueDate])
+  @@index([status])
+}
+
+model ImportBatch {
+  id           String   @id @default(cuid())
+  fileName     String
+  rowsImported Int
+  createdAt    DateTime @default(now())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  transactions Transaction[]
+}
