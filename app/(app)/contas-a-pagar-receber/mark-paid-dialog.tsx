@@ -20,6 +20,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { CheckCircle2 } from "lucide-react";
+import { toast } from "sonner";
 import { markAsPaid } from "./actions";
 
 interface Props {
@@ -37,7 +38,11 @@ export function MarkPaidDialog({ entryId, type, accounts, defaultAccountId }: Pr
   function confirm() {
     if (!accountId) return;
     startTransition(async () => {
-      await markAsPaid(entryId, accountId);
+      const result = await markAsPaid(entryId, accountId);
+      if (result?.error) {
+        toast.error(result.error);
+        return;
+      }
       setOpen(false);
     });
   }

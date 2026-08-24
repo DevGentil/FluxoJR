@@ -4,6 +4,8 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getDefaultCompany } from "@/lib/company";
+import { requireUser } from "@/lib/auth";
+import { parseForm, runMutation, type ActionState } from "@/lib/actions-utils";
 
 const transactionSchema = z.object({
   date: z.string().min(1),
@@ -14,28 +16,29 @@ const transactionSchema = z.object({
   categoryId: z.string().optional(),
 });
 
-export type ActionState = { error?: string } | undefined;
+export type { ActionState };
 
 export async function createTransaction(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const raw = Object.fromEntries(formData);
-  const parsed = transactionSchema.safeParse(raw);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message };
+  const result = parseForm(transactionSchema, formData);
+  if ("error" in result) return result;
 
-  const company = await getDefaultCompany();
-  const { categoryId, ...data } = parsed.data;
-  await prisma.transaction.create({
-    data: {
-      ...data,
-      date: new Date(data.date),
-      companyId: company.id,
-      categoryId: categoryId || null,
-      source: "MANUAL",
-    },
+  return runMutation(async () => {
+    await requireUser();
+    const company = await getDefaultCompany();
+    const { categoryId, ...data } = result.data;
+    await prisma.transaction.create({
+      data: {
+        ...data,
+        date: new Date(data.date),
+        companyId: company.id,
+        categoryId: categoryId || null,
+        source: "MANUAL",
+      },
+    });
+
+    revalidatePath("/transacoes");
+    revalidatePath("/dashboard");
   });
-
-  revalidatePath("/transacoes");
-  revalidatePath("/dashboard");
-  return undefined;
 }
 
 export async function updateTransaction(
@@ -43,25 +46,36 @@ export async function updateTransaction(
   _prev: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const raw = Object.fromEntries(formData);
-  const parsed = transactionSchema.safeParse(raw);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message };
+  const result = parseForm(transactionSchema, formData);
+  if ("error" in result) return result;
 
-  const { categoryId, ...data } = parsed.data;
-  await prisma.transaction.update({
-    where: { id },
-    data: { ...data, date: new Date(data.date), categoryId: categoryId || null },
+  return runMutation(async () => {
+    await requireUser();
+    const company = await getDefaultCompany();
+    const { categoryId, ...data } = result.data;
+    const { count } = await prisma.transaction.updateMany({
+      where: { id, companyId: company.id },
+      data: { ...data, date: new Date(data.date), categoryId: categoryId || null },
+    });
+    if (count === 0) throw new Error("Transação não encontrada.");
+
+    revalidatePath("/transacoes");
+    revalidatePath("/dashboard");
   });
-
-  revalidatePath("/transacoes");
-  revalidatePath("/dashboard");
-  return undefined;
 }
 
-export async function deleteTransaction(id: string) {
-  await prisma.transaction.delete({ where: { id } });
-  revalidatePath("/transacoes");
-  revalidatePath("/dashboard");
+export async function deleteTransaction(id: string): Promise<ActionState> {
+  return runMutation(async () => {
+    await requireUser();
+    const company = await getDefaultCompany();
+    const { count } = await prisma.transaction.deleteMany({
+      where: { id, companyId: company.id },
+    });
+    if (count === 0) throw new Error("Transação não encontrada.");
+
+    revalidatePath("/transacoes");
+    revalidatePath("/dashboard");
+  });
 }
 
 const importRowSchema = z.object({
@@ -77,10 +91,18 @@ export async function importTransactions(input: {
   categoryId?: string;
   rows: { date: string; amount: number; type: "INCOME" | "EXPENSE"; description: string }[];
 }) {
+  await requireUser();
+
   const parsedRows = z.array(importRowSchema).parse(input.rows);
   if (parsedRows.length === 0) return { imported: 0 };
 
   const company = await getDefaultCompany();
+
+  const account = await prisma.account.findFirst({
+    where: { id: input.accountId, companyId: company.id },
+    select: { id: true },
+  });
+  if (!account) throw new Error("Conta inválida.");
 
   await prisma.$transaction(async (tx) => {
     const batch = await tx.importBatch.create({
