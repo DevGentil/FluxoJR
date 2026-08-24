@@ -95,11 +95,11 @@ npm run test        # roda uma vez
 npm run test:watch  # modo watch
 ```
 
-> Nota: o modo dev do Turbopack (`npm run dev`) nesta versão do Next.js 16
-> pode eventualmente falhar a hidratação no navegador em sessões muito
-> longas (bug conhecido do Turbopack, não do código do app). Se os botões
-> pararem de responder sem erro aparente no servidor, tente `npm run build && npm run start`
-> para confirmar que é isso — se funcionar em produção, reinicie o `npm run dev`.
+> Nota: o projeto está pinado em `next@16.2.12`. A versão 16.3.x tinha um bug
+> no dev server (Turbopack) que fazia a página nunca hidratar no navegador —
+> nenhum botão respondia e nenhum erro aparecia no console ou no servidor. Se
+> ao atualizar o Next isso voltar a acontecer, `npm run build && npm run start`
+> funcionando normalmente confirma que é esse bug (específico do dev server).
 
 ## Deploy
 
