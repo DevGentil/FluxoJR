@@ -16,8 +16,6 @@ const scheduledSchema = z.object({
   categoryId: z.string().optional(),
 });
 
-export type { ActionState };
-
 function stripNone(raw: Record<string, FormDataEntryValue>) {
   const clean = { ...raw };
   for (const key of ["accountId", "categoryId"]) {

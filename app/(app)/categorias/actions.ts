@@ -13,8 +13,6 @@ const categorySchema = z.object({
   costCenter: z.string().optional(),
 });
 
-export type { ActionState };
-
 export async function createCategory(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const result = parseForm(categorySchema, formData);
   if ("error" in result) return result;

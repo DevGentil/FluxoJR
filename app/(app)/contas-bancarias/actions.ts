@@ -14,8 +14,6 @@ const accountSchema = z.object({
   initialBalance: z.coerce.number(),
 });
 
-export type { ActionState };
-
 export async function createAccount(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const result = parseForm(accountSchema, formData);
   if ("error" in result) return result;

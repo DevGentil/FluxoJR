@@ -20,7 +20,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { createTransaction, updateTransaction, type ActionState } from "./actions";
+import { createTransaction, updateTransaction } from "./actions";
+import type { ActionState } from "@/lib/actions-utils";
 import { Pencil, Plus } from "lucide-react";
 import { useCloseOnSuccess } from "@/hooks/use-close-on-success";
 import { toDateInputValue } from "@/lib/format";

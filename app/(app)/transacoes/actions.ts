@@ -16,8 +16,6 @@ const transactionSchema = z.object({
   categoryId: z.string().optional(),
 });
 
-export type { ActionState };
-
 export async function createTransaction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const result = parseForm(transactionSchema, formData);
   if ("error" in result) return result;

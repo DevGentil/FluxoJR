@@ -14,7 +14,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { createAccount, updateAccount, type ActionState } from "./actions";
+import { createAccount, updateAccount } from "./actions";
+import type { ActionState } from "@/lib/actions-utils";
 import { Pencil, Plus } from "lucide-react";
 
 interface Props {
