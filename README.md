@@ -68,6 +68,39 @@ para suportar múltiplas empresas de uma holding no futuro.
 
    Acesse [http://localhost:3000](http://localhost:3000).
 
+## Testes
+
+O projeto usa [Vitest](https://vitest.dev) com dois tipos de teste:
+
+- **Unit tests** (`lib/*.test.ts`): funções puras (parsing de importação,
+  formatação), sem banco de dados.
+- **Integration tests** (`app/**/actions.test.ts`, `lib/cashflow.test.ts`):
+  exercitam as server actions e a lógica de saldo/projeção contra um banco
+  PostgreSQL de teste real.
+
+Para rodar os testes de integração, configure um banco **separado do de
+desenvolvimento** (o nome precisa conter "test" como proteção, já que os
+dados são apagados a cada teste):
+
+```bash
+cp .env.test.example .env.test
+# crie o banco, se ainda não existir:
+createdb fluxojr_test
+```
+
+Depois:
+
+```bash
+npm run test        # roda uma vez
+npm run test:watch  # modo watch
+```
+
+> Nota: o modo dev do Turbopack (`npm run dev`) nesta versão do Next.js 16
+> pode eventualmente falhar a hidratação no navegador em sessões muito
+> longas (bug conhecido do Turbopack, não do código do app). Se os botões
+> pararem de responder sem erro aparente no servidor, tente `npm run build && npm run start`
+> para confirmar que é isso — se funcionar em produção, reinicie o `npm run dev`.
+
 ## Deploy
 
 O deploy recomendado é [Vercel](https://vercel.com) (app) + [Supabase](https://supabase.com)
