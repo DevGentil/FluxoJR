@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetDb, testPrisma } from "@/tests/helpers/db";
-import { createTransaction, deleteTransaction, importTransactions } from "./actions";
+import { createTransaction, deleteTransaction, deleteTransactions, importTransactions } from "./actions";
 
 beforeEach(resetDb);
 
@@ -69,6 +69,52 @@ describe("deleteTransaction", () => {
 
     expect(result).toBeUndefined();
     await expect(testPrisma.transaction.findUnique({ where: { id: transaction.id } })).resolves.toBeNull();
+  });
+});
+
+describe("deleteTransactions", () => {
+  it("exclui várias transações de uma vez", async () => {
+    const { company, account } = await seedAccount();
+    const [t1, t2, t3] = await Promise.all([
+      testPrisma.transaction.create({
+        data: { companyId: company.id, accountId: account.id, type: "INCOME", amount: 10, description: "a", date: new Date() },
+      }),
+      testPrisma.transaction.create({
+        data: { companyId: company.id, accountId: account.id, type: "INCOME", amount: 20, description: "b", date: new Date() },
+      }),
+      testPrisma.transaction.create({
+        data: { companyId: company.id, accountId: account.id, type: "INCOME", amount: 30, description: "c", date: new Date() },
+      }),
+    ]);
+
+    const result = await deleteTransactions([t1.id, t2.id]);
+
+    expect(result).toBeUndefined();
+    await expect(testPrisma.transaction.findMany()).resolves.toHaveLength(1);
+    await expect(testPrisma.transaction.findUnique({ where: { id: t3.id } })).resolves.not.toBeNull();
+  });
+
+  it("não exclui transações de outra empresa", async () => {
+    // getDefaultCompany() usa a empresa mais antiga — criamos a "própria" primeiro
+    // para garantir que a Empresa B não seja escolhida como padrão.
+    await testPrisma.company.create({ data: { name: "Minha Empresa" } });
+    const empresaB = await testPrisma.company.create({ data: { name: "Empresa B" } });
+    const contaDeB = await testPrisma.account.create({
+      data: { companyId: empresaB.id, name: "Conta de B", type: "Caixa", initialBalance: 0 },
+    });
+    const transacaoDeB = await testPrisma.transaction.create({
+      data: { companyId: empresaB.id, accountId: contaDeB.id, type: "INCOME", amount: 10, description: "x", date: new Date() },
+    });
+
+    const result = await deleteTransactions([transacaoDeB.id]);
+
+    expect(result?.error).toBeTruthy();
+    await expect(testPrisma.transaction.findUnique({ where: { id: transacaoDeB.id } })).resolves.not.toBeNull();
+  });
+
+  it("rejeita uma lista vazia", async () => {
+    const result = await deleteTransactions([]);
+    expect(result?.error).toBeTruthy();
   });
 });
 

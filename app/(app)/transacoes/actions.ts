@@ -76,6 +76,21 @@ export async function deleteTransaction(id: string): Promise<ActionState> {
   });
 }
 
+export async function deleteTransactions(ids: string[]): Promise<ActionState> {
+  return runMutation(async () => {
+    if (ids.length === 0) throw new Error("Nenhuma transação selecionada.");
+    await requireUser();
+    const company = await getDefaultCompany();
+    const { count } = await prisma.transaction.deleteMany({
+      where: { id: { in: ids }, companyId: company.id },
+    });
+    if (count === 0) throw new Error("Nenhuma transação encontrada.");
+
+    revalidatePath("/transacoes");
+    revalidatePath("/dashboard");
+  });
+}
+
 const importRowSchema = z.object({
   date: z.string().min(1),
   amount: z.number(),

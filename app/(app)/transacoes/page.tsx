@@ -1,16 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { getDefaultCompany } from "@/lib/company";
-import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { TransactionFormDialog } from "./transaction-form-dialog";
 import { ImportDialog } from "./import-dialog";
-import { DeleteButton } from "@/components/delete-button";
-import { deleteTransaction } from "./actions";
+import { TransactionsTable } from "./transactions-table";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 interface Props {
@@ -144,67 +140,22 @@ export default async function TransacoesPage({ searchParams }: Props) {
           <CardTitle>{transactions.length} transações</CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Data</TableHead>
-                <TableHead>Descrição</TableHead>
-                <TableHead>Conta</TableHead>
-                <TableHead>Categoria</TableHead>
-                <TableHead>Origem</TableHead>
-                <TableHead className="text-right">Valor</TableHead>
-                <TableHead className="w-24" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {transactions.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                    Nenhuma transação encontrada.
-                  </TableCell>
-                </TableRow>
-              )}
-              {transactions.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell>{formatDate(t.date)}</TableCell>
-                  <TableCell className="max-w-64 truncate">{t.description}</TableCell>
-                  <TableCell>{t.account.name}</TableCell>
-                  <TableCell>{t.category?.name ?? "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">
-                      {t.source === "MANUAL" ? "Manual" : t.source === "IMPORT" ? "Importado" : "Baixa"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell
-                    className={`text-right tabular-nums font-medium ${
-                      t.type === "INCOME" ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
-                    }`}
-                  >
-                    {t.type === "INCOME" ? "+" : "-"}
-                    {formatCurrency(Number(t.amount))}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-1">
-                      <TransactionFormDialog
-                        accounts={accountOptions}
-                        categories={categoryOptions}
-                        transaction={{
-                          id: t.id,
-                          date: t.date,
-                          amount: Number(t.amount),
-                          type: t.type as "INCOME" | "EXPENSE",
-                          description: t.description,
-                          accountId: t.accountId,
-                          categoryId: t.categoryId,
-                        }}
-                      />
-                      <DeleteButton action={deleteTransaction.bind(null, t.id)} title="Excluir transação?" />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <TransactionsTable
+            accounts={accountOptions}
+            categories={categoryOptions}
+            transactions={transactions.map((t) => ({
+              id: t.id,
+              date: t.date,
+              description: t.description,
+              accountId: t.accountId,
+              accountName: t.account.name,
+              categoryId: t.categoryId,
+              categoryName: t.category?.name ?? null,
+              source: t.source,
+              type: t.type as "INCOME" | "EXPENSE",
+              amount: Number(t.amount),
+            }))}
+          />
         </CardContent>
       </Card>
     </div>
