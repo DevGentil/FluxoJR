@@ -72,9 +72,12 @@ export default async function RelatoriosPage({ searchParams }: Props) {
     }
   }
 
-  const rows = Array.from(grouped.values()).sort((a, b) => b.total - a.total);
-  const totalIncome = rows.filter((r) => r.tipo === "INCOME").reduce((s, r) => s + r.total, 0);
-  const totalExpense = rows.filter((r) => r.tipo === "EXPENSE").reduce((s, r) => s + r.total, 0);
+  const allRows = Array.from(grouped.values());
+  const incomeRows = allRows.filter((r) => r.tipo === "INCOME").sort((a, b) => b.total - a.total);
+  const expenseRows = allRows.filter((r) => r.tipo === "EXPENSE").sort((a, b) => b.total - a.total);
+  const rows = [...incomeRows, ...expenseRows];
+  const totalIncome = incomeRows.reduce((s, r) => s + r.total, 0);
+  const totalExpense = expenseRows.reduce((s, r) => s + r.total, 0);
   const result = totalIncome - totalExpense;
 
   const csvRows = rows.map((r) => ({
@@ -141,52 +144,97 @@ export default async function RelatoriosPage({ searchParams }: Props) {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Detalhamento por categoria</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {showCompanyColumn && <TableHead>Empresa</TableHead>}
-                <TableHead>Categoria</TableHead>
-                <TableHead>Fornecedor</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Centro de custo</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.length === 0 && (
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-emerald-600 dark:text-emerald-400">Entradas por categoria</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={showCompanyColumn ? 6 : 5} className="text-center text-muted-foreground py-8">
-                    Nenhuma movimentação no período selecionado.
-                  </TableCell>
+                  {showCompanyColumn && <TableHead>Empresa</TableHead>}
+                  <TableHead>Categoria</TableHead>
+                  <TableHead>Fornecedor</TableHead>
+                  <TableHead>Centro de custo</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
                 </TableRow>
+              </TableHeader>
+              <TableBody>
+                {incomeRows.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={showCompanyColumn ? 5 : 4} className="text-center text-muted-foreground py-8">
+                      Nenhuma entrada no período selecionado.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {incomeRows.map((r, i) => (
+                  <TableRow key={i}>
+                    {showCompanyColumn && <TableCell>{r.empresa}</TableCell>}
+                    <TableCell className="font-medium">{r.categoria}</TableCell>
+                    <TableCell>{r.fornecedor}</TableCell>
+                    <TableCell>{r.centroCusto}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatCurrency(r.total)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+              {incomeRows.length > 0 && (
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={showCompanyColumn ? 4 : 3}>Total de entradas</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatCurrency(totalIncome)}</TableCell>
+                  </TableRow>
+                </TableFooter>
               )}
-              {rows.map((r, i) => (
-                <TableRow key={i}>
-                  {showCompanyColumn && <TableCell>{r.empresa}</TableCell>}
-                  <TableCell className="font-medium">{r.categoria}</TableCell>
-                  <TableCell>{r.fornecedor}</TableCell>
-                  <TableCell>{r.tipo === "INCOME" ? "Entrada" : "Saída"}</TableCell>
-                  <TableCell>{r.centroCusto}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatCurrency(r.total)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-            {rows.length > 0 && (
-              <TableFooter>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-red-600 dark:text-red-400">Saídas por categoria</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={showCompanyColumn ? 5 : 4}>Resultado</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatCurrency(result)}</TableCell>
+                  {showCompanyColumn && <TableHead>Empresa</TableHead>}
+                  <TableHead>Categoria</TableHead>
+                  <TableHead>Fornecedor</TableHead>
+                  <TableHead>Centro de custo</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
                 </TableRow>
-              </TableFooter>
-            )}
-          </Table>
-        </CardContent>
-      </Card>
+              </TableHeader>
+              <TableBody>
+                {expenseRows.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={showCompanyColumn ? 5 : 4} className="text-center text-muted-foreground py-8">
+                      Nenhuma saída no período selecionado.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {expenseRows.map((r, i) => (
+                  <TableRow key={i}>
+                    {showCompanyColumn && <TableCell>{r.empresa}</TableCell>}
+                    <TableCell className="font-medium">{r.categoria}</TableCell>
+                    <TableCell>{r.fornecedor}</TableCell>
+                    <TableCell>{r.centroCusto}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatCurrency(r.total)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+              {expenseRows.length > 0 && (
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={showCompanyColumn ? 4 : 3}>Total de saídas</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatCurrency(totalExpense)}</TableCell>
+                  </TableRow>
+                </TableFooter>
+              )}
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
