@@ -58,9 +58,30 @@ model Company {
 
   accounts        Account[]
   categories      Category[]
+  suppliers       Supplier[]
   transactions    Transaction[]
   scheduledEntries ScheduledEntry[]
   importBatches   ImportBatch[]
+
+  incomingTransfers Transaction[] @relation("TransactionTransfer")
+}
+
+// Fornecedor/cliente da empresa, para enriquecer transações e contas a
+// pagar/receber (ex: "DB Medicina Diagnóstica", "Amor Saude Franqueadora").
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  document  String?
+  phone     String?
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  transactions     Transaction[]
+  scheduledEntries ScheduledEntry[]
 }
 
 model Account {
@@ -113,6 +134,17 @@ model Transaction {
   categoryId String?
   category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  // Marca esta transação como uma transferência de/para outra empresa do
+  // grupo (ex: repasse entre franquias). Continua sendo INCOME/EXPENSE
+  // normal (afeta o saldo da conta), mas é excluída do faturamento/despesa
+  // "real" em relatórios e no Balanço Executivo, para não duplicar no
+  // consolidado.
+  transferCompanyId String?
+  transferCompany   Company? @relation("TransactionTransfer", fields: [transferCompanyId], references: [id], onDelete: SetNull)
+
   importBatchId String?
   importBatch   ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
 
@@ -143,6 +175,9 @@ model ScheduledEntry {
 
   categoryId String?
   category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
 
   transactionId String?      @unique
   transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
