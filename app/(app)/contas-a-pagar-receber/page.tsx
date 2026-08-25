@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { getDefaultCompany } from "@/lib/company";
+import { getActiveScope } from "@/lib/scope";
+import { SelectCompanyNotice } from "@/components/select-company-notice";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -22,16 +23,15 @@ function statusBadge(status: string, dueDate: Date) {
   return <Badge variant={variant}>{label}</Badge>;
 }
 
-async function EntriesTable({ type }: { type: "PAYABLE" | "RECEIVABLE" }) {
-  const company = await getDefaultCompany();
+async function EntriesTable({ companyId, type }: { companyId: string; type: "PAYABLE" | "RECEIVABLE" }) {
   const [entries, accounts, categories] = await Promise.all([
     prisma.scheduledEntry.findMany({
-      where: { companyId: company.id, type },
+      where: { companyId, type },
       include: { account: true, category: true },
       orderBy: { dueDate: "asc" },
     }),
-    prisma.account.findMany({ where: { companyId: company.id }, orderBy: { name: "asc" } }),
-    prisma.category.findMany({ where: { companyId: company.id }, orderBy: { name: "asc" } }),
+    prisma.account.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
+    prisma.category.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
   ]);
 
   const accountOptions = accounts.map((a) => ({ id: a.id, name: a.name }));
@@ -108,7 +108,13 @@ async function EntriesTable({ type }: { type: "PAYABLE" | "RECEIVABLE" }) {
   );
 }
 
-export default function ContasAPagarReceberPage() {
+export default async function ContasAPagarReceberPage() {
+  const scope = await getActiveScope();
+  if (scope.type !== "company") {
+    return <SelectCompanyNotice what="gerenciar contas a pagar/receber" />;
+  }
+  const companyId = scope.companyId;
+
   return (
     <div className="space-y-6">
       <div>
@@ -122,10 +128,10 @@ export default function ContasAPagarReceberPage() {
           <TabsTrigger value="receivable">A Receber</TabsTrigger>
         </TabsList>
         <TabsContent value="payable" className="mt-4">
-          <EntriesTable type="PAYABLE" />
+          <EntriesTable companyId={companyId} type="PAYABLE" />
         </TabsContent>
         <TabsContent value="receivable" className="mt-4">
-          <EntriesTable type="RECEIVABLE" />
+          <EntriesTable companyId={companyId} type="RECEIVABLE" />
         </TabsContent>
       </Tabs>
     </div>

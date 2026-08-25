@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { getDefaultCompany } from "@/lib/company";
+import { getActiveScope } from "@/lib/scope";
+import { SelectCompanyNotice } from "@/components/select-company-notice";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -21,14 +22,18 @@ interface Props {
 
 export default async function TransacoesPage({ searchParams }: Props) {
   const params = await searchParams;
-  const company = await getDefaultCompany();
+  const scope = await getActiveScope();
+  if (scope.type !== "company") {
+    return <SelectCompanyNotice what="gerenciar transações" />;
+  }
+  const companyId = scope.companyId;
 
   const [accounts, categories] = await Promise.all([
-    prisma.account.findMany({ where: { companyId: company.id }, orderBy: { name: "asc" } }),
-    prisma.category.findMany({ where: { companyId: company.id }, orderBy: { name: "asc" } }),
+    prisma.account.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
+    prisma.category.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
   ]);
 
-  const where: Prisma.TransactionWhereInput = { companyId: company.id };
+  const where: Prisma.TransactionWhereInput = { companyId };
   if (params.accountId) where.accountId = params.accountId;
   if (params.categoryId) where.categoryId = params.categoryId;
   if (params.type === "INCOME" || params.type === "EXPENSE") where.type = params.type;

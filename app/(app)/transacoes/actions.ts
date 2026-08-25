@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { getDefaultCompany } from "@/lib/company";
+import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { parseForm, runMutation, type ActionState } from "@/lib/actions-utils";
 
@@ -22,13 +22,13 @@ export async function createTransaction(_prev: ActionState, formData: FormData):
 
   return runMutation(async () => {
     await requireUser();
-    const company = await getDefaultCompany();
+    const companyId = await getActiveCompanyId();
     const { categoryId, ...data } = result.data;
     await prisma.transaction.create({
       data: {
         ...data,
         date: new Date(data.date),
-        companyId: company.id,
+        companyId,
         categoryId: categoryId || null,
         source: "MANUAL",
       },
@@ -49,10 +49,10 @@ export async function updateTransaction(
 
   return runMutation(async () => {
     await requireUser();
-    const company = await getDefaultCompany();
+    const companyId = await getActiveCompanyId();
     const { categoryId, ...data } = result.data;
     const { count } = await prisma.transaction.updateMany({
-      where: { id, companyId: company.id },
+      where: { id, companyId },
       data: { ...data, date: new Date(data.date), categoryId: categoryId || null },
     });
     if (count === 0) throw new Error("Transação não encontrada.");
@@ -65,9 +65,9 @@ export async function updateTransaction(
 export async function deleteTransaction(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const company = await getDefaultCompany();
+    const companyId = await getActiveCompanyId();
     const { count } = await prisma.transaction.deleteMany({
-      where: { id, companyId: company.id },
+      where: { id, companyId },
     });
     if (count === 0) throw new Error("Transação não encontrada.");
 
@@ -80,9 +80,9 @@ export async function deleteTransactions(ids: string[]): Promise<ActionState> {
   return runMutation(async () => {
     if (ids.length === 0) throw new Error("Nenhuma transação selecionada.");
     await requireUser();
-    const company = await getDefaultCompany();
+    const companyId = await getActiveCompanyId();
     const { count } = await prisma.transaction.deleteMany({
-      where: { id: { in: ids }, companyId: company.id },
+      where: { id: { in: ids }, companyId },
     });
     if (count === 0) throw new Error("Nenhuma transação encontrada.");
 
@@ -109,10 +109,10 @@ export async function importTransactions(input: {
   const parsedRows = z.array(importRowSchema).parse(input.rows);
   if (parsedRows.length === 0) return { imported: 0 };
 
-  const company = await getDefaultCompany();
+  const companyId = await getActiveCompanyId();
 
   const account = await prisma.account.findFirst({
-    where: { id: input.accountId, companyId: company.id },
+    where: { id: input.accountId, companyId },
     select: { id: true },
   });
   if (!account) throw new Error("Conta inválida.");
@@ -122,7 +122,7 @@ export async function importTransactions(input: {
       data: {
         fileName: input.fileName,
         rowsImported: parsedRows.length,
-        companyId: company.id,
+        companyId,
       },
     });
 
@@ -132,7 +132,7 @@ export async function importTransactions(input: {
         amount: Math.abs(row.amount),
         type: row.type,
         description: row.description,
-        companyId: company.id,
+        companyId,
         accountId: input.accountId,
         categoryId: input.categoryId || null,
         importBatchId: batch.id,

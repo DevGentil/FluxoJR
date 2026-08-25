@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { getDefaultCompany } from "@/lib/company";
+import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { parseForm, runMutation, type ActionState } from "@/lib/actions-utils";
 
@@ -20,9 +20,9 @@ export async function createAccount(_prev: ActionState, formData: FormData): Pro
 
   return runMutation(async () => {
     await requireUser();
-    const company = await getDefaultCompany();
+    const companyId = await getActiveCompanyId();
     await prisma.account.create({
-      data: { ...result.data, companyId: company.id },
+      data: { ...result.data, companyId },
     });
 
     revalidatePath("/contas-bancarias");
@@ -40,9 +40,9 @@ export async function updateAccount(
 
   return runMutation(async () => {
     await requireUser();
-    const company = await getDefaultCompany();
+    const companyId = await getActiveCompanyId();
     const { count } = await prisma.account.updateMany({
-      where: { id, companyId: company.id },
+      where: { id, companyId },
       data: result.data,
     });
     if (count === 0) throw new Error("Conta não encontrada.");
@@ -55,9 +55,9 @@ export async function updateAccount(
 export async function deleteAccount(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const company = await getDefaultCompany();
+    const companyId = await getActiveCompanyId();
     const { count } = await prisma.account.deleteMany({
-      where: { id, companyId: company.id },
+      where: { id, companyId },
     });
     if (count === 0) throw new Error("Conta não encontrada.");
 

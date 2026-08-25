@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { getDefaultCompany } from "@/lib/company";
+import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { parseForm, runMutation, type ActionState } from "@/lib/actions-utils";
 
@@ -19,8 +19,8 @@ export async function createCategory(_prev: ActionState, formData: FormData): Pr
 
   return runMutation(async () => {
     await requireUser();
-    const company = await getDefaultCompany();
-    await prisma.category.create({ data: { ...result.data, companyId: company.id } });
+    const companyId = await getActiveCompanyId();
+    await prisma.category.create({ data: { ...result.data, companyId } });
 
     revalidatePath("/categorias");
   });
@@ -36,9 +36,9 @@ export async function updateCategory(
 
   return runMutation(async () => {
     await requireUser();
-    const company = await getDefaultCompany();
+    const companyId = await getActiveCompanyId();
     const { count } = await prisma.category.updateMany({
-      where: { id, companyId: company.id },
+      where: { id, companyId },
       data: result.data,
     });
     if (count === 0) throw new Error("Categoria não encontrada.");
@@ -50,9 +50,9 @@ export async function updateCategory(
 export async function deleteCategory(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const company = await getDefaultCompany();
+    const companyId = await getActiveCompanyId();
     const { count } = await prisma.category.deleteMany({
-      where: { id, companyId: company.id },
+      where: { id, companyId },
     });
     if (count === 0) throw new Error("Categoria não encontrada.");
 

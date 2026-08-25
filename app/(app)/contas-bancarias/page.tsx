@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { getDefaultCompany } from "@/lib/company";
+import { getActiveScope } from "@/lib/scope";
+import { SelectCompanyNotice } from "@/components/select-company-notice";
 import { getAccountBalance } from "@/lib/cashflow";
 import { formatCurrency } from "@/lib/format";
 import {
@@ -21,9 +22,13 @@ import { DeleteButton } from "@/components/delete-button";
 import { deleteAccount } from "./actions";
 
 export default async function ContasBancariasPage() {
-  const company = await getDefaultCompany();
+  const scope = await getActiveScope();
+  if (scope.type !== "company") {
+    return <SelectCompanyNotice what="gerenciar contas bancárias" />;
+  }
+
   const accounts = await prisma.account.findMany({
-    where: { companyId: company.id },
+    where: { companyId: scope.companyId },
     orderBy: { createdAt: "asc" },
   });
 

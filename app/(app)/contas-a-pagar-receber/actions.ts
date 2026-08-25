@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { getDefaultCompany } from "@/lib/company";
+import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { runMutation, type ActionState } from "@/lib/actions-utils";
 
@@ -30,13 +30,13 @@ export async function createScheduledEntry(_prev: ActionState, formData: FormDat
 
   return runMutation(async () => {
     await requireUser();
-    const company = await getDefaultCompany();
+    const companyId = await getActiveCompanyId();
     const { accountId, categoryId, dueDate, ...rest } = parsed.data;
     await prisma.scheduledEntry.create({
       data: {
         ...rest,
         dueDate: new Date(dueDate),
-        companyId: company.id,
+        companyId,
         accountId: accountId || null,
         categoryId: categoryId || null,
       },
@@ -57,10 +57,10 @@ export async function updateScheduledEntry(
 
   return runMutation(async () => {
     await requireUser();
-    const company = await getDefaultCompany();
+    const companyId = await getActiveCompanyId();
     const { accountId, categoryId, dueDate, ...rest } = parsed.data;
     const { count } = await prisma.scheduledEntry.updateMany({
-      where: { id, companyId: company.id },
+      where: { id, companyId },
       data: {
         ...rest,
         dueDate: new Date(dueDate),
@@ -78,9 +78,9 @@ export async function updateScheduledEntry(
 export async function deleteScheduledEntry(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const company = await getDefaultCompany();
+    const companyId = await getActiveCompanyId();
     const { count } = await prisma.scheduledEntry.deleteMany({
-      where: { id, companyId: company.id },
+      where: { id, companyId },
     });
     if (count === 0) throw new Error("Lançamento não encontrado.");
 
@@ -92,11 +92,11 @@ export async function deleteScheduledEntry(id: string): Promise<ActionState> {
 export async function markAsPaid(id: string, accountId: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const company = await getDefaultCompany();
+    const companyId = await getActiveCompanyId();
 
     const [entry, account] = await Promise.all([
-      prisma.scheduledEntry.findFirst({ where: { id, companyId: company.id } }),
-      prisma.account.findFirst({ where: { id: accountId, companyId: company.id }, select: { id: true } }),
+      prisma.scheduledEntry.findFirst({ where: { id, companyId } }),
+      prisma.account.findFirst({ where: { id: accountId, companyId }, select: { id: true } }),
     ]);
     if (!entry) throw new Error("Lançamento não encontrado.");
     if (!account) throw new Error("Conta inválida.");
@@ -109,7 +109,7 @@ export async function markAsPaid(id: string, accountId: string): Promise<ActionS
           amount: entry.amount,
           type: entry.type === "RECEIVABLE" ? "INCOME" : "EXPENSE",
           description: entry.description,
-          companyId: company.id,
+          companyId,
           accountId,
           categoryId: entry.categoryId,
           source: "SCHEDULED",

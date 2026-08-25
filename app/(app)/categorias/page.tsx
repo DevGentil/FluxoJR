@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { getDefaultCompany } from "@/lib/company";
+import { getActiveScope } from "@/lib/scope";
+import { SelectCompanyNotice } from "@/components/select-company-notice";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -8,9 +9,13 @@ import { DeleteButton } from "@/components/delete-button";
 import { deleteCategory } from "./actions";
 
 export default async function CategoriasPage() {
-  const company = await getDefaultCompany();
+  const scope = await getActiveScope();
+  if (scope.type !== "company") {
+    return <SelectCompanyNotice what="gerenciar categorias" />;
+  }
+
   const categories = await prisma.category.findMany({
-    where: { companyId: company.id },
+    where: { companyId: scope.companyId },
     orderBy: { name: "asc" },
   });
 
