@@ -36,6 +36,9 @@ interface TransactionRow {
   accountName: string;
   categoryId: string | null;
   categoryName: string | null;
+  supplierId: string | null;
+  supplierName: string | null;
+  transferCompanyId: string | null;
   source: "MANUAL" | "IMPORT" | "SCHEDULED";
   type: "INCOME" | "EXPENSE";
   amount: number;
@@ -45,9 +48,11 @@ interface Props {
   transactions: TransactionRow[];
   accounts: Option[];
   categories: (Option & { type: "INCOME" | "EXPENSE" })[];
+  suppliers?: Option[];
+  otherCompanies?: Option[];
 }
 
-export function TransactionsTable({ transactions, accounts, categories }: Props) {
+export function TransactionsTable({ transactions, accounts, categories, suppliers = [], otherCompanies = [] }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
 
@@ -122,6 +127,7 @@ export function TransactionsTable({ transactions, accounts, categories }: Props)
             <TableHead>Descrição</TableHead>
             <TableHead>Conta</TableHead>
             <TableHead>Categoria</TableHead>
+            <TableHead>Fornecedor</TableHead>
             <TableHead>Origem</TableHead>
             <TableHead className="text-right">Valor</TableHead>
             <TableHead className="w-24" />
@@ -130,7 +136,7 @@ export function TransactionsTable({ transactions, accounts, categories }: Props)
         <TableBody>
           {transactions.length === 0 && (
             <TableRow>
-              <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+              <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                 Nenhuma transação encontrada.
               </TableCell>
             </TableRow>
@@ -148,10 +154,14 @@ export function TransactionsTable({ transactions, accounts, categories }: Props)
               <TableCell className="max-w-64 truncate">{t.description}</TableCell>
               <TableCell>{t.accountName}</TableCell>
               <TableCell>{t.categoryName ?? "—"}</TableCell>
+              <TableCell>{t.supplierName ?? "—"}</TableCell>
               <TableCell>
-                <Badge variant="outline">
-                  {t.source === "MANUAL" ? "Manual" : t.source === "IMPORT" ? "Importado" : "Baixa"}
-                </Badge>
+                <div className="flex gap-1">
+                  <Badge variant="outline">
+                    {t.source === "MANUAL" ? "Manual" : t.source === "IMPORT" ? "Importado" : "Baixa"}
+                  </Badge>
+                  {t.transferCompanyId && <Badge variant="secondary">Transferência</Badge>}
+                </div>
               </TableCell>
               <TableCell
                 className={`text-right tabular-nums font-medium ${
@@ -166,6 +176,8 @@ export function TransactionsTable({ transactions, accounts, categories }: Props)
                   <TransactionFormDialog
                     accounts={accounts}
                     categories={categories}
+                    suppliers={suppliers}
+                    otherCompanies={otherCompanies}
                     transaction={{
                       id: t.id,
                       date: t.date,
@@ -174,6 +186,8 @@ export function TransactionsTable({ transactions, accounts, categories }: Props)
                       description: t.description,
                       accountId: t.accountId,
                       categoryId: t.categoryId,
+                      supplierId: t.supplierId,
+                      transferCompanyId: t.transferCompanyId,
                     }}
                   />
                   <DeleteButton action={deleteTransaction.bind(null, t.id)} title="Excluir transação?" />

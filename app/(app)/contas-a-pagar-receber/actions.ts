@@ -14,11 +14,12 @@ const scheduledSchema = z.object({
   dueDate: z.string().min(1),
   accountId: z.string().optional(),
   categoryId: z.string().optional(),
+  supplierId: z.string().optional(),
 });
 
 function stripNone(raw: Record<string, FormDataEntryValue>) {
   const clean = { ...raw };
-  for (const key of ["accountId", "categoryId"]) {
+  for (const key of ["accountId", "categoryId", "supplierId"]) {
     if (clean[key] === "__none__") clean[key] = "";
   }
   return clean;
@@ -31,7 +32,7 @@ export async function createScheduledEntry(_prev: ActionState, formData: FormDat
   return runMutation(async () => {
     await requireUser();
     const companyId = await getActiveCompanyId();
-    const { accountId, categoryId, dueDate, ...rest } = parsed.data;
+    const { accountId, categoryId, supplierId, dueDate, ...rest } = parsed.data;
     await prisma.scheduledEntry.create({
       data: {
         ...rest,
@@ -39,6 +40,7 @@ export async function createScheduledEntry(_prev: ActionState, formData: FormDat
         companyId,
         accountId: accountId || null,
         categoryId: categoryId || null,
+        supplierId: supplierId || null,
       },
     });
 
@@ -58,7 +60,7 @@ export async function updateScheduledEntry(
   return runMutation(async () => {
     await requireUser();
     const companyId = await getActiveCompanyId();
-    const { accountId, categoryId, dueDate, ...rest } = parsed.data;
+    const { accountId, categoryId, supplierId, dueDate, ...rest } = parsed.data;
     const { count } = await prisma.scheduledEntry.updateMany({
       where: { id, companyId },
       data: {
@@ -66,6 +68,7 @@ export async function updateScheduledEntry(
         dueDate: new Date(dueDate),
         accountId: accountId || null,
         categoryId: categoryId || null,
+        supplierId: supplierId || null,
       },
     });
     if (count === 0) throw new Error("Lançamento não encontrado.");
@@ -112,6 +115,7 @@ export async function markAsPaid(id: string, accountId: string): Promise<ActionS
           companyId,
           accountId,
           categoryId: entry.categoryId,
+          supplierId: entry.supplierId,
           source: "SCHEDULED",
         },
       });

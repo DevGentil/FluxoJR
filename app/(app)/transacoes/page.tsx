@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getActiveScope } from "@/lib/scope";
+import { getActiveScope, getAllCompanies } from "@/lib/scope";
 import { SelectCompanyNotice } from "@/components/select-company-notice";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,7 @@ interface Props {
   searchParams: Promise<{
     accountId?: string;
     categoryId?: string;
+    supplierId?: string;
     type?: string;
     from?: string;
     to?: string;
@@ -28,14 +29,17 @@ export default async function TransacoesPage({ searchParams }: Props) {
   }
   const companyId = scope.companyId;
 
-  const [accounts, categories] = await Promise.all([
+  const [accounts, categories, suppliers, allCompanies] = await Promise.all([
     prisma.account.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
     prisma.category.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
+    prisma.supplier.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
+    getAllCompanies(),
   ]);
 
   const where: Prisma.TransactionWhereInput = { companyId };
   if (params.accountId) where.accountId = params.accountId;
   if (params.categoryId) where.categoryId = params.categoryId;
+  if (params.supplierId) where.supplierId = params.supplierId;
   if (params.type === "INCOME" || params.type === "EXPENSE") where.type = params.type;
   if (params.from || params.to) {
     where.date = {
@@ -46,7 +50,7 @@ export default async function TransacoesPage({ searchParams }: Props) {
 
   const transactions = await prisma.transaction.findMany({
     where,
-    include: { account: true, category: true },
+    include: { account: true, category: true, supplier: true },
     orderBy: { date: "desc" },
     take: 500,
   });
@@ -57,6 +61,8 @@ export default async function TransacoesPage({ searchParams }: Props) {
     name: c.name,
     type: c.type as "INCOME" | "EXPENSE",
   }));
+  const supplierOptions = suppliers.map((s) => ({ id: s.id, name: s.name }));
+  const otherCompanyOptions = allCompanies.filter((c) => c.id !== companyId).map((c) => ({ id: c.id, name: c.name }));
 
   return (
     <div className="space-y-6">
@@ -67,7 +73,12 @@ export default async function TransacoesPage({ searchParams }: Props) {
         </div>
         <div className="flex gap-2">
           <ImportDialog accounts={accountOptions} categories={categoryOptions} />
-          <TransactionFormDialog accounts={accountOptions} categories={categoryOptions} />
+          <TransactionFormDialog
+            accounts={accountOptions}
+            categories={categoryOptions}
+            suppliers={supplierOptions}
+            otherCompanies={otherCompanyOptions}
+          />
         </div>
       </div>
 
@@ -118,6 +129,22 @@ export default async function TransacoesPage({ searchParams }: Props) {
               </select>
             </div>
             <div className="space-y-1">
+              <Label htmlFor="supplierId">Fornecedor</Label>
+              <select
+                id="supplierId"
+                name="supplierId"
+                defaultValue={params.supplierId ?? ""}
+                className="h-8 w-44 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+              >
+                <option value="">Todos</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
               <Label htmlFor="type">Tipo</Label>
               <select
                 id="type"
@@ -148,6 +175,8 @@ export default async function TransacoesPage({ searchParams }: Props) {
           <TransactionsTable
             accounts={accountOptions}
             categories={categoryOptions}
+            suppliers={supplierOptions}
+            otherCompanies={otherCompanyOptions}
             transactions={transactions.map((t) => ({
               id: t.id,
               date: t.date,
@@ -156,6 +185,9 @@ export default async function TransacoesPage({ searchParams }: Props) {
               accountName: t.account.name,
               categoryId: t.categoryId,
               categoryName: t.category?.name ?? null,
+              supplierId: t.supplierId,
+              supplierName: t.supplier?.name ?? null,
+              transferCompanyId: t.transferCompanyId,
               source: t.source,
               type: t.type as "INCOME" | "EXPENSE",
               amount: Number(t.amount),

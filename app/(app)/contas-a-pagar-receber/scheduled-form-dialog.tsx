@@ -34,6 +34,7 @@ interface Option {
 interface Props {
   accounts: Option[];
   categories: (Option & { type: "INCOME" | "EXPENSE" })[];
+  suppliers?: Option[];
   defaultType?: "PAYABLE" | "RECEIVABLE";
   entry?: {
     id: string;
@@ -43,12 +44,13 @@ interface Props {
     dueDate: Date;
     accountId: string | null;
     categoryId: string | null;
+    supplierId?: string | null;
   };
 }
 
 const NONE = "__none__";
 
-export function ScheduledFormDialog({ accounts, categories, defaultType = "PAYABLE", entry }: Props) {
+export function ScheduledFormDialog({ accounts, categories, suppliers = [], defaultType = "PAYABLE", entry }: Props) {
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<"PAYABLE" | "RECEIVABLE">(entry?.type ?? defaultType);
   const action = entry ? updateScheduledEntry.bind(null, entry.id) : createScheduledEntry;
@@ -163,6 +165,26 @@ export function ScheduledFormDialog({ accounts, categories, defaultType = "PAYAB
                 </SelectContent>
               </Select>
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="supplierId">Fornecedor</Label>
+            <Select
+              name="supplierId"
+              items={{ [NONE]: "Sem fornecedor", ...Object.fromEntries(suppliers.map((s) => [s.id, s.name])) }}
+              defaultValue={entry?.supplierId ?? NONE}
+            >
+              <SelectTrigger id="supplierId" className="w-full">
+                <SelectValue placeholder="Sem fornecedor" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Sem fornecedor</SelectItem>
+                {suppliers.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
           <DialogFooter>

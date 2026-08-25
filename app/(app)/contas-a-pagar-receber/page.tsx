@@ -24,24 +24,31 @@ function statusBadge(status: string, dueDate: Date) {
 }
 
 async function EntriesTable({ companyId, type }: { companyId: string; type: "PAYABLE" | "RECEIVABLE" }) {
-  const [entries, accounts, categories] = await Promise.all([
+  const [entries, accounts, categories, suppliers] = await Promise.all([
     prisma.scheduledEntry.findMany({
       where: { companyId, type },
-      include: { account: true, category: true },
+      include: { account: true, category: true, supplier: true },
       orderBy: { dueDate: "asc" },
     }),
     prisma.account.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
     prisma.category.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
+    prisma.supplier.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
   ]);
 
   const accountOptions = accounts.map((a) => ({ id: a.id, name: a.name }));
   const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name, type: c.type as "INCOME" | "EXPENSE" }));
+  const supplierOptions = suppliers.map((s) => ({ id: s.id, name: s.name }));
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>{entries.length} lançamentos</CardTitle>
-        <ScheduledFormDialog accounts={accountOptions} categories={categoryOptions} defaultType={type} />
+        <ScheduledFormDialog
+          accounts={accountOptions}
+          categories={categoryOptions}
+          suppliers={supplierOptions}
+          defaultType={type}
+        />
       </CardHeader>
       <CardContent>
         <Table>
@@ -50,6 +57,7 @@ async function EntriesTable({ companyId, type }: { companyId: string; type: "PAY
               <TableHead>Vencimento</TableHead>
               <TableHead>Descrição</TableHead>
               <TableHead>Categoria</TableHead>
+              <TableHead>Fornecedor</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Valor</TableHead>
               <TableHead className="w-72" />
@@ -58,7 +66,7 @@ async function EntriesTable({ companyId, type }: { companyId: string; type: "PAY
           <TableBody>
             {entries.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                   Nenhum lançamento cadastrado ainda.
                 </TableCell>
               </TableRow>
@@ -68,6 +76,7 @@ async function EntriesTable({ companyId, type }: { companyId: string; type: "PAY
                 <TableCell>{formatDate(entry.dueDate)}</TableCell>
                 <TableCell className="max-w-64 truncate">{entry.description}</TableCell>
                 <TableCell>{entry.category?.name ?? "—"}</TableCell>
+                <TableCell>{entry.supplier?.name ?? "—"}</TableCell>
                 <TableCell>{statusBadge(entry.status, entry.dueDate)}</TableCell>
                 <TableCell className="text-right tabular-nums font-medium">
                   {formatCurrency(Number(entry.amount))}
@@ -85,6 +94,7 @@ async function EntriesTable({ companyId, type }: { companyId: string; type: "PAY
                     <ScheduledFormDialog
                       accounts={accountOptions}
                       categories={categoryOptions}
+                      suppliers={supplierOptions}
                       defaultType={type}
                       entry={{
                         id: entry.id,
@@ -94,6 +104,7 @@ async function EntriesTable({ companyId, type }: { companyId: string; type: "PAY
                         dueDate: entry.dueDate,
                         accountId: entry.accountId,
                         categoryId: entry.categoryId,
+                        supplierId: entry.supplierId,
                       }}
                     />
                     <DeleteButton action={deleteScheduledEntry.bind(null, entry.id)} title="Excluir lançamento?" />

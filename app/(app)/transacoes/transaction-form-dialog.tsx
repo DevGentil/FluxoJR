@@ -31,9 +31,13 @@ interface Option {
   name: string;
 }
 
+const NONE = "__none__";
+
 interface Props {
   accounts: Option[];
   categories: (Option & { type: "INCOME" | "EXPENSE" })[];
+  suppliers?: Option[];
+  otherCompanies?: Option[];
   transaction?: {
     id: string;
     date: Date;
@@ -42,10 +46,12 @@ interface Props {
     description: string;
     accountId: string;
     categoryId: string | null;
+    supplierId?: string | null;
+    transferCompanyId?: string | null;
   };
 }
 
-export function TransactionFormDialog({ accounts, categories, transaction }: Props) {
+export function TransactionFormDialog({ accounts, categories, suppliers = [], otherCompanies = [], transaction }: Props) {
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<"INCOME" | "EXPENSE">(transaction?.type ?? "EXPENSE");
   const action = transaction ? updateTransaction.bind(null, transaction.id) : createTransaction;
@@ -140,25 +146,72 @@ export function TransactionFormDialog({ accounts, categories, transaction }: Pro
               </Select>
             </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="categoryId">Categoria</Label>
-            <Select
-              name="categoryId"
-              items={Object.fromEntries(categories.map((c) => [c.id, c.name]))}
-              defaultValue={transaction?.categoryId ?? undefined}
-            >
-              <SelectTrigger id="categoryId" className="w-full">
-                <SelectValue placeholder="Sem categoria" />
-              </SelectTrigger>
-              <SelectContent>
-                {filteredCategories.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="categoryId">Categoria</Label>
+              <Select
+                name="categoryId"
+                items={Object.fromEntries(categories.map((c) => [c.id, c.name]))}
+                defaultValue={transaction?.categoryId ?? undefined}
+              >
+                <SelectTrigger id="categoryId" className="w-full">
+                  <SelectValue placeholder="Sem categoria" />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredCategories.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="supplierId">Fornecedor</Label>
+              <Select
+                name="supplierId"
+                items={{ [NONE]: "Sem fornecedor", ...Object.fromEntries(suppliers.map((s) => [s.id, s.name])) }}
+                defaultValue={transaction?.supplierId ?? NONE}
+              >
+                <SelectTrigger id="supplierId" className="w-full">
+                  <SelectValue placeholder="Sem fornecedor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>Sem fornecedor</SelectItem>
+                  {suppliers.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
+          {otherCompanies.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="transferCompanyId">Transferência entre empresas (opcional)</Label>
+              <Select
+                name="transferCompanyId"
+                items={{ [NONE]: "Não é transferência", ...Object.fromEntries(otherCompanies.map((c) => [c.id, c.name])) }}
+                defaultValue={transaction?.transferCompanyId ?? NONE}
+              >
+                <SelectTrigger id="transferCompanyId" className="w-full">
+                  <SelectValue placeholder="Não é transferência" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>Não é transferência</SelectItem>
+                  {otherCompanies.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {type === "INCOME" ? `Recebido de ${c.name}` : `Enviado para ${c.name}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Marca como repasse interno do grupo — não entra no faturamento/despesa dos relatórios.
+              </p>
+            </div>
+          )}
           {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
           <DialogFooter>
             <Button type="submit" disabled={pending}>

@@ -7,6 +7,12 @@ import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { parseForm, runMutation, type ActionState } from "@/lib/actions-utils";
 
+const NONE = "__none__";
+const optionalSelect = z
+  .string()
+  .optional()
+  .transform((v) => (v === NONE ? undefined : v));
+
 const transactionSchema = z.object({
   date: z.string().min(1),
   amount: z.coerce.number().positive("O valor deve ser maior que zero"),
@@ -14,6 +20,8 @@ const transactionSchema = z.object({
   description: z.string().min(1, "Informe uma descrição"),
   accountId: z.string().min(1, "Selecione uma conta"),
   categoryId: z.string().optional(),
+  supplierId: optionalSelect,
+  transferCompanyId: optionalSelect,
 });
 
 export async function createTransaction(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -23,19 +31,23 @@ export async function createTransaction(_prev: ActionState, formData: FormData):
   return runMutation(async () => {
     await requireUser();
     const companyId = await getActiveCompanyId();
-    const { categoryId, ...data } = result.data;
+    const { categoryId, supplierId, transferCompanyId, ...data } = result.data;
     await prisma.transaction.create({
       data: {
         ...data,
         date: new Date(data.date),
         companyId,
         categoryId: categoryId || null,
+        supplierId: supplierId || null,
+        transferCompanyId: transferCompanyId || null,
         source: "MANUAL",
       },
     });
 
     revalidatePath("/transacoes");
     revalidatePath("/dashboard");
+    revalidatePath("/relatorios");
+    revalidatePath("/balanco");
   });
 }
 
@@ -50,15 +62,23 @@ export async function updateTransaction(
   return runMutation(async () => {
     await requireUser();
     const companyId = await getActiveCompanyId();
-    const { categoryId, ...data } = result.data;
+    const { categoryId, supplierId, transferCompanyId, ...data } = result.data;
     const { count } = await prisma.transaction.updateMany({
       where: { id, companyId },
-      data: { ...data, date: new Date(data.date), categoryId: categoryId || null },
+      data: {
+        ...data,
+        date: new Date(data.date),
+        categoryId: categoryId || null,
+        supplierId: supplierId || null,
+        transferCompanyId: transferCompanyId || null,
+      },
     });
     if (count === 0) throw new Error("Transação não encontrada.");
 
     revalidatePath("/transacoes");
     revalidatePath("/dashboard");
+    revalidatePath("/relatorios");
+    revalidatePath("/balanco");
   });
 }
 
