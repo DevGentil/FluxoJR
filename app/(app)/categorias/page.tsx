@@ -14,10 +14,31 @@ async function ConsolidatedCategories({ companyIds, scopeLabel }: { companyIds: 
       : await prisma.category.findMany({
           where: { companyId: { in: companyIds } },
           include: { company: true },
-          orderBy: [{ company: { name: "asc" } }, { name: "asc" }],
+          orderBy: { name: "asc" },
         });
 
   const companyCount = new Set(categories.map((c) => c.companyId)).size;
+
+  // Agrupa por nome+tipo (ex: "Mercado Pago"/INCOME), já que a mesma categoria
+  // é um registro separado por empresa — evita listar a mesma categoria uma
+  // vez por unidade e mostra só quem usa cada uma.
+  const grouped = new Map<
+    string,
+    { name: string; type: "INCOME" | "EXPENSE"; costCenters: Set<string>; companies: Set<string> }
+  >();
+  for (const category of categories) {
+    const key = `${category.name}__${category.type}`;
+    const entry = grouped.get(key) ?? {
+      name: category.name,
+      type: category.type as "INCOME" | "EXPENSE",
+      costCenters: new Set<string>(),
+      companies: new Set<string>(),
+    };
+    if (category.costCenter) entry.costCenters.add(category.costCenter);
+    entry.companies.add(category.company.name);
+    grouped.set(key, entry);
+  }
+  const rows = Array.from(grouped.values()).sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div className="space-y-6">
@@ -32,37 +53,45 @@ async function ConsolidatedCategories({ companyIds, scopeLabel }: { companyIds: 
       <Card>
         <CardHeader>
           <CardTitle>
-            {categories.length} categoria(s) em {companyCount} empresa(s)
+            {rows.length} categoria(s) distintas em {companyCount} empresa(s)
           </CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Empresa</TableHead>
                 <TableHead>Nome</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Centro de custo</TableHead>
+                <TableHead>Usada em</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {categories.length === 0 && (
+              {rows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                     Nenhuma categoria cadastrada nesse escopo.
                   </TableCell>
                 </TableRow>
               )}
-              {categories.map((category) => (
-                <TableRow key={category.id}>
-                  <TableCell className="font-medium">{category.company.name}</TableCell>
-                  <TableCell>{category.name}</TableCell>
+              {rows.map((row) => (
+                <TableRow key={`${row.name}__${row.type}`}>
+                  <TableCell className="font-medium">{row.name}</TableCell>
                   <TableCell>
-                    <Badge variant={category.type === "INCOME" ? "default" : "secondary"}>
-                      {category.type === "INCOME" ? "Entrada" : "Saída"}
+                    <Badge variant={row.type === "INCOME" ? "default" : "secondary"}>
+                      {row.type === "INCOME" ? "Entrada" : "Saída"}
                     </Badge>
                   </TableCell>
-                  <TableCell>{category.costCenter || "—"}</TableCell>
+                  <TableCell>
+                    {row.costCenters.size === 0
+                      ? "—"
+                      : row.costCenters.size === 1
+                        ? Array.from(row.costCenters)[0]
+                        : "Varia por empresa"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-sm">
+                    {Array.from(row.companies).sort().join(", ")}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
