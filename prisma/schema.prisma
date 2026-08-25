@@ -33,14 +33,28 @@ enum ScheduledStatus {
   CANCELED
 }
 
-// Empresa da holding. Hoje o sistema opera com uma única Company, mas o
-// modelo já suporta múltiplas empresas sem alteração de schema.
+// Marca/franquia da holding, agrupando várias empresas/unidades (ex:
+// "AmorSaude" agrupa as franquias AS Laguna, AS Contagem, etc.).
+model Group {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companies Company[]
+}
+
+// Empresa/unidade da holding (ex: uma franquia específica). Pode pertencer
+// a um Group (marca) ou ficar solta.
 model Company {
   id        String   @id @default(cuid())
   name      String
   cnpj      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  groupId String?
+  group   Group?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
 
   accounts        Account[]
   categories      Category[]
