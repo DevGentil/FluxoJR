@@ -4,8 +4,8 @@ Sistema de fluxo de caixa para holding — controle de contas bancárias, transa
 contas a pagar/receber, categorização por centro de custo e relatórios (DRE
 simplificado), com projeção de saldo futuro.
 
-Construído com uma única empresa em mente, mas com o modelo de dados já preparado
-para suportar múltiplas empresas de uma holding no futuro.
+Suporta múltiplas empresas/unidades de uma holding, organizadas por marca/grupo
+(veja [Múltiplas empresas e grupos](#múltiplas-empresas-e-grupos) abaixo).
 
 ## Stack
 
@@ -30,6 +30,29 @@ para suportar múltiplas empresas de uma holding no futuro.
 - **Relatórios**: DRE simplificado por categoria/centro de custo no período, com
   exportação em CSV.
 - **Tema claro/escuro** com detecção automática da preferência do sistema.
+
+## Múltiplas empresas e grupos
+
+O modelo de dados tem dois níveis: **Grupo** (a marca/franquia, ex: "AmorSaude")
+e **Empresa** (a unidade individual, ex: "AS Laguna"), com `Company.groupId`
+opcional — empresas sem grupo funcionam soltas normalmente. Cadastro de
+grupos/empresas fica em **Empresas** no menu lateral.
+
+A empresa/grupo ativo é escolhido no seletor no topo do menu lateral e vale
+para toda a navegação (guardado em cookie, sem afetar a URL). Três escopos são
+possíveis:
+
+- **Uma empresa específica** — as telas operacionais (Transações, Contas a
+  Pagar/Receber, Categorias, Contas Bancárias) exigem esse escopo, já que são
+  telas de lançamento por unidade.
+- **Um grupo (consolidado)** — soma os dados de todas as empresas daquele
+  grupo. Disponível no Dashboard e em Relatórios.
+- **Holding (todas as empresas)** — soma tudo. Também disponível no Dashboard
+  e em Relatórios.
+
+Ao selecionar um grupo ou a holding, as telas operacionais mostram um aviso
+pedindo para escolher uma empresa específica, já que não fazem sentido em
+visão consolidada.
 
 ## Rodando localmente
 
