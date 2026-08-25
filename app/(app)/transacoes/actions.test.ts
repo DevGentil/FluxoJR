@@ -95,7 +95,7 @@ describe("deleteTransactions", () => {
   });
 
   it("não exclui transações de outra empresa", async () => {
-    // getDefaultCompany() usa a empresa mais antiga — criamos a "própria" primeiro
+    // getActiveCompanyId() sem cookie cai na empresa mais antiga — criamos a "própria" primeiro
     // para garantir que a Empresa B não seja escolhida como padrão.
     await testPrisma.company.create({ data: { name: "Minha Empresa" } });
     const empresaB = await testPrisma.company.create({ data: { name: "Empresa B" } });

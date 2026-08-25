@@ -10,6 +10,17 @@ vi.mock("next/cache", () => ({
   revalidateTag: vi.fn(),
 }));
 
+// cookies() também depende do request-scope interno do Next.js. Os testes
+// chamam as actions sem nenhum cookie de escopo definido, então
+// lib/scope.ts cai no fallback "primeira empresa" — igual ao comportamento
+// de getDefaultCompany() de antes.
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: () => undefined,
+    set: () => {},
+  }),
+}));
+
 // Carrega .env (satisfaz a validação de lib/env.ts) e .env.test (fornece
 // DATABASE_URL_TEST) antes de qualquer teste importar lib/prisma.ts. Não faz
 // nada de banco aqui — testes unitários (que não tocam o banco) não devem

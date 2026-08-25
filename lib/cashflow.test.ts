@@ -44,17 +44,31 @@ describe("getConsolidatedBalance", () => {
       data: { companyId: company.id, accountId: contaA.id, type: "INCOME", amount: 50, description: "Venda", date: new Date() },
     });
 
-    await expect(getConsolidatedBalance(company.id)).resolves.toBe(350);
+    await expect(getConsolidatedBalance([company.id])).resolves.toBe(350);
   });
 
-  it("não mistura o saldo de empresas diferentes", async () => {
+  it("não mistura o saldo de empresas diferentes quando pedido isoladamente", async () => {
     const empresaA = await testPrisma.company.create({ data: { name: "Empresa A" } });
     const empresaB = await testPrisma.company.create({ data: { name: "Empresa B" } });
     await testPrisma.account.create({ data: { companyId: empresaA.id, name: "Conta A", type: "Caixa", initialBalance: 1000 } });
     await testPrisma.account.create({ data: { companyId: empresaB.id, name: "Conta B", type: "Caixa", initialBalance: 5000 } });
 
-    await expect(getConsolidatedBalance(empresaA.id)).resolves.toBe(1000);
-    await expect(getConsolidatedBalance(empresaB.id)).resolves.toBe(5000);
+    await expect(getConsolidatedBalance([empresaA.id])).resolves.toBe(1000);
+    await expect(getConsolidatedBalance([empresaB.id])).resolves.toBe(5000);
+  });
+
+  it("soma o saldo de várias empresas quando o escopo é um grupo/holding", async () => {
+    const grupo = await testPrisma.group.create({ data: { name: "AmorSaude" } });
+    const empresaA = await testPrisma.company.create({ data: { name: "AS Laguna", groupId: grupo.id } });
+    const empresaB = await testPrisma.company.create({ data: { name: "AS Contagem", groupId: grupo.id } });
+    await testPrisma.account.create({ data: { companyId: empresaA.id, name: "Conta A", type: "Caixa", initialBalance: 1000 } });
+    await testPrisma.account.create({ data: { companyId: empresaB.id, name: "Conta B", type: "Caixa", initialBalance: 500 } });
+
+    await expect(getConsolidatedBalance([empresaA.id, empresaB.id])).resolves.toBe(1500);
+  });
+
+  it("retorna 0 para uma lista vazia de empresas", async () => {
+    await expect(getConsolidatedBalance([])).resolves.toBe(0);
   });
 });
 
@@ -76,7 +90,7 @@ describe("getBalanceProjection", () => {
       ],
     });
 
-    const result = await getBalanceProjection(company.id, 30);
+    const result = await getBalanceProjection([company.id], 30);
 
     expect(result.currentBalance).toBe(1000);
     expect(result.projectedBalance).toBe(1200); // 1000 + 300 - 100

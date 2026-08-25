@@ -60,7 +60,7 @@ describe("updateAccount", () => {
       data: { companyId: empresaB.id, name: "Conta de B", type: "Caixa", initialBalance: 0 },
     });
 
-    // getDefaultCompany() pega a empresa mais antiga — nesse cenário é a Empresa A.
+    // getActiveCompanyId() pega a empresa mais antiga — nesse cenário é a Empresa A.
     const result = await updateAccount(
       contaDeB.id,
       undefined,
