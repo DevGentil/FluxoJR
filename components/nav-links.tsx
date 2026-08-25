@@ -10,6 +10,8 @@ import {
   Landmark,
   FileBarChart,
   Building2,
+  Truck,
+  ScrollText,
 } from "lucide-react";
 import {
   SidebarMenu,
@@ -22,8 +24,10 @@ const links = [
   { href: "/transacoes", label: "Transações", icon: ArrowLeftRight },
   { href: "/contas-a-pagar-receber", label: "A Pagar/Receber", icon: CalendarClock },
   { href: "/categorias", label: "Categorias", icon: Tags },
+  { href: "/fornecedores", label: "Fornecedores", icon: Truck },
   { href: "/contas-bancarias", label: "Contas Bancárias", icon: Landmark },
   { href: "/relatorios", label: "Relatórios", icon: FileBarChart },
+  { href: "/balanco", label: "Balanço", icon: ScrollText },
   { href: "/empresas", label: "Empresas", icon: Building2 },
 ];
 

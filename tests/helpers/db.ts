@@ -13,8 +13,10 @@ export async function resetDb() {
   await testPrisma.scheduledEntry.deleteMany();
   await testPrisma.importBatch.deleteMany();
   await testPrisma.category.deleteMany();
+  await testPrisma.supplier.deleteMany();
   await testPrisma.account.deleteMany();
   await testPrisma.company.deleteMany();
+  await testPrisma.group.deleteMany();
 }
 
 export async function createTestCompany(name = "Empresa de Teste") {
