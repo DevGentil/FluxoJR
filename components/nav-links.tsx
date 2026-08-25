@@ -9,6 +9,7 @@ import {
   Tags,
   Landmark,
   FileBarChart,
+  Building2,
 } from "lucide-react";
 import {
   SidebarMenu,
@@ -23,6 +24,7 @@ const links = [
   { href: "/categorias", label: "Categorias", icon: Tags },
   { href: "/contas-bancarias", label: "Contas Bancárias", icon: Landmark },
   { href: "/relatorios", label: "Relatórios", icon: FileBarChart },
+  { href: "/empresas", label: "Empresas", icon: Building2 },
 ];
 
 export function NavLinks() {

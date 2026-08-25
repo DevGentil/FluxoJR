@@ -13,11 +13,21 @@ import { Separator } from "@/components/ui/separator";
 import { LogOut, Wallet } from "lucide-react";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 import { logout } from "@/app/login/actions";
-import { getDefaultCompany } from "@/lib/company";
+import { getActiveScope, getGroupsWithCompanies, getAllCompanies, getScopeLabel } from "@/lib/scope";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { CompanySwitcher } from "@/components/company-switcher";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const company = await getDefaultCompany();
+  const scope = await getActiveScope();
+  const [groups, allCompanies, scopeLabel] = await Promise.all([
+    getGroupsWithCompanies(),
+    getAllCompanies(),
+    getScopeLabel(scope),
+  ]);
+
+  const ungroupedCompanies = allCompanies.filter((c) => !c.groupId);
+  const currentValue =
+    scope.type === "all" ? "all" : scope.type === "group" ? `group:${scope.groupId}` : `company:${scope.companyId}`;
 
   return (
     <SidebarProvider>
@@ -25,11 +35,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <SidebarHeader>
           <div className="flex items-center gap-2 px-2 py-1.5">
             <Wallet className="size-5 shrink-0" />
-            <div className="flex flex-col leading-tight overflow-hidden">
-              <span className="font-semibold truncate">FluxoJR</span>
-              <span className="text-xs text-muted-foreground truncate">{company.name}</span>
-            </div>
+            <span className="font-semibold truncate">FluxoJR</span>
           </div>
+          <CompanySwitcher groups={groups} ungroupedCompanies={ungroupedCompanies} currentValue={currentValue} />
         </SidebarHeader>
         <SidebarContent>
           <NavLinks />
@@ -49,7 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger />
           <Separator orientation="vertical" className="h-4" />
-          <span className="text-sm text-muted-foreground flex-1">{company.name}</span>
+          <span className="text-sm text-muted-foreground flex-1">{scopeLabel}</span>
           <ThemeToggle />
         </header>
         <main className="flex-1 p-4 md:p-6">{children}</main>
