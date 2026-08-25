@@ -1,0 +1,108 @@
+"use server";
+
+import { z } from "zod";
+import { revalidatePath } from "next/cache";
+import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/auth";
+import { parseForm, runMutation, type ActionState } from "@/lib/actions-utils";
+
+const NONE = "__none__";
+
+const groupSchema = z.object({
+  name: z.string().min(1, "Informe o nome do grupo"),
+});
+
+export async function createGroup(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const result = parseForm(groupSchema, formData);
+  if ("error" in result) return result;
+
+  return runMutation(async () => {
+    await requireUser();
+    await prisma.group.create({ data: result.data });
+    revalidatePath("/empresas");
+    revalidatePath("/", "layout");
+  });
+}
+
+export async function updateGroup(id: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  const result = parseForm(groupSchema, formData);
+  if ("error" in result) return result;
+
+  return runMutation(async () => {
+    await requireUser();
+    const { count } = await prisma.group.updateMany({ where: { id }, data: result.data });
+    if (count === 0) throw new Error("Grupo não encontrado.");
+    revalidatePath("/empresas");
+    revalidatePath("/", "layout");
+  });
+}
+
+export async function deleteGroup(id: string): Promise<ActionState> {
+  return runMutation(async () => {
+    await requireUser();
+    const { count } = await prisma.group.deleteMany({ where: { id } });
+    if (count === 0) throw new Error("Grupo não encontrado.");
+    revalidatePath("/empresas");
+    revalidatePath("/", "layout");
+  });
+}
+
+const companySchema = z.object({
+  name: z.string().min(1, "Informe o nome da empresa"),
+  cnpj: z.string().optional(),
+  groupId: z.string().optional(),
+});
+
+function stripNone(raw: Record<string, FormDataEntryValue>) {
+  const clean = { ...raw };
+  if (clean.groupId === NONE) clean.groupId = "";
+  return clean;
+}
+
+export async function createCompany(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const parsed = companySchema.safeParse(stripNone(Object.fromEntries(formData)));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message };
+
+  return runMutation(async () => {
+    await requireUser();
+    const { groupId, ...rest } = parsed.data;
+    await prisma.company.create({ data: { ...rest, groupId: groupId || null } });
+    revalidatePath("/empresas");
+    revalidatePath("/", "layout");
+  });
+}
+
+export async function updateCompany(
+  id: string,
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const parsed = companySchema.safeParse(stripNone(Object.fromEntries(formData)));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message };
+
+  return runMutation(async () => {
+    await requireUser();
+    const { groupId, ...rest } = parsed.data;
+    const { count } = await prisma.company.updateMany({
+      where: { id },
+      data: { ...rest, groupId: groupId || null },
+    });
+    if (count === 0) throw new Error("Empresa não encontrada.");
+    revalidatePath("/empresas");
+    revalidatePath("/", "layout");
+  });
+}
+
+export async function deleteCompany(id: string): Promise<ActionState> {
+  return runMutation(async () => {
+    await requireUser();
+    const remaining = await prisma.company.count();
+    if (remaining <= 1) {
+      throw new Error("Não é possível excluir a única empresa cadastrada.");
+    }
+    const { count } = await prisma.company.deleteMany({ where: { id } });
+    if (count === 0) throw new Error("Empresa não encontrada.");
+    revalidatePath("/empresas");
+    revalidatePath("/", "layout");
+  });
+}
