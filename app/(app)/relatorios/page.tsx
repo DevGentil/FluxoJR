@@ -35,24 +35,40 @@ export default async function RelatoriosPage({ searchParams }: Props) {
           where: {
             companyId: { in: companyIds },
             date: { gte: new Date(range.from), lte: new Date(`${range.to}T23:59:59`) },
+            transferCompanyId: null,
           },
-          include: { category: true, company: true },
+          include: { category: true, company: true, supplier: true },
         });
 
   const grouped = new Map<
     string,
-    { empresa: string; categoria: string; tipo: "INCOME" | "EXPENSE"; centroCusto: string; total: number }
+    {
+      empresa: string;
+      categoria: string;
+      fornecedor: string;
+      tipo: "INCOME" | "EXPENSE";
+      centroCusto: string;
+      total: number;
+    }
   >();
   for (const t of transactions) {
     const empresa = t.company.name;
     const categoria = t.category?.name ?? "Sem categoria";
+    const fornecedor = t.supplier?.name ?? "—";
     const centroCusto = t.category?.costCenter ?? "—";
-    const key = `${empresa}__${categoria}__${centroCusto}__${t.type}`;
+    const key = `${empresa}__${categoria}__${fornecedor}__${centroCusto}__${t.type}`;
     const existing = grouped.get(key);
     if (existing) {
       existing.total += Number(t.amount);
     } else {
-      grouped.set(key, { empresa, categoria, tipo: t.type as "INCOME" | "EXPENSE", centroCusto, total: Number(t.amount) });
+      grouped.set(key, {
+        empresa,
+        categoria,
+        fornecedor,
+        tipo: t.type as "INCOME" | "EXPENSE",
+        centroCusto,
+        total: Number(t.amount),
+      });
     }
   }
 
@@ -64,6 +80,7 @@ export default async function RelatoriosPage({ searchParams }: Props) {
   const csvRows = rows.map((r) => ({
     ...(showCompanyColumn ? { empresa: r.empresa } : {}),
     categoria: r.categoria,
+    fornecedor: r.fornecedor,
     tipo: r.tipo === "INCOME" ? "Entrada" : "Saída",
     centroCusto: r.centroCusto,
     total: r.total,
@@ -134,6 +151,7 @@ export default async function RelatoriosPage({ searchParams }: Props) {
               <TableRow>
                 {showCompanyColumn && <TableHead>Empresa</TableHead>}
                 <TableHead>Categoria</TableHead>
+                <TableHead>Fornecedor</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Centro de custo</TableHead>
                 <TableHead className="text-right">Total</TableHead>
@@ -142,7 +160,7 @@ export default async function RelatoriosPage({ searchParams }: Props) {
             <TableBody>
               {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={showCompanyColumn ? 5 : 4} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={showCompanyColumn ? 6 : 5} className="text-center text-muted-foreground py-8">
                     Nenhuma movimentação no período selecionado.
                   </TableCell>
                 </TableRow>
@@ -151,6 +169,7 @@ export default async function RelatoriosPage({ searchParams }: Props) {
                 <TableRow key={i}>
                   {showCompanyColumn && <TableCell>{r.empresa}</TableCell>}
                   <TableCell className="font-medium">{r.categoria}</TableCell>
+                  <TableCell>{r.fornecedor}</TableCell>
                   <TableCell>{r.tipo === "INCOME" ? "Entrada" : "Saída"}</TableCell>
                   <TableCell>{r.centroCusto}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(r.total)}</TableCell>
@@ -160,7 +179,7 @@ export default async function RelatoriosPage({ searchParams }: Props) {
             {rows.length > 0 && (
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={showCompanyColumn ? 4 : 3}>Resultado</TableCell>
+                  <TableCell colSpan={showCompanyColumn ? 5 : 4}>Resultado</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(result)}</TableCell>
                 </TableRow>
               </TableFooter>

@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
 
-function signedAmount(type: "INCOME" | "EXPENSE", amount: Prisma.Decimal | number) {
+export function signedAmount(type: "INCOME" | "EXPENSE", amount: Prisma.Decimal | number) {
   const value = Number(amount);
   return type === "INCOME" ? value : -value;
 }
@@ -89,7 +89,7 @@ export async function getMonthlySummary(companyIds: string[], months = 6) {
     companyIds.length === 0
       ? []
       : await prisma.transaction.findMany({
-          where: { companyId: { in: companyIds }, date: { gte: start } },
+          where: { companyId: { in: companyIds }, date: { gte: start }, transferCompanyId: null },
           select: { date: true, amount: true, type: true },
         });
 
