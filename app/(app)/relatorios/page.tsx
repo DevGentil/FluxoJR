@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getDefaultCompany } from "@/lib/company";
+import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { formatCurrency } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -24,26 +24,35 @@ function defaultRange() {
 export default async function RelatoriosPage({ searchParams }: Props) {
   const params = await searchParams;
   const range = { from: params.from || defaultRange().from, to: params.to || defaultRange().to };
-  const company = await getDefaultCompany();
+  const scope = await getActiveScope();
+  const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
+  const showCompanyColumn = companyIds.length > 1;
 
-  const transactions = await prisma.transaction.findMany({
-    where: {
-      companyId: company.id,
-      date: { gte: new Date(range.from), lte: new Date(`${range.to}T23:59:59`) },
-    },
-    include: { category: true },
-  });
+  const transactions =
+    companyIds.length === 0
+      ? []
+      : await prisma.transaction.findMany({
+          where: {
+            companyId: { in: companyIds },
+            date: { gte: new Date(range.from), lte: new Date(`${range.to}T23:59:59`) },
+          },
+          include: { category: true, company: true },
+        });
 
-  const grouped = new Map<string, { categoria: string; tipo: "INCOME" | "EXPENSE"; centroCusto: string; total: number }>();
+  const grouped = new Map<
+    string,
+    { empresa: string; categoria: string; tipo: "INCOME" | "EXPENSE"; centroCusto: string; total: number }
+  >();
   for (const t of transactions) {
+    const empresa = t.company.name;
     const categoria = t.category?.name ?? "Sem categoria";
     const centroCusto = t.category?.costCenter ?? "—";
-    const key = `${categoria}__${centroCusto}__${t.type}`;
+    const key = `${empresa}__${categoria}__${centroCusto}__${t.type}`;
     const existing = grouped.get(key);
     if (existing) {
       existing.total += Number(t.amount);
     } else {
-      grouped.set(key, { categoria, tipo: t.type as "INCOME" | "EXPENSE", centroCusto, total: Number(t.amount) });
+      grouped.set(key, { empresa, categoria, tipo: t.type as "INCOME" | "EXPENSE", centroCusto, total: Number(t.amount) });
     }
   }
 
@@ -53,6 +62,7 @@ export default async function RelatoriosPage({ searchParams }: Props) {
   const result = totalIncome - totalExpense;
 
   const csvRows = rows.map((r) => ({
+    ...(showCompanyColumn ? { empresa: r.empresa } : {}),
     categoria: r.categoria,
     tipo: r.tipo === "INCOME" ? "Entrada" : "Saída",
     centroCusto: r.centroCusto,
@@ -64,7 +74,9 @@ export default async function RelatoriosPage({ searchParams }: Props) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-semibold">Relatórios</h1>
-          <p className="text-muted-foreground text-sm">DRE simplificado por categoria e centro de custo.</p>
+          <p className="text-muted-foreground text-sm">
+            DRE simplificado por categoria e centro de custo — {scopeLabel}.
+          </p>
         </div>
         <ExportCsvButton rows={csvRows} fileName={`dre-${range.from}-a-${range.to}.csv`} />
       </div>
@@ -120,6 +132,7 @@ export default async function RelatoriosPage({ searchParams }: Props) {
           <Table>
             <TableHeader>
               <TableRow>
+                {showCompanyColumn && <TableHead>Empresa</TableHead>}
                 <TableHead>Categoria</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Centro de custo</TableHead>
@@ -129,13 +142,14 @@ export default async function RelatoriosPage({ searchParams }: Props) {
             <TableBody>
               {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={showCompanyColumn ? 5 : 4} className="text-center text-muted-foreground py-8">
                     Nenhuma movimentação no período selecionado.
                   </TableCell>
                 </TableRow>
               )}
               {rows.map((r, i) => (
                 <TableRow key={i}>
+                  {showCompanyColumn && <TableCell>{r.empresa}</TableCell>}
                   <TableCell className="font-medium">{r.categoria}</TableCell>
                   <TableCell>{r.tipo === "INCOME" ? "Entrada" : "Saída"}</TableCell>
                   <TableCell>{r.centroCusto}</TableCell>
@@ -146,7 +160,7 @@ export default async function RelatoriosPage({ searchParams }: Props) {
             {rows.length > 0 && (
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={3}>Resultado</TableCell>
+                  <TableCell colSpan={showCompanyColumn ? 4 : 3}>Resultado</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(result)}</TableCell>
                 </TableRow>
               </TableFooter>

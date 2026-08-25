@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getDefaultCompany } from "@/lib/company";
+import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { getConsolidatedBalance, getBalanceProjection, getMonthlySummary } from "@/lib/cashflow";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,21 +9,24 @@ import { ProjectionChart } from "./projection-chart";
 import { TrendingUp, TrendingDown, Wallet, AlertTriangle } from "lucide-react";
 
 export default async function DashboardPage() {
-  const company = await getDefaultCompany();
+  const scope = await getActiveScope();
+  const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
 
   const [balance, monthly, projection90, upcoming] = await Promise.all([
-    getConsolidatedBalance(company.id),
-    getMonthlySummary(company.id, 6),
-    getBalanceProjection(company.id, 90),
-    prisma.scheduledEntry.findMany({
-      where: {
-        companyId: company.id,
-        status: { in: ["PENDING", "OVERDUE"] },
-        dueDate: { lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
-      },
-      orderBy: { dueDate: "asc" },
-      take: 8,
-    }),
+    getConsolidatedBalance(companyIds),
+    getMonthlySummary(companyIds, 6),
+    getBalanceProjection(companyIds, 90),
+    companyIds.length === 0
+      ? []
+      : prisma.scheduledEntry.findMany({
+          where: {
+            companyId: { in: companyIds },
+            status: { in: ["PENDING", "OVERDUE"] },
+            dueDate: { lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+          },
+          orderBy: { dueDate: "asc" },
+          take: 8,
+        }),
   ]);
 
   const currentMonth = monthly[monthly.length - 1];
@@ -33,7 +36,7 @@ export default async function DashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <p className="text-muted-foreground text-sm">Visão geral do fluxo de caixa.</p>
+        <p className="text-muted-foreground text-sm">Visão geral do fluxo de caixa — {scopeLabel}.</p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

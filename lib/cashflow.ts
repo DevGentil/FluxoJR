@@ -17,13 +17,14 @@ export async function getAccountBalance(accountId: string): Promise<number> {
   return Number(account.initialBalance) + delta;
 }
 
-export async function getConsolidatedBalance(companyId: string): Promise<number> {
+export async function getConsolidatedBalance(companyIds: string[]): Promise<number> {
+  if (companyIds.length === 0) return 0;
   const accounts = await prisma.account.findMany({
-    where: { companyId },
+    where: { companyId: { in: companyIds } },
     select: { initialBalance: true },
   });
   const transactions = await prisma.transaction.findMany({
-    where: { companyId },
+    where: { companyId: { in: companyIds } },
     select: { amount: true, type: true },
   });
 
@@ -42,23 +43,26 @@ export interface ProjectionPoint {
  * Projeta o saldo consolidado somando o saldo atual às contas a pagar/receber
  * pendentes com vencimento até `days` dias à frente.
  */
-export async function getBalanceProjection(companyId: string, days: 30 | 60 | 90) {
-  const currentBalance = await getConsolidatedBalance(companyId);
+export async function getBalanceProjection(companyIds: string[], days: 30 | 60 | 90) {
+  const currentBalance = await getConsolidatedBalance(companyIds);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const horizon = new Date(today);
   horizon.setDate(horizon.getDate() + days);
 
-  const pending = await prisma.scheduledEntry.findMany({
-    where: {
-      companyId,
-      status: { in: ["PENDING", "OVERDUE"] },
-      dueDate: { lte: horizon },
-    },
-    orderBy: { dueDate: "asc" },
-    select: { dueDate: true, amount: true, type: true },
-  });
+  const pending =
+    companyIds.length === 0
+      ? []
+      : await prisma.scheduledEntry.findMany({
+          where: {
+            companyId: { in: companyIds },
+            status: { in: ["PENDING", "OVERDUE"] },
+            dueDate: { lte: horizon },
+          },
+          orderBy: { dueDate: "asc" },
+          select: { dueDate: true, amount: true, type: true },
+        });
 
   const points: ProjectionPoint[] = [{ label: "Hoje", date: today, balance: currentBalance }];
   let running = currentBalance;
@@ -75,16 +79,19 @@ export async function getBalanceProjection(companyId: string, days: 30 | 60 | 90
   return { currentBalance, projectedBalance: running, points };
 }
 
-export async function getMonthlySummary(companyId: string, months = 6) {
+export async function getMonthlySummary(companyIds: string[], months = 6) {
   const start = new Date();
   start.setDate(1);
   start.setHours(0, 0, 0, 0);
   start.setMonth(start.getMonth() - (months - 1));
 
-  const transactions = await prisma.transaction.findMany({
-    where: { companyId, date: { gte: start } },
-    select: { date: true, amount: true, type: true },
-  });
+  const transactions =
+    companyIds.length === 0
+      ? []
+      : await prisma.transaction.findMany({
+          where: { companyId: { in: companyIds }, date: { gte: start } },
+          select: { date: true, amount: true, type: true },
+        });
 
   const buckets = new Map<string, { income: number; expense: number }>();
   for (let i = 0; i < months; i++) {
