@@ -25,10 +25,18 @@ Suporta múltiplas empresas/unidades de uma holding, organizadas por marca/grupo
 - **Contas a Pagar/Receber**: lançamentos previstos com vencimento, marcação de
   atraso automática e baixa (gera a transação correspondente automaticamente).
 - **Categorias**: organização por tipo (entrada/saída) e centro de custo.
+- **Fornecedores**: cadastro opcional para enriquecer transações e contas a
+  pagar/receber (nome, CNPJ/CPF, contato).
 - **Contas Bancárias**: múltiplas contas com saldo calculado a partir do
   histórico de transações.
-- **Relatórios**: DRE simplificado por categoria/centro de custo no período, com
-  exportação em CSV.
+- **Relatórios**: DRE simplificado por categoria/fornecedor/centro de custo no
+  período, com exportação em CSV.
+- **Balanço Executivo**: faturamento, despesas e fluxo líquido de um período
+  (dia/semana/mês/customizado), saldo inicial x final por conta e por empresa,
+  e ranking de categorias por % do total — mesmo formato do balanço manual que
+  a holding já produzia. Transferências entre empresas do grupo são excluídas
+  do faturamento/despesa (mas continuam no saldo da conta), para não duplicar
+  valores no consolidado.
 - **Tema claro/escuro** com detecção automática da preferência do sistema.
 
 ## Múltiplas empresas e grupos
