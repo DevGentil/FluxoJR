@@ -145,8 +145,9 @@ export default async function TransacoesPage({ searchParams }: Props) {
   const transactions = await prisma.transaction.findMany({
     where,
     include: { account: true, category: true, supplier: true },
-    // Data mais recente primeiro; dentro do mesmo dia, entradas antes de saídas.
-    orderBy: [{ date: "desc" }, { type: "asc" }],
+    // Agrupado por conta (nome); dentro de cada conta, data mais recente
+    // primeiro e, no mesmo dia, entradas antes de saídas.
+    orderBy: [{ account: { name: "asc" } }, { date: "desc" }, { type: "asc" }],
     take: 500,
   });
 

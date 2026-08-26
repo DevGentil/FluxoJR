@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { Fragment, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -86,6 +86,18 @@ export function TransactionsTable({ transactions, accounts, categories, supplier
     });
   }
 
+  // Já vem ordenado por conta na consulta — agrupa visualmente as linhas
+  // adjacentes da mesma conta, com um cabeçalho por grupo.
+  const groups = useMemo(() => {
+    const result: { accountName: string; transactions: TransactionRow[] }[] = [];
+    for (const t of transactions) {
+      const last = result[result.length - 1];
+      if (last && last.accountName === t.accountName) last.transactions.push(t);
+      else result.push({ accountName: t.accountName, transactions: [t] });
+    }
+    return result;
+  }, [transactions]);
+
   return (
     <div className="space-y-3">
       {selected.size > 0 && (
@@ -125,7 +137,6 @@ export function TransactionsTable({ transactions, accounts, categories, supplier
             </TableHead>
             <TableHead>Data</TableHead>
             <TableHead>Descrição</TableHead>
-            <TableHead>Conta</TableHead>
             <TableHead>Categoria</TableHead>
             <TableHead>Fornecedor</TableHead>
             <TableHead>Origem</TableHead>
@@ -136,64 +147,72 @@ export function TransactionsTable({ transactions, accounts, categories, supplier
         <TableBody>
           {transactions.length === 0 && (
             <TableRow>
-              <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+              <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                 Nenhuma transação encontrada.
               </TableCell>
             </TableRow>
           )}
-          {transactions.map((t) => (
-            <TableRow key={t.id} data-state={selected.has(t.id) ? "selected" : undefined}>
-              <TableCell>
-                <Checkbox
-                  checked={selected.has(t.id)}
-                  onCheckedChange={(checked) => toggleOne(t.id, Boolean(checked))}
-                  aria-label={`Selecionar transação ${t.description}`}
-                />
-              </TableCell>
-              <TableCell>{formatDate(t.date)}</TableCell>
-              <TableCell className="max-w-64 truncate">{t.description}</TableCell>
-              <TableCell>{t.accountName}</TableCell>
-              <TableCell>{t.categoryName ?? "—"}</TableCell>
-              <TableCell>{t.supplierName ?? "—"}</TableCell>
-              <TableCell>
-                <div className="flex gap-1">
-                  <Badge variant="outline">
-                    {t.source === "MANUAL" ? "Manual" : t.source === "IMPORT" ? "Importado" : "Baixa"}
-                  </Badge>
-                  {t.transferCompanyId && <Badge variant="secondary">Transferência</Badge>}
-                </div>
-              </TableCell>
-              <TableCell
-                className={`text-right tabular-nums font-medium ${
-                  t.type === "INCOME" ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
-                }`}
-              >
-                {t.type === "INCOME" ? "+" : "-"}
-                {formatCurrency(t.amount)}
-              </TableCell>
-              <TableCell>
-                <div className="flex justify-end gap-1">
-                  <TransactionFormDialog
-                    accounts={accounts}
-                    categories={categories}
-                    suppliers={suppliers}
-                    otherCompanies={otherCompanies}
-                    transaction={{
-                      id: t.id,
-                      date: t.date,
-                      amount: t.amount,
-                      type: t.type,
-                      description: t.description,
-                      accountId: t.accountId,
-                      categoryId: t.categoryId,
-                      supplierId: t.supplierId,
-                      transferCompanyId: t.transferCompanyId,
-                    }}
-                  />
-                  <DeleteButton action={deleteTransaction.bind(null, t.id)} title="Excluir transação?" />
-                </div>
-              </TableCell>
-            </TableRow>
+          {groups.map((group) => (
+            <Fragment key={group.accountName}>
+              <TableRow className="bg-muted/40 hover:bg-muted/40">
+                <TableCell colSpan={8} className="font-semibold">
+                  {group.accountName}
+                </TableCell>
+              </TableRow>
+              {group.transactions.map((t) => (
+                <TableRow key={t.id} data-state={selected.has(t.id) ? "selected" : undefined}>
+                  <TableCell>
+                    <Checkbox
+                      checked={selected.has(t.id)}
+                      onCheckedChange={(checked) => toggleOne(t.id, Boolean(checked))}
+                      aria-label={`Selecionar transação ${t.description}`}
+                    />
+                  </TableCell>
+                  <TableCell>{formatDate(t.date)}</TableCell>
+                  <TableCell className="max-w-64 truncate">{t.description}</TableCell>
+                  <TableCell>{t.categoryName ?? "—"}</TableCell>
+                  <TableCell>{t.supplierName ?? "—"}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Badge variant="outline">
+                        {t.source === "MANUAL" ? "Manual" : t.source === "IMPORT" ? "Importado" : "Baixa"}
+                      </Badge>
+                      {t.transferCompanyId && <Badge variant="secondary">Transferência</Badge>}
+                    </div>
+                  </TableCell>
+                  <TableCell
+                    className={`text-right tabular-nums font-medium ${
+                      t.type === "INCOME" ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
+                    }`}
+                  >
+                    {t.type === "INCOME" ? "+" : "-"}
+                    {formatCurrency(t.amount)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-1">
+                      <TransactionFormDialog
+                        accounts={accounts}
+                        categories={categories}
+                        suppliers={suppliers}
+                        otherCompanies={otherCompanies}
+                        transaction={{
+                          id: t.id,
+                          date: t.date,
+                          amount: t.amount,
+                          type: t.type,
+                          description: t.description,
+                          accountId: t.accountId,
+                          categoryId: t.categoryId,
+                          supplierId: t.supplierId,
+                          transferCompanyId: t.transferCompanyId,
+                        }}
+                      />
+                      <DeleteButton action={deleteTransaction.bind(null, t.id)} title="Excluir transação?" />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </Fragment>
           ))}
         </TableBody>
       </Table>
