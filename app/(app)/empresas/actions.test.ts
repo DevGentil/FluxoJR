@@ -26,8 +26,12 @@ describe("gestão de grupos/empresas exige escopo consolidado", () => {
 
   it("recusa criar empresa em escopo de empresa única", async () => {
     await testPrisma.company.create({ data: { name: "Empresa" } });
+    const group = await testPrisma.group.create({ data: { name: "AmorSaude" } });
 
-    const result = await createCompany(undefined, formData({ name: "Nova Unidade", cnpj: "11.222.333/0001-44" }));
+    const result = await createCompany(
+      undefined,
+      formData({ name: "Nova Unidade", cnpj: "11.222.333/0001-44", groupId: group.id })
+    );
 
     expect(result?.error).toBeTruthy();
     await expect(testPrisma.company.count()).resolves.toBe(1);
@@ -60,6 +64,16 @@ describe("createCompany", () => {
     const result = await createCompany(undefined, formData({ name: "Nova Unidade", cnpj: "" }));
 
     expect(result?.error).toMatch(/cnpj/i);
+    await expect(testPrisma.company.count()).resolves.toBe(0);
+  });
+
+  it("recusa cadastrar empresa sem grupo", async () => {
+    const result = await createCompany(
+      undefined,
+      formData({ name: "Nova Unidade", cnpj: "11.222.333/0001-44", groupId: "__none__" })
+    );
+
+    expect(result?.error).toMatch(/grupo/i);
     await expect(testPrisma.company.count()).resolves.toBe(0);
   });
 });

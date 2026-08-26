@@ -57,11 +57,14 @@ const companySchema = z.object({
   groupId: z.string().optional(),
 });
 
-// Ao cadastrar uma empresa nova, o CNPJ passa a ser obrigatório — empresas
-// já existentes sem CNPJ continuam editáveis normalmente (updateCompany
-// usa o schema acima, sem essa exigência).
+// Ao cadastrar uma empresa nova, CNPJ e grupo passam a ser obrigatórios —
+// toda empresa nasce associada a um grupo/marca, mesmo que seja a única
+// unidade dele hoje, para já estar pronta caso a marca expanda. Empresas já
+// existentes sem CNPJ/grupo continuam editáveis normalmente (updateCompany
+// usa o schema acima, sem essas exigências).
 const createCompanySchema = companySchema.extend({
   cnpj: z.string().min(1, "Informe o CNPJ da empresa"),
+  groupId: z.string().min(1, "Selecione um grupo/marca"),
 });
 
 function stripNone(raw: Record<string, FormDataEntryValue>) {
