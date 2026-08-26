@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { prisma } from "@/lib/prisma";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { getAccountBalance } from "@/lib/cashflow";
@@ -35,6 +36,19 @@ async function ConsolidatedAccounts({ companyIds, scopeLabel }: { companyIds: st
   const totalBalance = balances.reduce((sum, b) => sum + b, 0);
   const companyCount = new Set(accounts.map((a) => a.companyId)).size;
 
+  // Agrupa por empresa (já vem ordenado por nome da empresa) — todo o bloco
+  // de uma unidade, depois o da próxima, com subtotal por empresa.
+  const groups: { companyName: string; accounts: { account: (typeof accounts)[number]; balance: number }[] }[] = [];
+  accounts.forEach((account, i) => {
+    const balance = balances[i];
+    const last = groups[groups.length - 1];
+    if (last && last.companyName === account.company.name) {
+      last.accounts.push({ account, balance });
+    } else {
+      groups.push({ companyName: account.company.name, accounts: [{ account, balance }] });
+    }
+  });
+
   return (
     <div className="space-y-6">
       <div>
@@ -55,7 +69,6 @@ async function ConsolidatedAccounts({ companyIds, scopeLabel }: { companyIds: st
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Empresa</TableHead>
                 <TableHead>Nome</TableHead>
                 <TableHead>Banco</TableHead>
                 <TableHead>Tipo</TableHead>
@@ -65,25 +78,44 @@ async function ConsolidatedAccounts({ companyIds, scopeLabel }: { companyIds: st
             <TableBody>
               {accounts.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                     Nenhuma conta cadastrada nesse escopo.
                   </TableCell>
                 </TableRow>
               )}
-              {accounts.map((account, i) => (
-                <TableRow key={account.id}>
-                  <TableCell className="font-medium">{account.company.name}</TableCell>
-                  <TableCell>{account.name}</TableCell>
-                  <TableCell>{account.bank || "—"}</TableCell>
-                  <TableCell>{account.type}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatCurrency(balances[i])}</TableCell>
-                </TableRow>
-              ))}
+              {groups.map((group) => {
+                const groupTotal = group.accounts.reduce((sum, a) => sum + a.balance, 0);
+                return (
+                  <Fragment key={group.companyName}>
+                    <TableRow className="bg-muted/40 hover:bg-muted/40">
+                      <TableCell colSpan={4} className="font-semibold">
+                        {group.companyName}
+                      </TableCell>
+                    </TableRow>
+                    {group.accounts.map(({ account, balance }) => (
+                      <TableRow key={account.id}>
+                        <TableCell>{account.name}</TableCell>
+                        <TableCell>{account.bank || "—"}</TableCell>
+                        <TableCell>{account.type}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatCurrency(balance)}</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-muted-foreground text-sm">
+                        Subtotal {group.companyName}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground text-sm">
+                        {formatCurrency(groupTotal)}
+                      </TableCell>
+                    </TableRow>
+                  </Fragment>
+                );
+              })}
             </TableBody>
             {accounts.length > 0 && (
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={4}>Total consolidado</TableCell>
+                  <TableCell colSpan={3}>Total consolidado</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(totalBalance)}</TableCell>
                 </TableRow>
               </TableFooter>
