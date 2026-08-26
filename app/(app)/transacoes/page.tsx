@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { TransactionFormDialog } from "./transaction-form-dialog";
 import { ImportDialog } from "./import-dialog";
 import { TransactionsTable } from "./transactions-table";
-import { OpenCompanyButton } from "./open-company-button";
+import { OpenCompanyButton } from "@/components/open-company-button";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 interface Props {
@@ -102,7 +102,7 @@ async function ConsolidatedTransactionsSummary({
                     {formatCurrency(s.expense)}
                   </TableCell>
                   <TableCell className="text-right">
-                    <OpenCompanyButton companyId={s.id} />
+                    <OpenCompanyButton companyId={s.id} href="/transacoes" label="Ver transações" />
                   </TableCell>
                 </TableRow>
               ))}
