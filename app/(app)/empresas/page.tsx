@@ -1,12 +1,162 @@
+import { Fragment } from "react";
 import { prisma } from "@/lib/prisma";
-import { getActiveScope, getScopeLabel } from "@/lib/scope";
+import { getActiveScope, getScopeLabel, resolveCompanyIds } from "@/lib/scope";
+import { formatDate } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { GroupFormDialog } from "./group-form-dialog";
 import { CompanyFormDialog } from "./company-form-dialog";
+import { DocumentFormDialog } from "./document-form-dialog";
 import { DeleteButton } from "@/components/delete-button";
 import { deleteGroup, deleteCompany } from "./actions";
+import { deleteDocument } from "./documents-actions";
+import { Download } from "lucide-react";
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function DocumentsSection({ scope }: { scope: Awaited<ReturnType<typeof getActiveScope>> }) {
+  if (scope.type === "company") {
+    const documents = await prisma.document.findMany({
+      where: { companyId: scope.companyId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Documentos</CardTitle>
+          <DocumentFormDialog />
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Arquivo</TableHead>
+                <TableHead>Descrição</TableHead>
+                <TableHead>Tamanho</TableHead>
+                <TableHead>Enviado em</TableHead>
+                <TableHead className="w-24" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {documents.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                    Nenhum documento enviado ainda.
+                  </TableCell>
+                </TableRow>
+              )}
+              {documents.map((doc) => (
+                <TableRow key={doc.id}>
+                  <TableCell className="font-medium">{doc.fileName}</TableCell>
+                  <TableCell className="max-w-80 truncate">{doc.description}</TableCell>
+                  <TableCell>{formatBytes(doc.size)}</TableCell>
+                  <TableCell>{formatDate(doc.createdAt)}</TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        nativeButton={false}
+                        render={<a href={`/api/documents/${doc.id}`} />}
+                      >
+                        <Download className="size-4" />
+                      </Button>
+                      <DeleteButton
+                        action={deleteDocument.bind(null, doc.id)}
+                        title={`Excluir "${doc.fileName}"?`}
+                      />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const companyIds = await resolveCompanyIds(scope);
+  const documents =
+    companyIds.length === 0
+      ? []
+      : await prisma.document.findMany({
+          where: { companyId: { in: companyIds } },
+          include: { company: true },
+          orderBy: [{ company: { name: "asc" } }, { createdAt: "desc" }],
+        });
+
+  const groups: { companyName: string; documents: typeof documents }[] = [];
+  for (const doc of documents) {
+    const last = groups[groups.length - 1];
+    if (last && last.companyName === doc.company.name) last.documents.push(doc);
+    else groups.push({ companyName: doc.company.name, documents: [doc] });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Documentos</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Arquivo</TableHead>
+              <TableHead>Descrição</TableHead>
+              <TableHead>Tamanho</TableHead>
+              <TableHead>Enviado em</TableHead>
+              <TableHead className="w-12" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {documents.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  Nenhum documento nesse escopo.
+                </TableCell>
+              </TableRow>
+            )}
+            {groups.map((group) => (
+              <Fragment key={group.companyName}>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableCell colSpan={5} className="font-semibold">
+                    {group.companyName}
+                  </TableCell>
+                </TableRow>
+                {group.documents.map((doc) => (
+                  <TableRow key={doc.id}>
+                    <TableCell className="font-medium">{doc.fileName}</TableCell>
+                    <TableCell className="max-w-80 truncate">{doc.description}</TableCell>
+                    <TableCell>{formatBytes(doc.size)}</TableCell>
+                    <TableCell>{formatDate(doc.createdAt)}</TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        nativeButton={false}
+                        render={<a href={`/api/documents/${doc.id}`} />}
+                      >
+                        <Download className="size-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </Fragment>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default async function EmpresasPage() {
   const scope = await getActiveScope();
@@ -161,6 +311,8 @@ export default async function EmpresasPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <DocumentsSection scope={scope} />
     </div>
   );
 }
