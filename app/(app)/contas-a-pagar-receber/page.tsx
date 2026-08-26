@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScheduledFormDialog } from "./scheduled-form-dialog";
 import { MarkPaidDialog } from "./mark-paid-dialog";
+import { ImportDialog } from "./import-dialog";
 import { DeleteButton } from "@/components/delete-button";
 import { deleteScheduledEntry } from "./actions";
 
@@ -233,11 +234,23 @@ export default async function ContasAPagarReceberPage() {
   }
   const companyId = scope.companyId;
 
+  const [accounts, categories, suppliers] = await Promise.all([
+    prisma.account.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
+    prisma.category.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
+    prisma.supplier.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
+  ]);
+  const importAccountOptions = accounts.map((a) => ({ id: a.id, name: a.name }));
+  const importCategoryOptions = categories.map((c) => ({ id: c.id, name: c.name }));
+  const importSupplierOptions = suppliers.map((s) => ({ id: s.id, name: s.name }));
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Contas a Pagar e a Receber</h1>
-        <p className="text-muted-foreground text-sm">Previsão de entradas e saídas futuras.</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-semibold">Contas a Pagar e a Receber</h1>
+          <p className="text-muted-foreground text-sm">Previsão de entradas e saídas futuras.</p>
+        </div>
+        <ImportDialog accounts={importAccountOptions} categories={importCategoryOptions} suppliers={importSupplierOptions} />
       </div>
 
       <Tabs defaultValue="payable">

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetDb, testPrisma } from "@/tests/helpers/db";
-import { createScheduledEntry, markAsPaid } from "./actions";
+import { createScheduledEntry, markAsPaid, importScheduledEntries } from "./actions";
 
 beforeEach(resetDb);
 
@@ -38,6 +38,51 @@ describe("createScheduledEntry", () => {
     const entries = await testPrisma.scheduledEntry.findMany();
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({ type: "PAYABLE", status: "PENDING", accountId: null });
+  });
+});
+
+describe("importScheduledEntries", () => {
+  it("importa em lote sem conta definida (fica para a baixa)", async () => {
+    await seedAccount();
+
+    const result = await importScheduledEntries({
+      fileName: "planilha.csv",
+      rows: [
+        { dueDate: "2026-09-10", amount: 680, type: "PAYABLE", description: "Manutenção equipamento" },
+        { dueDate: "2026-09-20", amount: 1250.5, type: "RECEIVABLE", description: "Reembolso convênio" },
+      ],
+    });
+
+    expect(result.imported).toBe(2);
+    const entries = await testPrisma.scheduledEntry.findMany({ orderBy: { dueDate: "asc" } });
+    expect(entries).toHaveLength(2);
+    expect(entries.every((e) => e.status === "PENDING" && e.accountId === null)).toBe(true);
+    expect(entries[0]).toMatchObject({ type: "PAYABLE", description: "Manutenção equipamento" });
+    expect(entries[1]).toMatchObject({ type: "RECEIVABLE", description: "Reembolso convênio" });
+  });
+
+  it("aceita uma conta de destino válida da mesma empresa", async () => {
+    const { account } = await seedAccount();
+
+    await importScheduledEntries({
+      fileName: "planilha.csv",
+      accountId: account.id,
+      rows: [{ dueDate: "2026-09-10", amount: 100, type: "PAYABLE", description: "Conta" }],
+    });
+
+    const entry = await testPrisma.scheduledEntry.findFirstOrThrow();
+    expect(entry.accountId).toBe(account.id);
+  });
+
+  it("rejeita quando a conta não pertence à empresa", async () => {
+    await seedAccount();
+    await expect(
+      importScheduledEntries({
+        fileName: "planilha.csv",
+        accountId: "conta-inexistente",
+        rows: [{ dueDate: "2026-09-10", amount: 100, type: "PAYABLE", description: "Conta" }],
+      })
+    ).rejects.toThrow();
   });
 });
 

@@ -92,6 +92,54 @@ export async function deleteScheduledEntry(id: string): Promise<ActionState> {
   });
 }
 
+const importRowSchema = z.object({
+  dueDate: z.string().min(1),
+  amount: z.number(),
+  type: z.enum(["PAYABLE", "RECEIVABLE"]),
+  description: z.string().min(1),
+});
+
+export async function importScheduledEntries(input: {
+  fileName: string;
+  accountId?: string;
+  categoryId?: string;
+  supplierId?: string;
+  rows: { dueDate: string; amount: number; type: "PAYABLE" | "RECEIVABLE"; description: string }[];
+}) {
+  await requireUser();
+
+  const parsedRows = z.array(importRowSchema).parse(input.rows);
+  if (parsedRows.length === 0) return { imported: 0 };
+
+  const companyId = await getActiveCompanyId();
+
+  if (input.accountId) {
+    const account = await prisma.account.findFirst({
+      where: { id: input.accountId, companyId },
+      select: { id: true },
+    });
+    if (!account) throw new Error("Conta inválida.");
+  }
+
+  await prisma.scheduledEntry.createMany({
+    data: parsedRows.map((row) => ({
+      type: row.type,
+      description: row.description,
+      amount: Math.abs(row.amount),
+      dueDate: new Date(row.dueDate),
+      companyId,
+      accountId: input.accountId || null,
+      categoryId: input.categoryId || null,
+      supplierId: input.supplierId || null,
+      status: "PENDING" as const,
+    })),
+  });
+
+  revalidatePath("/contas-a-pagar-receber");
+  revalidatePath("/dashboard");
+  return { imported: parsedRows.length };
+}
+
 export async function markAsPaid(id: string, accountId: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
