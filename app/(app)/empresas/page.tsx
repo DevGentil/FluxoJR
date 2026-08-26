@@ -42,13 +42,18 @@ export default async function EmpresasPage() {
   ]);
 
   const groupOptions = allGroups.map((g) => ({ id: g.id, name: g.name }));
+  // Uma unidade específica só pode ver os próprios dados — criar, editar ou
+  // excluir grupos/empresas exige a visão consolidada (grupo ou holding).
+  const canManage = scope.type !== "company";
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Empresas</h1>
         <p className="text-muted-foreground text-sm">
-          Cadastre as empresas/unidades da holding e, opcionalmente, agrupe-as por marca/franquia —{" "}
+          {canManage
+            ? "Cadastre as empresas/unidades da holding e, opcionalmente, agrupe-as por marca/franquia — "
+            : "Dados da empresa ativa. Selecione a visão consolidada (grupo ou holding) no menu à esquerda para gerenciar grupos/empresas — "}
           {scopeLabel}.
         </p>
       </div>
@@ -56,7 +61,7 @@ export default async function EmpresasPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Grupos / marcas</CardTitle>
-          <GroupFormDialog />
+          {canManage && <GroupFormDialog />}
         </CardHeader>
         <CardContent>
           <Table>
@@ -64,13 +69,13 @@ export default async function EmpresasPage() {
               <TableRow>
                 <TableHead>Nome</TableHead>
                 <TableHead>Empresas</TableHead>
-                <TableHead className="w-24" />
+                {canManage && <TableHead className="w-24" />}
               </TableRow>
             </TableHeader>
             <TableBody>
               {displayGroups.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={canManage ? 3 : 2} className="text-center text-muted-foreground py-8">
                     {scope.type === "company"
                       ? "Essa empresa não pertence a nenhum grupo."
                       : "Nenhum grupo cadastrado. Grupos são opcionais — só use se tiver várias empresas sob a mesma marca/franquia."}
@@ -81,16 +86,18 @@ export default async function EmpresasPage() {
                 <TableRow key={group.id}>
                   <TableCell className="font-medium">{group.name}</TableCell>
                   <TableCell>{group._count.companies}</TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-1">
-                      <GroupFormDialog group={group} />
-                      <DeleteButton
-                        action={deleteGroup.bind(null, group.id)}
-                        title={`Excluir grupo "${group.name}"?`}
-                        description="As empresas desse grupo não são excluídas, só ficam sem grupo."
-                      />
-                    </div>
-                  </TableCell>
+                  {canManage && (
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <GroupFormDialog group={group} />
+                        <DeleteButton
+                          action={deleteGroup.bind(null, group.id)}
+                          title={`Excluir grupo "${group.name}"?`}
+                          description="As empresas desse grupo não são excluídas, só ficam sem grupo."
+                        />
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -101,7 +108,7 @@ export default async function EmpresasPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Empresas</CardTitle>
-          <CompanyFormDialog groups={groupOptions} />
+          {canManage && <CompanyFormDialog groups={groupOptions} />}
         </CardHeader>
         <CardContent>
           <Table>
@@ -110,13 +117,13 @@ export default async function EmpresasPage() {
                 <TableHead>Nome</TableHead>
                 <TableHead>CNPJ</TableHead>
                 <TableHead>Grupo</TableHead>
-                <TableHead className="w-24" />
+                {canManage && <TableHead className="w-24" />}
               </TableRow>
             </TableHeader>
             <TableBody>
               {displayCompanies.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={canManage ? 4 : 3} className="text-center text-muted-foreground py-8">
                     Nenhuma empresa cadastrada ainda.
                   </TableCell>
                 </TableRow>
@@ -128,24 +135,26 @@ export default async function EmpresasPage() {
                   <TableCell>
                     {company.group ? <Badge variant="outline">{company.group.name}</Badge> : "—"}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-1">
-                      <CompanyFormDialog
-                        groups={groupOptions}
-                        company={{
-                          id: company.id,
-                          name: company.name,
-                          cnpj: company.cnpj,
-                          groupId: company.groupId,
-                        }}
-                      />
-                      <DeleteButton
-                        action={deleteCompany.bind(null, company.id)}
-                        title={`Excluir "${company.name}"?`}
-                        description="Isso apaga TODAS as contas, transações, categorias e lançamentos dessa empresa. Não pode ser desfeito."
-                      />
-                    </div>
-                  </TableCell>
+                  {canManage && (
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <CompanyFormDialog
+                          groups={groupOptions}
+                          company={{
+                            id: company.id,
+                            name: company.name,
+                            cnpj: company.cnpj,
+                            groupId: company.groupId,
+                          }}
+                        />
+                        <DeleteButton
+                          action={deleteCompany.bind(null, company.id)}
+                          title={`Excluir "${company.name}"?`}
+                          description="Isso apaga TODAS as contas, transações, categorias e lançamentos dessa empresa. Não pode ser desfeito."
+                        />
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

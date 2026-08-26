@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { requireConsolidatedScope } from "@/lib/scope";
 import { parseForm, runMutation, type ActionState } from "@/lib/actions-utils";
 
 const NONE = "__none__";
@@ -18,6 +19,7 @@ export async function createGroup(_prev: ActionState, formData: FormData): Promi
 
   return runMutation(async () => {
     await requireUser();
+    await requireConsolidatedScope();
     await prisma.group.create({ data: result.data });
     revalidatePath("/empresas");
     revalidatePath("/", "layout");
@@ -30,6 +32,7 @@ export async function updateGroup(id: string, _prev: ActionState, formData: Form
 
   return runMutation(async () => {
     await requireUser();
+    await requireConsolidatedScope();
     const { count } = await prisma.group.updateMany({ where: { id }, data: result.data });
     if (count === 0) throw new Error("Grupo não encontrado.");
     revalidatePath("/empresas");
@@ -40,6 +43,7 @@ export async function updateGroup(id: string, _prev: ActionState, formData: Form
 export async function deleteGroup(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
+    await requireConsolidatedScope();
     const { count } = await prisma.group.deleteMany({ where: { id } });
     if (count === 0) throw new Error("Grupo não encontrado.");
     revalidatePath("/empresas");
@@ -65,6 +69,7 @@ export async function createCompany(_prev: ActionState, formData: FormData): Pro
 
   return runMutation(async () => {
     await requireUser();
+    await requireConsolidatedScope();
     const { groupId, ...rest } = parsed.data;
     await prisma.company.create({ data: { ...rest, groupId: groupId || null } });
     revalidatePath("/empresas");
@@ -82,6 +87,7 @@ export async function updateCompany(
 
   return runMutation(async () => {
     await requireUser();
+    await requireConsolidatedScope();
     const { groupId, ...rest } = parsed.data;
     const { count } = await prisma.company.updateMany({
       where: { id },
@@ -96,6 +102,7 @@ export async function updateCompany(
 export async function deleteCompany(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
+    await requireConsolidatedScope();
     const remaining = await prisma.company.count();
     if (remaining <= 1) {
       throw new Error("Não é possível excluir a única empresa cadastrada.");

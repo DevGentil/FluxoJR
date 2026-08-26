@@ -72,6 +72,18 @@ export async function getActiveCompanyId(): Promise<string> {
   return scope.companyId;
 }
 
+/** Guard para as actions de gestão de Grupos/Empresas: só permite criar,
+ * editar ou excluir grupos/empresas em escopo consolidado (grupo ou
+ * holding) — uma unidade específica só pode ver os próprios dados. */
+export async function requireConsolidatedScope(): Promise<void> {
+  const scope = await getActiveScope();
+  if (scope.type === "company") {
+    throw new Error(
+      "Selecione a visão consolidada (grupo ou holding) no menu à esquerda para gerenciar empresas/grupos."
+    );
+  }
+}
+
 export async function getScopeLabel(scope: Scope): Promise<string> {
   if (scope.type === "all") return "Holding (todas as empresas)";
 
