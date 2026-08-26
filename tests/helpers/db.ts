@@ -9,6 +9,8 @@ export const testPrisma = prisma;
 /** Limpa todas as tabelas do domínio, respeitando a ordem de FKs. Roda antes
  * de cada teste de integração para garantir isolamento entre eles. */
 export async function resetDb() {
+  await testPrisma.cashClosingLine.deleteMany();
+  await testPrisma.cashClosing.deleteMany();
   await testPrisma.transaction.deleteMany();
   await testPrisma.scheduledEntry.deleteMany();
   await testPrisma.importBatch.deleteMany();
