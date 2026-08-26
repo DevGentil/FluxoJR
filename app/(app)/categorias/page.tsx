@@ -38,7 +38,11 @@ async function ConsolidatedCategories({ companyIds, scopeLabel }: { companyIds: 
     entry.companies.add(category.company.name);
     grouped.set(key, entry);
   }
-  const rows = Array.from(grouped.values()).sort((a, b) => a.name.localeCompare(b.name));
+  // Entradas primeiro, depois saídas; dentro de cada tipo, ordem alfabética.
+  const rows = Array.from(grouped.values()).sort((a, b) => {
+    if (a.type !== b.type) return a.type === "INCOME" ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
 
   return (
     <div className="space-y-6">
@@ -111,7 +115,7 @@ export default async function CategoriasPage() {
 
   const categories = await prisma.category.findMany({
     where: { companyId: scope.companyId },
-    orderBy: { name: "asc" },
+    orderBy: [{ type: "asc" }, { name: "asc" }],
   });
 
   return (
