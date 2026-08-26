@@ -1,13 +1,15 @@
 import { prisma } from "@/lib/prisma";
-import { getActiveScope, getAllCompanies } from "@/lib/scope";
-import { SelectCompanyNotice } from "@/components/select-company-notice";
+import { getActiveScope, getAllCompanies, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
+import { formatCurrency } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { TransactionFormDialog } from "./transaction-form-dialog";
 import { ImportDialog } from "./import-dialog";
 import { TransactionsTable } from "./transactions-table";
+import { OpenCompanyButton } from "./open-company-button";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 interface Props {
@@ -21,11 +23,103 @@ interface Props {
   }>;
 }
 
+async function ConsolidatedTransactionsSummary({
+  companyIds,
+  scopeLabel,
+}: {
+  companyIds: string[];
+  scopeLabel: string;
+}) {
+  const companies =
+    companyIds.length === 0
+      ? []
+      : await prisma.company.findMany({ where: { id: { in: companyIds } }, orderBy: { name: "asc" } });
+
+  const summaries = await Promise.all(
+    companies.map(async (company) => {
+      const [count, incomeAgg, expenseAgg] = await Promise.all([
+        prisma.transaction.count({ where: { companyId: company.id } }),
+        prisma.transaction.aggregate({
+          where: { companyId: company.id, type: "INCOME", transferCompanyId: null },
+          _sum: { amount: true },
+        }),
+        prisma.transaction.aggregate({
+          where: { companyId: company.id, type: "EXPENSE", transferCompanyId: null },
+          _sum: { amount: true },
+        }),
+      ]);
+      return {
+        id: company.id,
+        name: company.name,
+        count,
+        income: Number(incomeAgg._sum.amount ?? 0),
+        expense: Number(expenseAgg._sum.amount ?? 0),
+      };
+    })
+  );
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold">Transações</h1>
+        <p className="text-muted-foreground text-sm">
+          Resumo por empresa — {scopeLabel}. Selecione uma empresa específica no menu à esquerda (ou clique
+          em "Ver transações" abaixo) para lançar ou consultar o detalhe de cada transação.
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{summaries.length} empresa(s)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Empresa</TableHead>
+                <TableHead className="text-right">Lançamentos</TableHead>
+                <TableHead className="text-right">Entradas</TableHead>
+                <TableHead className="text-right">Saídas</TableHead>
+                <TableHead className="w-40" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {summaries.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                    Nenhuma empresa nesse escopo.
+                  </TableCell>
+                </TableRow>
+              )}
+              {summaries.map((s) => (
+                <TableRow key={s.id}>
+                  <TableCell className="font-medium">{s.name}</TableCell>
+                  <TableCell className="text-right tabular-nums">{s.count}</TableCell>
+                  <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+                    {formatCurrency(s.income)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-red-600 dark:text-red-400">
+                    {formatCurrency(s.expense)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <OpenCompanyButton companyId={s.id} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default async function TransacoesPage({ searchParams }: Props) {
   const params = await searchParams;
   const scope = await getActiveScope();
   if (scope.type !== "company") {
-    return <SelectCompanyNotice what="gerenciar transações" />;
+    const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
+    return <ConsolidatedTransactionsSummary companyIds={companyIds} scopeLabel={scopeLabel} />;
   }
   const companyId = scope.companyId;
 
