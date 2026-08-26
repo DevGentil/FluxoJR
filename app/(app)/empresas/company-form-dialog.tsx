@@ -61,8 +61,14 @@ export function CompanyFormDialog({ groups, company }: Props) {
             <Input id="name" name="name" required defaultValue={company?.name} placeholder="Ex: AS Laguna" />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="cnpj">CNPJ (opcional)</Label>
-            <Input id="cnpj" name="cnpj" defaultValue={company?.cnpj ?? ""} placeholder="00.000.000/0000-00" />
+            <Label htmlFor="cnpj">CNPJ</Label>
+            <Input
+              id="cnpj"
+              name="cnpj"
+              required={!company}
+              defaultValue={company?.cnpj ?? ""}
+              placeholder="00.000.000/0000-00"
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="groupId">Grupo/marca (opcional)</Label>

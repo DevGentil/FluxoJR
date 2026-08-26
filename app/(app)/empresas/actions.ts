@@ -57,6 +57,13 @@ const companySchema = z.object({
   groupId: z.string().optional(),
 });
 
+// Ao cadastrar uma empresa nova, o CNPJ passa a ser obrigatório — empresas
+// já existentes sem CNPJ continuam editáveis normalmente (updateCompany
+// usa o schema acima, sem essa exigência).
+const createCompanySchema = companySchema.extend({
+  cnpj: z.string().min(1, "Informe o CNPJ da empresa"),
+});
+
 function stripNone(raw: Record<string, FormDataEntryValue>) {
   const clean = { ...raw };
   if (clean.groupId === NONE) clean.groupId = "";
@@ -64,7 +71,7 @@ function stripNone(raw: Record<string, FormDataEntryValue>) {
 }
 
 export async function createCompany(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const parsed = companySchema.safeParse(stripNone(Object.fromEntries(formData)));
+  const parsed = createCompanySchema.safeParse(stripNone(Object.fromEntries(formData)));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message };
 
   return runMutation(async () => {
