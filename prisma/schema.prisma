@@ -33,6 +33,11 @@ enum ScheduledStatus {
   CANCELED
 }
 
+enum CashClosingLineType {
+  SANGRIA
+  PAGAMENTO
+}
+
 // Marca/franquia da holding, agrupando várias empresas/unidades (ex:
 // "AmorSaude" agrupa as franquias AS Laguna, AS Contagem, etc.).
 model Group {
@@ -63,6 +68,7 @@ model Company {
   scheduledEntries ScheduledEntry[]
   importBatches   ImportBatch[]
   documents       Document[]
+  cashClosings    CashClosing[]
 
   incomingTransfers Transaction[] @relation("TransactionTransfer")
 }
@@ -117,6 +123,7 @@ model Account {
 
   transactions     Transaction[]
   scheduledEntries ScheduledEntry[]
+  cashClosings     CashClosing[]
 }
 
 model Category {
@@ -168,6 +175,7 @@ model Transaction {
   importBatch   ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
 
   scheduledEntry ScheduledEntry?
+  cashClosing    CashClosing?
 
   @@index([companyId, date])
   @@index([accountId])
@@ -215,4 +223,43 @@ model ImportBatch {
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   transactions Transaction[]
+}
+
+// Fechamento de caixa de um dia: agrega as sangrias (retiradas de cada
+// caixa individual de atendente) e os pagamentos em dinheiro do dia,
+// confronta o valor calculado (sangrias - pagamentos) com a contagem
+// física, e gera uma única Transaction (soma das sangrias) para alimentar
+// o resto do sistema. Pagamentos ficam só documentados aqui, sem gerar
+// transação (o detalhe varia demais dia a dia).
+model CashClosing {
+  id          String   @id @default(cuid())
+  date        DateTime
+  countedCash Decimal  @db.Decimal(14, 2)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  transactionId String?      @unique
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  lines CashClosingLine[]
+
+  @@unique([companyId, date])
+}
+
+model CashClosingLine {
+  id     String              @id @default(cuid())
+  type   CashClosingLineType
+  label  String
+  amount Decimal             @db.Decimal(14, 2)
+  order  Int
+
+  cashClosingId String
+  cashClosing   CashClosing @relation(fields: [cashClosingId], references: [id], onDelete: Cascade)
 }
