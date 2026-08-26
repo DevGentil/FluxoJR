@@ -12,6 +12,7 @@ import {
   Building2,
   Truck,
   ScrollText,
+  Wallet,
 } from "lucide-react";
 import {
   SidebarMenu,
@@ -23,6 +24,7 @@ const links = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/transacoes", label: "Transações", icon: ArrowLeftRight },
   { href: "/contas-a-pagar-receber", label: "A Pagar/Receber", icon: CalendarClock },
+  { href: "/fechamento-caixa", label: "Fechamento de Caixa", icon: Wallet },
   { href: "/categorias", label: "Categorias", icon: Tags },
   { href: "/fornecedores", label: "Fornecedores", icon: Truck },
   { href: "/contas-bancarias", label: "Contas Bancárias", icon: Landmark },
