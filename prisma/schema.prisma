@@ -62,8 +62,27 @@ model Company {
   transactions    Transaction[]
   scheduledEntries ScheduledEntry[]
   importBatches   ImportBatch[]
+  documents       Document[]
 
   incomingTransfers Transaction[] @relation("TransactionTransfer")
+}
+
+// Arquivo qualquer (contrato, documento societário, etc.) anexado a uma
+// empresa. Conteúdo guardado direto no Postgres por simplicidade — sem
+// depender de um storage externo configurado.
+model Document {
+  id          String   @id @default(cuid())
+  fileName    String
+  mimeType    String
+  size        Int
+  description String
+  content     Bytes
+  createdAt   DateTime @default(now())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
 }
 
 // Fornecedor/cliente da empresa, para enriquecer transações e contas a
