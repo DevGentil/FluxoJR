@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { prisma } from "@/lib/prisma";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { formatCurrency } from "@/lib/format";
@@ -12,6 +13,15 @@ interface Props {
   searchParams: Promise<{ from?: string; to?: string }>;
 }
 
+interface ReportRow {
+  empresa: string;
+  categoria: string;
+  fornecedor: string;
+  tipo: "INCOME" | "EXPENSE";
+  centroCusto: string;
+  total: number;
+}
+
 function defaultRange() {
   const to = new Date();
   const from = new Date(to.getFullYear(), to.getMonth(), 1);
@@ -19,6 +29,106 @@ function defaultRange() {
     from: from.toISOString().slice(0, 10),
     to: to.toISOString().slice(0, 10),
   };
+}
+
+/** Agrupa as linhas por empresa (ordem alfabética) e ordena cada grupo por
+ * valor decrescente — mesmo padrão usado em Contas a Pagar/Receber. */
+function groupByCompany(rows: ReportRow[]) {
+  const byCompany = new Map<string, ReportRow[]>();
+  for (const row of rows) {
+    const list = byCompany.get(row.empresa) ?? [];
+    list.push(row);
+    byCompany.set(row.empresa, list);
+  }
+  return Array.from(byCompany.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([empresa, companyRows]) => ({
+      empresa,
+      rows: companyRows.slice().sort((a, b) => b.total - a.total),
+    }));
+}
+
+function CategorySection({
+  title,
+  colorClass,
+  rows,
+  showCompanyColumn,
+  totalLabel,
+  total,
+  emptyLabel,
+}: {
+  title: string;
+  colorClass: string;
+  rows: ReportRow[];
+  showCompanyColumn: boolean;
+  totalLabel: string;
+  total: number;
+  emptyLabel: string;
+}) {
+  const groups = showCompanyColumn ? groupByCompany(rows) : null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className={colorClass}>{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Categoria</TableHead>
+              <TableHead>Fornecedor</TableHead>
+              <TableHead>Centro de custo</TableHead>
+              <TableHead className="text-right">Total</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                  {emptyLabel}
+                </TableCell>
+              </TableRow>
+            )}
+            {groups
+              ? groups.map((group) => (
+                  <Fragment key={group.empresa}>
+                    <TableRow className="bg-muted/40 hover:bg-muted/40">
+                      <TableCell colSpan={4} className="font-semibold">
+                        {group.empresa}
+                      </TableCell>
+                    </TableRow>
+                    {group.rows.map((r, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="font-medium">{r.categoria}</TableCell>
+                        <TableCell>{r.fornecedor}</TableCell>
+                        <TableCell>{r.centroCusto}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatCurrency(r.total)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </Fragment>
+                ))
+              : rows.map((r, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-medium">{r.categoria}</TableCell>
+                    <TableCell>{r.fornecedor}</TableCell>
+                    <TableCell>{r.centroCusto}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatCurrency(r.total)}</TableCell>
+                  </TableRow>
+                ))}
+          </TableBody>
+          {rows.length > 0 && (
+            <TableFooter>
+              <TableRow>
+                <TableCell colSpan={3}>{totalLabel}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatCurrency(total)}</TableCell>
+              </TableRow>
+            </TableFooter>
+          )}
+        </Table>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default async function RelatoriosPage({ searchParams }: Props) {
@@ -40,17 +150,7 @@ export default async function RelatoriosPage({ searchParams }: Props) {
           include: { category: true, company: true, supplier: true },
         });
 
-  const grouped = new Map<
-    string,
-    {
-      empresa: string;
-      categoria: string;
-      fornecedor: string;
-      tipo: "INCOME" | "EXPENSE";
-      centroCusto: string;
-      total: number;
-    }
-  >();
+  const grouped = new Map<string, ReportRow>();
   for (const t of transactions) {
     const empresa = t.company.name;
     const categoria = t.category?.name ?? "Sem categoria";
@@ -75,12 +175,11 @@ export default async function RelatoriosPage({ searchParams }: Props) {
   const allRows = Array.from(grouped.values());
   const incomeRows = allRows.filter((r) => r.tipo === "INCOME").sort((a, b) => b.total - a.total);
   const expenseRows = allRows.filter((r) => r.tipo === "EXPENSE").sort((a, b) => b.total - a.total);
-  const rows = [...incomeRows, ...expenseRows];
   const totalIncome = incomeRows.reduce((s, r) => s + r.total, 0);
   const totalExpense = expenseRows.reduce((s, r) => s + r.total, 0);
   const result = totalIncome - totalExpense;
 
-  const csvRows = rows.map((r) => ({
+  const csvRows = [...incomeRows, ...expenseRows].map((r) => ({
     ...(showCompanyColumn ? { empresa: r.empresa } : {}),
     categoria: r.categoria,
     fornecedor: r.fornecedor,
@@ -145,95 +244,24 @@ export default async function RelatoriosPage({ searchParams }: Props) {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-emerald-600 dark:text-emerald-400">Entradas por categoria</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {showCompanyColumn && <TableHead>Empresa</TableHead>}
-                  <TableHead>Categoria</TableHead>
-                  <TableHead>Fornecedor</TableHead>
-                  <TableHead>Centro de custo</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {incomeRows.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={showCompanyColumn ? 5 : 4} className="text-center text-muted-foreground py-8">
-                      Nenhuma entrada no período selecionado.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {incomeRows.map((r, i) => (
-                  <TableRow key={i}>
-                    {showCompanyColumn && <TableCell>{r.empresa}</TableCell>}
-                    <TableCell className="font-medium">{r.categoria}</TableCell>
-                    <TableCell>{r.fornecedor}</TableCell>
-                    <TableCell>{r.centroCusto}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatCurrency(r.total)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-              {incomeRows.length > 0 && (
-                <TableFooter>
-                  <TableRow>
-                    <TableCell colSpan={showCompanyColumn ? 4 : 3}>Total de entradas</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatCurrency(totalIncome)}</TableCell>
-                  </TableRow>
-                </TableFooter>
-              )}
-            </Table>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-red-600 dark:text-red-400">Saídas por categoria</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {showCompanyColumn && <TableHead>Empresa</TableHead>}
-                  <TableHead>Categoria</TableHead>
-                  <TableHead>Fornecedor</TableHead>
-                  <TableHead>Centro de custo</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {expenseRows.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={showCompanyColumn ? 5 : 4} className="text-center text-muted-foreground py-8">
-                      Nenhuma saída no período selecionado.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {expenseRows.map((r, i) => (
-                  <TableRow key={i}>
-                    {showCompanyColumn && <TableCell>{r.empresa}</TableCell>}
-                    <TableCell className="font-medium">{r.categoria}</TableCell>
-                    <TableCell>{r.fornecedor}</TableCell>
-                    <TableCell>{r.centroCusto}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatCurrency(r.total)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-              {expenseRows.length > 0 && (
-                <TableFooter>
-                  <TableRow>
-                    <TableCell colSpan={showCompanyColumn ? 4 : 3}>Total de saídas</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatCurrency(totalExpense)}</TableCell>
-                  </TableRow>
-                </TableFooter>
-              )}
-            </Table>
-          </CardContent>
-        </Card>
+        <CategorySection
+          title="Entradas por categoria"
+          colorClass="text-emerald-600 dark:text-emerald-400"
+          rows={incomeRows}
+          showCompanyColumn={showCompanyColumn}
+          totalLabel="Total de entradas"
+          total={totalIncome}
+          emptyLabel="Nenhuma entrada no período selecionado."
+        />
+        <CategorySection
+          title="Saídas por categoria"
+          colorClass="text-red-600 dark:text-red-400"
+          rows={expenseRows}
+          showCompanyColumn={showCompanyColumn}
+          totalLabel="Total de saídas"
+          total={totalExpense}
+          emptyLabel="Nenhuma saída no período selecionado."
+        />
       </div>
     </div>
   );
