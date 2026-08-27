@@ -12,6 +12,7 @@ export interface DoctorExamRateInput {
 
 export interface DoctorInput {
   name: string;
+  specialty: string;
   document?: string;
   paymentMethod?: string;
   consultationRate: number;
@@ -22,6 +23,7 @@ export interface DoctorInput {
 
 function validate(input: DoctorInput): string | null {
   if (!input.name.trim()) return "Informe o nome do médico.";
+  if (!input.specialty.trim()) return "Informe a especialização do médico.";
   if (!Number.isFinite(input.consultationRate) || input.consultationRate < 0) {
     return "Informe um valor de consulta válido.";
   }
@@ -49,6 +51,7 @@ export async function createDoctor(input: DoctorInput): Promise<{ error?: string
       data: {
         companyId,
         name: input.name.trim(),
+        specialty: input.specialty.trim(),
         document: input.document?.trim() || null,
         paymentMethod: input.paymentMethod?.trim() || null,
         consultationRate: input.consultationRate,
@@ -84,6 +87,7 @@ export async function updateDoctor(id: string, input: DoctorInput): Promise<{ er
         where: { id },
         data: {
           name: input.name.trim(),
+          specialty: input.specialty.trim(),
           document: input.document?.trim() || null,
           paymentMethod: input.paymentMethod?.trim() || null,
           consultationRate: input.consultationRate,

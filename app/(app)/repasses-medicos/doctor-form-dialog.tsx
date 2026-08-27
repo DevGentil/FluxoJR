@@ -42,6 +42,7 @@ interface Props {
   doctor?: {
     id: string;
     name: string;
+    specialty: string;
     document: string | null;
     paymentMethod: string | null;
     consultationRate: number;
@@ -58,6 +59,7 @@ export function DoctorFormDialog({ examTypes, doctor }: Props) {
   const nextId = useRef(0);
 
   const [name, setName] = useState(doctor?.name ?? "");
+  const [specialty, setSpecialty] = useState(doctor?.specialty ?? "");
   const [document, setDocument] = useState(doctor?.document ?? "");
   const [paymentMethod, setPaymentMethod] = useState(doctor?.paymentMethod ?? "");
   const [consultationRate, setConsultationRate] = useState(
@@ -90,6 +92,7 @@ export function DoctorFormDialog({ examTypes, doctor }: Props) {
     setError(null);
     if (!doctor) {
       setName("");
+      setSpecialty("");
       setDocument("");
       setPaymentMethod("");
       setConsultationRate("");
@@ -103,6 +106,7 @@ export function DoctorFormDialog({ examTypes, doctor }: Props) {
     setError(null);
     const payload: DoctorInput = {
       name,
+      specialty,
       document: document || undefined,
       paymentMethod: paymentMethod || undefined,
       consultationRate: Number(consultationRate),
@@ -152,9 +156,21 @@ export function DoctorFormDialog({ examTypes, doctor }: Props) {
         </DialogHeader>
 
         <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
-          <div className="space-y-2">
-            <Label htmlFor="name">Nome</Label>
-            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Nome</Label>
+              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="specialty">Especialização</Label>
+              <Input
+                id="specialty"
+                value={specialty}
+                onChange={(e) => setSpecialty(e.target.value)}
+                placeholder="Ex: Pediatra"
+                required
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

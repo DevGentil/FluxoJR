@@ -11,6 +11,7 @@ async function seedExamType(companyId: string, name = "Ultrassom") {
 function baseInput(examTypeId: string, overrides: Partial<DoctorInput> = {}): DoctorInput {
   return {
     name: "Dr. João Silva",
+    specialty: "Clínico Geral",
     document: "CRM 12345",
     paymentMethod: "PIX",
     consultationRate: 80,
@@ -41,6 +42,16 @@ describe("createDoctor", () => {
     const examType = await seedExamType(company.id);
 
     const result = await createDoctor(baseInput(examType.id, { name: "" }));
+
+    expect(result.error).toBeTruthy();
+    await expect(testPrisma.doctor.count()).resolves.toBe(0);
+  });
+
+  it("recusa sem especialização", async () => {
+    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
+    const examType = await seedExamType(company.id);
+
+    const result = await createDoctor(baseInput(examType.id, { specialty: "" }));
 
     expect(result.error).toBeTruthy();
     await expect(testPrisma.doctor.count()).resolves.toBe(0);

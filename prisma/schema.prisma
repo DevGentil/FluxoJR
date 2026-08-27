@@ -295,6 +295,7 @@ model CashClosingLine {
 model Doctor {
   id               String   @id @default(cuid())
   name             String
+  specialty        String   @default("Geral") // ex: Pediatra, Clínico Geral
   document         String? // CRM
   paymentMethod    String?
   consultationRate Decimal  @db.Decimal(14, 2)
