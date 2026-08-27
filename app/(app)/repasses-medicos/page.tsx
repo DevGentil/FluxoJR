@@ -17,6 +17,34 @@ function formatCompetencia(value: Date) {
   return value.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
 }
 
+function RankingBar({
+  label,
+  value,
+  percent,
+  formatValue,
+  colorClass,
+}: {
+  label: string;
+  value: number;
+  percent: number;
+  formatValue: (v: number) => string;
+  colorClass: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium">{label}</span>
+        <span className="tabular-nums text-muted-foreground">
+          {formatValue(value)} · {percent.toFixed(1)}%
+        </span>
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-muted">
+        <div className={`h-1.5 rounded-full ${colorClass}`} style={{ width: `${Math.min(percent, 100)}%` }} />
+      </div>
+    </div>
+  );
+}
+
 async function ConsolidatedSummary({ companyIds, scopeLabel }: { companyIds: string[]; scopeLabel: string }) {
   const companies =
     companyIds.length === 0
@@ -32,14 +60,37 @@ async function ConsolidatedSummary({ companyIds, scopeLabel }: { companyIds: str
           include: { examCounts: true },
         }),
       ]);
-      const totalValue = reports.reduce((sum, r) => {
-        const consultationValue = r.consultationCount * Number(r.consultationRate);
-        const examValue = r.examCounts.reduce((s, e) => s + e.count * Number(e.rate), 0);
-        return sum + consultationValue + examValue;
-      }, 0);
-      return { id: company.id, name: company.name, doctorCount, reportCount: reports.length, totalValue };
+      let totalValue = 0;
+      let consultationCount = 0;
+      let examCount = 0;
+      for (const r of reports) {
+        consultationCount += r.consultationCount;
+        totalValue += r.consultationCount * Number(r.consultationRate);
+        for (const e of r.examCounts) {
+          examCount += e.count;
+          totalValue += e.count * Number(e.rate);
+        }
+      }
+      return {
+        id: company.id,
+        name: company.name,
+        doctorCount,
+        reportCount: reports.length,
+        totalValue,
+        consultationCount,
+        examCount,
+      };
     })
   );
+
+  const grandTotalValue = summaries.reduce((s, c) => s + c.totalValue, 0);
+  const grandTotalConsultas = summaries.reduce((s, c) => s + c.consultationCount, 0);
+  const grandTotalExames = summaries.reduce((s, c) => s + c.examCount, 0);
+  const hasData = grandTotalValue > 0 || grandTotalConsultas > 0 || grandTotalExames > 0;
+
+  const byValue = [...summaries].sort((a, b) => b.totalValue - a.totalValue);
+  const byConsultas = [...summaries].sort((a, b) => b.consultationCount - a.consultationCount);
+  const byExames = [...summaries].sort((a, b) => b.examCount - a.examCount);
 
   return (
     <div className="space-y-6">
@@ -61,7 +112,8 @@ async function ConsolidatedSummary({ companyIds, scopeLabel }: { companyIds: str
               <TableRow>
                 <TableHead>Empresa</TableHead>
                 <TableHead className="text-right">Médicos ativos</TableHead>
-                <TableHead className="text-right">Repasses lançados</TableHead>
+                <TableHead className="text-right">Consultas</TableHead>
+                <TableHead className="text-right">Exames</TableHead>
                 <TableHead className="text-right">Valor total</TableHead>
                 <TableHead className="w-32" />
               </TableRow>
@@ -69,7 +121,7 @@ async function ConsolidatedSummary({ companyIds, scopeLabel }: { companyIds: str
             <TableBody>
               {summaries.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                     Nenhuma empresa nesse escopo.
                   </TableCell>
                 </TableRow>
@@ -78,7 +130,8 @@ async function ConsolidatedSummary({ companyIds, scopeLabel }: { companyIds: str
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{s.name}</TableCell>
                   <TableCell className="text-right tabular-nums">{s.doctorCount}</TableCell>
-                  <TableCell className="text-right tabular-nums">{s.reportCount}</TableCell>
+                  <TableCell className="text-right tabular-nums">{s.consultationCount}</TableCell>
+                  <TableCell className="text-right tabular-nums">{s.examCount}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(s.totalValue)}</TableCell>
                   <TableCell>
                     <div className="flex justify-end">
@@ -89,6 +142,76 @@ async function ConsolidatedSummary({ companyIds, scopeLabel }: { companyIds: str
               ))}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Métricas comparativas por empresa</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {!hasData && (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              Sem repasses lançados ainda nesse escopo para comparar.
+            </p>
+          )}
+          {hasData && (
+            <>
+              <div>
+                <p className="text-sm font-medium mb-3">Valor total de repasses</p>
+                <div className="space-y-3">
+                  {byValue
+                    .filter((c) => c.totalValue > 0)
+                    .map((c) => (
+                      <RankingBar
+                        key={c.id}
+                        label={c.name}
+                        value={c.totalValue}
+                        percent={grandTotalValue > 0 ? (c.totalValue / grandTotalValue) * 100 : 0}
+                        formatValue={formatCurrency}
+                        colorClass="bg-emerald-500"
+                      />
+                    ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium mb-3">Consultas realizadas</p>
+                <div className="space-y-3">
+                  {byConsultas
+                    .filter((c) => c.consultationCount > 0)
+                    .map((c) => (
+                      <RankingBar
+                        key={c.id}
+                        label={c.name}
+                        value={c.consultationCount}
+                        percent={grandTotalConsultas > 0 ? (c.consultationCount / grandTotalConsultas) * 100 : 0}
+                        formatValue={(v) => `${v} consulta(s)`}
+                        colorClass="bg-sky-500"
+                      />
+                    ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium mb-3">Exames vendidos</p>
+                <div className="space-y-3">
+                  {byExames
+                    .filter((c) => c.examCount > 0)
+                    .map((c) => (
+                      <RankingBar
+                        key={c.id}
+                        label={c.name}
+                        value={c.examCount}
+                        percent={grandTotalExames > 0 ? (c.examCount / grandTotalExames) * 100 : 0}
+                        formatValue={(v) => `${v} exame(s)`}
+                        colorClass="bg-amber-500"
+                      />
+                    ))}
+                </div>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -352,25 +475,16 @@ export default async function RepassesMedicosPage() {
               </p>
             )}
             <div className="space-y-3">
-              {doctorRanking.map((d) => {
-                const percent = grandTotal > 0 ? (d.total / grandTotal) * 100 : 0;
-                return (
-                  <div key={d.name} className="space-y-1">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="font-medium">{d.name}</span>
-                      <span className="tabular-nums text-muted-foreground">
-                        {formatCurrency(d.total)} · {percent.toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="h-1.5 w-full rounded-full bg-muted">
-                      <div
-                        className="h-1.5 rounded-full bg-emerald-500"
-                        style={{ width: `${Math.min(percent, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+              {doctorRanking.map((d) => (
+                <RankingBar
+                  key={d.name}
+                  label={d.name}
+                  value={d.total}
+                  percent={grandTotal > 0 ? (d.total / grandTotal) * 100 : 0}
+                  formatValue={formatCurrency}
+                  colorClass="bg-emerald-500"
+                />
+              ))}
             </div>
           </div>
 
@@ -378,34 +492,20 @@ export default async function RepassesMedicosPage() {
             <div>
               <p className="text-sm font-medium mb-3">Consultas vs. exames (% do valor total)</p>
               <div className="space-y-3">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-sm">
-                    <span>Consultas</span>
-                    <span className="tabular-nums text-muted-foreground">
-                      {formatCurrency(totalConsultas)} · {((totalConsultas / grandTotal) * 100).toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="h-1.5 w-full rounded-full bg-muted">
-                    <div
-                      className="h-1.5 rounded-full bg-sky-500"
-                      style={{ width: `${(totalConsultas / grandTotal) * 100}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-sm">
-                    <span>Exames</span>
-                    <span className="tabular-nums text-muted-foreground">
-                      {formatCurrency(totalExames)} · {((totalExames / grandTotal) * 100).toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="h-1.5 w-full rounded-full bg-muted">
-                    <div
-                      className="h-1.5 rounded-full bg-amber-500"
-                      style={{ width: `${(totalExames / grandTotal) * 100}%` }}
-                    />
-                  </div>
-                </div>
+                <RankingBar
+                  label="Consultas"
+                  value={totalConsultas}
+                  percent={(totalConsultas / grandTotal) * 100}
+                  formatValue={formatCurrency}
+                  colorClass="bg-sky-500"
+                />
+                <RankingBar
+                  label="Exames"
+                  value={totalExames}
+                  percent={(totalExames / grandTotal) * 100}
+                  formatValue={formatCurrency}
+                  colorClass="bg-amber-500"
+                />
               </div>
             </div>
           )}
