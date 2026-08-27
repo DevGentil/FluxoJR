@@ -69,6 +69,7 @@ model Company {
   importBatches   ImportBatch[]
   documents       Document[]
   cashClosings    CashClosing[]
+  dreReports      DreReport[]
 
   incomingTransfers Transaction[] @relation("TransactionTransfer")
 }
@@ -88,6 +89,26 @@ model Document {
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
+}
+
+// DRE realizado (fechado pelo contador/financeiro, ex: em Excel ou PDF) de
+// um mês específico, guardado como referência ao lado do DRE que o sistema
+// calcula automaticamente a partir das transações lançadas.
+model DreReport {
+  id          String   @id @default(cuid())
+  competencia DateTime // primeiro dia do mês de referência
+  fileName    String
+  mimeType    String
+  size        Int
+  notes       String?
+  content     Bytes
+  createdAt   DateTime @default(now())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, competencia])
   @@index([companyId])
 }
 
