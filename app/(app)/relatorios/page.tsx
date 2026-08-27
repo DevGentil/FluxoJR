@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
+import { DateRangePresets } from "@/components/date-range-presets";
 import { ExportCsvButton } from "./export-csv-button";
 
 interface Props {
@@ -23,13 +24,26 @@ interface ReportRow {
   total: number;
 }
 
+function toISODate(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
 function defaultRange() {
   const to = new Date();
   const from = new Date(to.getFullYear(), to.getMonth(), 1);
-  return {
-    from: from.toISOString().slice(0, 10),
-    to: to.toISOString().slice(0, 10),
-  };
+  return { from: toISODate(from), to: toISODate(to) };
+}
+
+function presetRange(kind: "today" | "week" | "month") {
+  const to = new Date();
+  const from = new Date(to);
+  if (kind === "week") {
+    const day = from.getDay();
+    from.setDate(from.getDate() - (day === 0 ? 6 : day - 1));
+  } else if (kind === "month") {
+    from.setDate(1);
+  }
+  return { from: toISODate(from), to: toISODate(to) };
 }
 
 function resultColor(value: number) {
@@ -203,6 +217,11 @@ export default async function RelatoriosPage({ searchParams }: Props) {
   const scope = await getActiveScope();
   const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
   const isConsolidated = scope.type !== "company";
+  const presets = [
+    { label: "Hoje", ...presetRange("today") },
+    { label: "Esta semana", ...presetRange("week") },
+    { label: "Este mês", ...presetRange("month") },
+  ];
 
   const transactions =
     companyIds.length === 0
@@ -246,27 +265,16 @@ export default async function RelatoriosPage({ searchParams }: Props) {
   const totalExpense = expenseRows.reduce((s, r) => s + r.total, 0);
   const result = totalIncome - totalExpense;
 
-  const csvHeaders = isConsolidated
-    ? ["Empresa", "Entradas", "Saídas", "Resultado"]
-    : ["Categoria", "Fornecedor", "Tipo", "Centro de Custo", "Total"];
-  const csvRows: (string | number)[][] = isConsolidated
-    ? (() => {
-        const byCompany = new Map<string, { name: string; income: number; expense: number }>();
-        for (const r of allRows) {
-          const c = byCompany.get(r.companyId) ?? { name: r.empresa, income: 0, expense: 0 };
-          if (r.tipo === "INCOME") c.income += r.total;
-          else c.expense += r.total;
-          byCompany.set(r.companyId, c);
-        }
-        return Array.from(byCompany.values()).map((c) => [c.name, c.income, c.expense, c.income - c.expense]);
-      })()
-    : [...incomeRows, ...expenseRows].map((r) => [
-        r.categoria,
-        r.fornecedor,
-        r.tipo === "INCOME" ? "Entrada" : "Saída",
-        r.centroCusto,
-        r.total,
-      ]);
+  // Exportação CSV só faz sentido no DRE de uma empresa específica — o
+  // comparativo consolidado é pra visualizar na tela, não pra planilha.
+  const csvHeaders = ["Categoria", "Fornecedor", "Tipo", "Centro de Custo", "Total"];
+  const csvRows: (string | number)[][] = [...incomeRows, ...expenseRows].map((r) => [
+    r.categoria,
+    r.fornecedor,
+    r.tipo === "INCOME" ? "Entrada" : "Saída",
+    r.centroCusto,
+    r.total,
+  ]);
 
   return (
     <div className="space-y-6">
@@ -279,15 +287,18 @@ export default async function RelatoriosPage({ searchParams }: Props) {
               : `DRE simplificado por categoria e centro de custo — ${scopeLabel}.`}
           </p>
         </div>
-        <ExportCsvButton
-          headers={csvHeaders}
-          rows={csvRows}
-          fileName={`dre-${range.from}-a-${range.to}.csv`}
-        />
+        {!isConsolidated && (
+          <ExportCsvButton
+            headers={csvHeaders}
+            rows={csvRows}
+            fileName={`dre-${range.from}-a-${range.to}.csv`}
+          />
+        )}
       </div>
 
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className="pt-6 space-y-3">
+          <DateRangePresets basePath="/relatorios" presets={presets} />
           <form className="flex flex-wrap items-end gap-3" method="GET">
             <div className="space-y-1">
               <Label htmlFor="from">De</Label>

@@ -1,5 +1,4 @@
 import { Fragment } from "react";
-import Link from "next/link";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { getPeriodBalanceReport, type PeriodBalanceReport } from "@/lib/balance-report";
 import { formatCurrency } from "@/lib/format";
@@ -9,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
+import { DateRangePresets } from "@/components/date-range-presets";
 
 interface Props {
   searchParams: Promise<{ from?: string; to?: string }>;
@@ -169,19 +169,7 @@ export default async function BalancoPage({ searchParams }: Props) {
 
       <Card>
         <CardContent className="pt-6 space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {presets.map((p) => (
-              <Button
-                key={p.label}
-                size="sm"
-                variant="outline"
-                nativeButton={false}
-                render={<Link href={`/balanco?from=${p.from}&to=${p.to}`} />}
-              >
-                {p.label}
-              </Button>
-            ))}
-          </div>
+          <DateRangePresets basePath="/balanco" presets={presets} />
           <form className="flex flex-wrap items-end gap-3" method="GET">
             <div className="space-y-1">
               <Label htmlFor="from">De</Label>
