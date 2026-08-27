@@ -3,26 +3,20 @@
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 
-interface Row {
-  empresa?: string;
-  categoria: string;
-  fornecedor: string;
-  tipo: string;
-  centroCusto: string;
-  total: number;
+interface Props {
+  headers: string[];
+  rows: (string | number)[][];
+  fileName: string;
 }
 
-export function ExportCsvButton({ rows, fileName }: { rows: Row[]; fileName: string }) {
+function csvCell(value: string | number) {
+  return typeof value === "number" ? value.toFixed(2).replace(".", ",") : value;
+}
+
+export function ExportCsvButton({ headers, rows, fileName }: Props) {
   function handleExport() {
-    const showCompany = rows.some((r) => r.empresa !== undefined);
-    const header = (showCompany ? "Empresa;" : "") + "Categoria;Fornecedor;Tipo;Centro de Custo;Total\n";
-    const body = rows
-      .map((r) => {
-        const empresaCol = showCompany ? `${r.empresa ?? ""};` : "";
-        return `${empresaCol}${r.categoria};${r.fornecedor};${r.tipo};${r.centroCusto};${r.total.toFixed(2).replace(".", ",")}`;
-      })
-      .join("\n");
-    const blob = new Blob([header + body], { type: "text/csv;charset=utf-8;" });
+    const body = rows.map((row) => row.map(csvCell).join(";")).join("\n");
+    const blob = new Blob([`${headers.join(";")}\n${body}`], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
