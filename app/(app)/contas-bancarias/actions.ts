@@ -9,7 +9,6 @@ import { parseForm, runMutation, type ActionState } from "@/lib/actions-utils";
 
 const accountSchema = z.object({
   name: z.string().min(1, "Informe o nome da conta"),
-  bank: z.string().optional(),
   type: z.string().min(1),
   initialBalance: z.coerce.number(),
 });

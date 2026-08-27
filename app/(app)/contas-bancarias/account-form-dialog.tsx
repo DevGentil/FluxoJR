@@ -22,7 +22,6 @@ interface Props {
   account?: {
     id: string;
     name: string;
-    bank: string | null;
     type: string;
     initialBalance: number;
   };
@@ -51,19 +50,15 @@ export function AccountFormDialog({ account }: Props) {
       )}
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{account ? "Editar conta" : "Nova conta bancária"}</DialogTitle>
+          <DialogTitle>{account ? "Editar conta" : "Nova conta"}</DialogTitle>
           <DialogDescription>
-            Cadastre a conta corrente, poupança ou caixa da empresa.
+            Cadastre a conta corrente, poupança, caixa físico ou qualquer outra conta da empresa.
           </DialogDescription>
         </DialogHeader>
         <form action={formAction} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Nome</Label>
             <Input id="name" name="name" required defaultValue={account?.name} placeholder="Conta Corrente Principal" />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="bank">Banco</Label>
-            <Input id="bank" name="bank" defaultValue={account?.bank ?? ""} placeholder="Ex: Itaú" />
           </div>
           <div className="space-y-2">
             <Label htmlFor="type">Tipo</Label>

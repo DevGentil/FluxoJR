@@ -70,7 +70,6 @@ async function ConsolidatedAccounts({ companyIds, scopeLabel }: { companyIds: st
             <TableHeader>
               <TableRow>
                 <TableHead>Nome</TableHead>
-                <TableHead>Banco</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead className="text-right">Saldo atual</TableHead>
               </TableRow>
@@ -78,7 +77,7 @@ async function ConsolidatedAccounts({ companyIds, scopeLabel }: { companyIds: st
             <TableBody>
               {accounts.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
                     Nenhuma conta cadastrada nesse escopo.
                   </TableCell>
                 </TableRow>
@@ -88,20 +87,19 @@ async function ConsolidatedAccounts({ companyIds, scopeLabel }: { companyIds: st
                 return (
                   <Fragment key={group.companyName}>
                     <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableCell colSpan={4} className="font-semibold">
+                      <TableCell colSpan={3} className="font-semibold">
                         {group.companyName}
                       </TableCell>
                     </TableRow>
                     {group.accounts.map(({ account, balance }) => (
                       <TableRow key={account.id}>
                         <TableCell>{account.name}</TableCell>
-                        <TableCell>{account.bank || "—"}</TableCell>
                         <TableCell>{account.type}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatCurrency(balance)}</TableCell>
                       </TableRow>
                     ))}
                     <TableRow>
-                      <TableCell colSpan={3} className="text-muted-foreground text-sm">
+                      <TableCell colSpan={2} className="text-muted-foreground text-sm">
                         Subtotal {group.companyName}
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground text-sm">
@@ -115,7 +113,7 @@ async function ConsolidatedAccounts({ companyIds, scopeLabel }: { companyIds: st
             {accounts.length > 0 && (
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={3}>Total consolidado</TableCell>
+                  <TableCell colSpan={2}>Total consolidado</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(totalBalance)}</TableCell>
                 </TableRow>
               </TableFooter>
@@ -160,7 +158,6 @@ export default async function ContasBancariasPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Nome</TableHead>
-                <TableHead>Banco</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead className="text-right">Saldo atual</TableHead>
                 <TableHead className="w-24" />
@@ -169,7 +166,7 @@ export default async function ContasBancariasPage() {
             <TableBody>
               {accounts.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                     Nenhuma conta cadastrada ainda.
                   </TableCell>
                 </TableRow>
@@ -177,7 +174,6 @@ export default async function ContasBancariasPage() {
               {accounts.map((account, i) => (
                 <TableRow key={account.id}>
                   <TableCell className="font-medium">{account.name}</TableCell>
-                  <TableCell>{account.bank || "—"}</TableCell>
                   <TableCell>{account.type}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatCurrency(balances[i])}

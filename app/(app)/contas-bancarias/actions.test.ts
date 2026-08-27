@@ -14,13 +14,13 @@ describe("createAccount", () => {
   it("cria a conta vinculada à empresa padrão", async () => {
     const result = await createAccount(
       undefined,
-      formData({ name: "Conta Corrente", bank: "Itaú", type: "Conta Corrente", initialBalance: "1000" })
+      formData({ name: "Conta Corrente", type: "Conta Corrente", initialBalance: "1000" })
     );
 
     expect(result).toBeUndefined();
     const accounts = await testPrisma.account.findMany();
     expect(accounts).toHaveLength(1);
-    expect(accounts[0]).toMatchObject({ name: "Conta Corrente", bank: "Itaú" });
+    expect(accounts[0]).toMatchObject({ name: "Conta Corrente", type: "Conta Corrente" });
     expect(Number(accounts[0].initialBalance)).toBe(1000);
   });
 
