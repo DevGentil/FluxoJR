@@ -35,9 +35,9 @@ export function ExamTypeFormDialog({ examType }: Props) {
           <Pencil className="size-4" />
         </DialogTrigger>
       ) : (
-        <DialogTrigger render={<Button variant="outline" size="sm" />}>
-          <Plus className="size-4" />
-          Novo tipo de exame
+        <DialogTrigger render={<Button />}>
+          <Plus />
+          Novo exame
         </DialogTrigger>
       )}
       <DialogContent>
