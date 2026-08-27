@@ -10,6 +10,7 @@ import { DoctorFormDialog } from "./doctor-form-dialog";
 import { ExamTypeFormDialog } from "./exam-type-form-dialog";
 import { ReportFormDialog } from "./report-form-dialog";
 import { ReportsTable } from "./reports-table";
+import { MetricsTable } from "./metrics-table";
 import { deleteDoctor, type DoctorPaymentModel } from "./doctors-actions";
 import { deleteExamType } from "./exam-types-actions";
 
@@ -18,10 +19,6 @@ const PAYMENT_MODEL_LABELS: Record<DoctorPaymentModel, string> = {
   CONSULTATION_AND_EXAM: "Consulta + exame",
   HOURLY: "Plantão (por hora)",
 };
-
-function formatCompetencia(value: Date) {
-  return value.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
-}
 
 function RankingBar({
   label,
@@ -289,82 +286,6 @@ export default async function RepassesMedicosPage() {
     };
   });
 
-  const byDoctor = new Map<
-    string,
-    {
-      name: string;
-      total: number;
-      consultas: number;
-      exames: number;
-      valorConsultas: number;
-      valorExames: number;
-      valorPlantao: number;
-    }
-  >();
-  let totalConsultas = 0;
-  let totalExames = 0;
-  let totalConsultasQtd = 0;
-  let totalExamesQtd = 0;
-  for (const r of reportsWithValues) {
-    const entry =
-      byDoctor.get(r.doctorId) ??
-      { name: r.doctorName, total: 0, consultas: 0, exames: 0, valorConsultas: 0, valorExames: 0, valorPlantao: 0 };
-    entry.total += r.totalValue;
-    entry.consultas += r.consultationCount;
-    entry.exames += r.examCount;
-    entry.valorConsultas += r.consultationValue;
-    entry.valorExames += r.examValue;
-    entry.valorPlantao += r.hourlyValue;
-    byDoctor.set(r.doctorId, entry);
-    totalConsultas += r.consultationValue;
-    totalExames += r.examValue;
-    totalConsultasQtd += r.consultationCount;
-    totalExamesQtd += r.examCount;
-  }
-  const doctorRanking = Array.from(byDoctor.values()).sort((a, b) => b.total - a.total);
-  const grandTotal = totalConsultas + totalExames;
-  const grandTotalQtd = totalConsultasQtd + totalExamesQtd;
-
-  // Rendimento/valor por mês (unidade) — mesma lógica de agrupamento por
-  // competência usada em ReportsTable, só que somando todos os médicos.
-  const byMonth = new Map<
-    string,
-    {
-      key: string;
-      competencia: Date;
-      consultas: number;
-      exames: number;
-      valorConsultas: number;
-      valorExames: number;
-      valorPlantao: number;
-    }
-  >();
-  for (const r of reportsWithValues) {
-    const key = r.competencia.toISOString().slice(0, 7);
-    const entry =
-      byMonth.get(key) ??
-      { key, competencia: r.competencia, consultas: 0, exames: 0, valorConsultas: 0, valorExames: 0, valorPlantao: 0 };
-    entry.consultas += r.consultationCount;
-    entry.exames += r.examCount;
-    entry.valorConsultas += r.consultationValue;
-    entry.valorExames += r.examValue;
-    entry.valorPlantao += r.hourlyValue;
-    byMonth.set(key, entry);
-  }
-  const monthMetrics = Array.from(byMonth.values()).sort((a, b) => b.competencia.getTime() - a.competencia.getTime());
-
-  // Rendimento por médico e mês — cada repasse já é um par médico+mês, só
-  // reordena por médico (asc) e depois mês (desc) pra ficar fácil de ler.
-  // Médicos HOURLY (plantão) não têm consultas/exames — não fazem sentido
-  // nessa tabela de rendimento.
-  const doctorMonthRows = reportsWithValues
-    .filter((r) => r.paymentModel !== "HOURLY")
-    .sort((a, b) => {
-      const byName = a.doctorName.localeCompare(b.doctorName);
-      if (byName !== 0) return byName;
-      return b.competencia.getTime() - a.competencia.getTime();
-    });
-
   return (
     <div className="space-y-6">
       <div>
@@ -510,161 +431,10 @@ export default async function RepassesMedicosPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Métricas da unidade</CardTitle>
+          <CardTitle>Métricas</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {monthMetrics.length === 0 && (
-            <p className="text-sm text-muted-foreground py-4 text-center">
-              Sem repasses lançados ainda para calcular métricas.
-            </p>
-          )}
-
-          {monthMetrics.length > 0 && (
-            <div>
-              <p className="text-sm font-medium mb-1">Rendimento por mês</p>
-              <p className="text-xs text-muted-foreground mb-3">
-                Quantas consultas a unidade precisa, em média, para vender 1 exame — mês a mês.
-              </p>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Mês</TableHead>
-                    <TableHead className="text-right">Consultas</TableHead>
-                    <TableHead className="text-right">Exames</TableHead>
-                    <TableHead className="text-right">Consultas por exame</TableHead>
-                    <TableHead className="text-right">% conversão</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {monthMetrics.map((m) => (
-                    <TableRow key={m.key}>
-                      <TableCell className="font-medium capitalize">{formatCompetencia(m.competencia)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{m.consultas}</TableCell>
-                      <TableCell className="text-right tabular-nums">{m.exames}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {m.exames > 0 ? `${(m.consultas / m.exames).toFixed(1)} : 1` : "Sem exames"}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {m.consultas > 0 ? `${((m.exames / m.consultas) * 100).toFixed(1)}%` : "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-
-          {monthMetrics.length > 0 && (
-            <div>
-              <p className="text-sm font-medium mb-3">Valor por mês (consultas x exames)</p>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Mês</TableHead>
-                    <TableHead className="text-right">Valor consultas</TableHead>
-                    <TableHead className="text-right">Valor exames</TableHead>
-                    <TableHead className="text-right">Valor plantão</TableHead>
-                    <TableHead className="text-right">Valor total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {monthMetrics.map((m) => (
-                    <TableRow key={m.key}>
-                      <TableCell className="font-medium capitalize">{formatCompetencia(m.competencia)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(m.valorConsultas)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(m.valorExames)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(m.valorPlantao)}</TableCell>
-                      <TableCell className="text-right tabular-nums font-medium">
-                        {formatCurrency(m.valorConsultas + m.valorExames + m.valorPlantao)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Métricas por médicos</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {doctorRanking.length === 0 && (
-            <p className="text-sm text-muted-foreground py-4 text-center">
-              Sem repasses lançados ainda para calcular métricas.
-            </p>
-          )}
-
-          {doctorRanking.length > 0 && (
-            <div>
-              <p className="text-sm font-medium mb-3">Valor por médico (consultas x exames x plantão)</p>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Médico</TableHead>
-                    <TableHead className="text-right">Valor consultas</TableHead>
-                    <TableHead className="text-right">Valor exames</TableHead>
-                    <TableHead className="text-right">Valor plantão</TableHead>
-                    <TableHead className="text-right">Valor total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {doctorRanking.map((d) => (
-                    <TableRow key={d.name}>
-                      <TableCell className="font-medium">{d.name}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(d.valorConsultas)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(d.valorExames)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(d.valorPlantao)}</TableCell>
-                      <TableCell className="text-right tabular-nums font-medium">
-                        {formatCurrency(d.total)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-
-          {doctorMonthRows.length > 0 && (
-            <div>
-              <p className="text-sm font-medium mb-1">Rendimento por médico e mês</p>
-              <p className="text-xs text-muted-foreground mb-3">
-                Quantas consultas cada médico precisa, em média, para vender 1 exame — mês a mês.
-              </p>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Médico</TableHead>
-                    <TableHead>Mês</TableHead>
-                    <TableHead className="text-right">Consultas</TableHead>
-                    <TableHead className="text-right">Exames</TableHead>
-                    <TableHead className="text-right">Consultas por exame</TableHead>
-                    <TableHead className="text-right">% conversão</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {doctorMonthRows.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell className="font-medium">{r.doctorName}</TableCell>
-                      <TableCell className="capitalize">{formatCompetencia(r.competencia)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{r.consultationCount}</TableCell>
-                      <TableCell className="text-right tabular-nums">{r.examCount}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {r.examCount > 0 ? `${(r.consultationCount / r.examCount).toFixed(1)} : 1` : "Sem exames"}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {r.consultationCount > 0
-                          ? `${((r.examCount / r.consultationCount) * 100).toFixed(1)}%`
-                          : "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+        <CardContent>
+          <MetricsTable reports={reportsWithValues} />
         </CardContent>
       </Card>
     </div>
