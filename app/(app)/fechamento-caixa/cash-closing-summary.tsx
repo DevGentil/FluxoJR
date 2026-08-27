@@ -31,7 +31,17 @@ export function DiferencaValue({ diferenca }: { diferenca: number }) {
   if (Math.abs(diferenca) < 0.005) {
     return <span className="text-muted-foreground">R$ 0,00</span>;
   }
-  return <Badge variant="destructive">{formatCurrency(diferenca)}</Badge>;
+  if (diferenca < 0) {
+    return <Badge variant="destructive">Falta {formatCurrency(Math.abs(diferenca))}</Badge>;
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400"
+    >
+      Sobra {formatCurrency(diferenca)}
+    </Badge>
+  );
 }
 
 function LineList({ lines, colorClass }: { lines: Line[]; colorClass: string }) {
@@ -102,7 +112,7 @@ export function CashClosingSummary({ data }: { data: CashClosingSummaryData }) {
           <span className="text-muted-foreground">Dinheiro contado</span>
           <span className="tabular-nums">{formatCurrency(data.countedCash)}</span>
         </div>
-        <div className="flex justify-between font-medium">
+        <div className="flex justify-between items-center font-medium">
           <span>Diferença (contado − calculado)</span>
           <DiferencaValue diferenca={diferenca} />
         </div>

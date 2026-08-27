@@ -25,7 +25,7 @@ import {
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { formatCurrency, toDateInputValue } from "@/lib/format";
 import { createCashClosing, updateCashClosing } from "./actions";
-import { CashClosingSummary, type CashClosingSummaryData } from "./cash-closing-summary";
+import { CashClosingSummary, DiferencaValue, type CashClosingSummaryData } from "./cash-closing-summary";
 
 interface AccountOption {
   id: string;
@@ -320,15 +320,9 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
                   <span>Valor do caixa (calculado)</span>
                   <span className="tabular-nums">{formatCurrency(valorCaixa)}</span>
                 </div>
-                <div className="flex justify-between font-medium">
+                <div className="flex justify-between items-center font-medium">
                   <span>Diferença (contado − calculado)</span>
-                  <span
-                    className={`tabular-nums ${
-                      diferenca === 0 ? "text-muted-foreground" : "text-red-600 dark:text-red-400"
-                    }`}
-                  >
-                    {formatCurrency(diferenca)}
-                  </span>
+                  <DiferencaValue diferenca={diferenca} />
                 </div>
               </div>
 
