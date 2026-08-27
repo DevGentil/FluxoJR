@@ -291,6 +291,78 @@ async function DreReportsSection({ companyId }: { companyId: string }) {
   );
 }
 
+/** Resumo dos DREs realizados por empresa na visão de grupo/holding — uma
+ * linha por empresa (quantos arquivos, mês mais recente) em vez de listar
+ * cada anexo, mesmo padrão já usado nas outras telas consolidadas. */
+async function DreReportsConsolidatedSummary({ companyIds }: { companyIds: string[] }) {
+  const reports =
+    companyIds.length === 0
+      ? []
+      : await prisma.dreReport.findMany({
+          where: { companyId: { in: companyIds } },
+          include: { company: true },
+        });
+
+  interface CompanySummary {
+    companyId: string;
+    companyName: string;
+    count: number;
+    lastCompetencia: Date;
+  }
+  const summaries: CompanySummary[] = [];
+  for (const r of reports) {
+    let summary = summaries.find((s) => s.companyId === r.companyId);
+    if (!summary) {
+      summary = { companyId: r.companyId, companyName: r.company.name, count: 0, lastCompetencia: r.competencia };
+      summaries.push(summary);
+    }
+    summary.count += 1;
+    if (r.competencia > summary.lastCompetencia) summary.lastCompetencia = r.competencia;
+  }
+  summaries.sort((a, b) => a.companyName.localeCompare(b.companyName));
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>DREs realizados por empresa</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Empresa</TableHead>
+              <TableHead className="text-right">Arquivos</TableHead>
+              <TableHead>Mês mais recente</TableHead>
+              <TableHead className="w-32" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {summaries.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                  Nenhum DRE realizado enviado nesse escopo.
+                </TableCell>
+              </TableRow>
+            )}
+            {summaries.map((s) => (
+              <TableRow key={s.companyId}>
+                <TableCell className="font-medium">{s.companyName}</TableCell>
+                <TableCell className="text-right tabular-nums">{s.count}</TableCell>
+                <TableCell className="capitalize">{formatCompetencia(s.lastCompetencia)}</TableCell>
+                <TableCell>
+                  <div className="flex justify-end">
+                    <SwitchToCompanyButton companyId={s.companyId} label="Ver DREs" />
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default async function RelatoriosPage({ searchParams }: Props) {
   const params = await searchParams;
   const range = { from: params.from || defaultRange().from, to: params.to || defaultRange().to };
@@ -379,7 +451,10 @@ export default async function RelatoriosPage({ searchParams }: Props) {
       <PeriodFilter basePath="/relatorios" presets={presets} range={range} />
 
       {isConsolidated ? (
-        <CompanyComparisonTable rows={allRows} />
+        <>
+          <CompanyComparisonTable rows={allRows} />
+          <DreReportsConsolidatedSummary companyIds={companyIds} />
+        </>
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-3">
