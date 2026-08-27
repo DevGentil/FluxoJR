@@ -9,13 +9,9 @@ import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { DoctorFormDialog } from "./doctor-form-dialog";
 import { ExamTypeFormDialog } from "./exam-type-form-dialog";
 import { ReportFormDialog } from "./report-form-dialog";
+import { ReportsTable } from "./reports-table";
 import { deleteDoctor } from "./doctors-actions";
 import { deleteExamType } from "./exam-types-actions";
-import { deletePeriodReport } from "./reports-actions";
-
-function formatCompetencia(value: Date) {
-  return value.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
-}
 
 function RankingBar({
   label,
@@ -252,26 +248,49 @@ export default async function RepassesMedicosPage() {
     })),
   }));
 
-  // Métricas: ranking por médico e split consultas vs. exames, somando
+  // Métricas: ranking por médico, split consultas vs. exames (por valor e
+  // por quantidade) e rendimento (consultas por exame vendido), somando
   // todos os repasses já lançados (sem filtro de período na v1).
   const reportsWithValues = reports.map((r) => {
     const consultationValue = r.consultationCount * Number(r.consultationRate);
     const examValue = r.examCounts.reduce((s, e) => s + e.count * Number(e.rate), 0);
-    return { ...r, consultationValue, examValue, totalValue: consultationValue + examValue };
+    const examCount = r.examCounts.reduce((s, e) => s + e.count, 0);
+    return {
+      id: r.id,
+      competencia: r.competencia,
+      doctorId: r.doctorId,
+      doctorName: r.doctor.name,
+      notes: r.notes,
+      consultationCount: r.consultationCount,
+      examCount,
+      consultationValue,
+      examValue,
+      totalValue: consultationValue + examValue,
+      examCounts: r.examCounts.map((e) => ({ id: e.id, examTypeId: e.examTypeId, count: e.count })),
+    };
   });
 
-  const byDoctor = new Map<string, { name: string; total: number }>();
+  const byDoctor = new Map<string, { name: string; total: number; consultas: number; exames: number }>();
   let totalConsultas = 0;
   let totalExames = 0;
+  let totalConsultasQtd = 0;
+  let totalExamesQtd = 0;
   for (const r of reportsWithValues) {
-    const entry = byDoctor.get(r.doctorId) ?? { name: r.doctor.name, total: 0 };
+    const entry = byDoctor.get(r.doctorId) ?? { name: r.doctorName, total: 0, consultas: 0, exames: 0 };
     entry.total += r.totalValue;
+    entry.consultas += r.consultationCount;
+    entry.exames += r.examCount;
     byDoctor.set(r.doctorId, entry);
     totalConsultas += r.consultationValue;
     totalExames += r.examValue;
+    totalConsultasQtd += r.consultationCount;
+    totalExamesQtd += r.examCount;
   }
   const doctorRanking = Array.from(byDoctor.values()).sort((a, b) => b.total - a.total);
+  const doctorYield = Array.from(byDoctor.values()).sort((a, b) => b.consultas - a.consultas);
   const grandTotal = totalConsultas + totalExames;
+  const grandTotalQtd = totalConsultasQtd + totalExamesQtd;
+  const unitRatio = totalExamesQtd > 0 ? totalConsultasQtd / totalExamesQtd : null;
 
   return (
     <div className="space-y-6">
@@ -292,6 +311,7 @@ export default async function RepassesMedicosPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Nome</TableHead>
+                <TableHead>Especialização</TableHead>
                 <TableHead>CRM</TableHead>
                 <TableHead>Pagamento</TableHead>
                 <TableHead className="text-right">Consulta</TableHead>
@@ -302,7 +322,7 @@ export default async function RepassesMedicosPage() {
             <TableBody>
               {doctors.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                     Nenhum médico cadastrado ainda.
                   </TableCell>
                 </TableRow>
@@ -310,6 +330,7 @@ export default async function RepassesMedicosPage() {
               {doctors.map((d) => (
                 <TableRow key={d.id}>
                   <TableCell className="font-medium">{d.name}</TableCell>
+                  <TableCell>{d.specialty}</TableCell>
                   <TableCell>{d.document || "—"}</TableCell>
                   <TableCell>{d.paymentMethod || "—"}</TableCell>
                   <TableCell className="text-right tabular-nums">
@@ -325,6 +346,7 @@ export default async function RepassesMedicosPage() {
                         doctor={{
                           id: d.id,
                           name: d.name,
+                          specialty: d.specialty,
                           document: d.document,
                           paymentMethod: d.paymentMethod,
                           consultationRate: Number(d.consultationRate),
@@ -397,68 +419,7 @@ export default async function RepassesMedicosPage() {
           <ReportFormDialog doctors={doctorOptions} />
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Mês</TableHead>
-                <TableHead>Médico</TableHead>
-                <TableHead className="text-right">Consultas</TableHead>
-                <TableHead className="text-right">Exames</TableHead>
-                <TableHead className="text-right">Valor consultas</TableHead>
-                <TableHead className="text-right">Valor exames</TableHead>
-                <TableHead className="text-right">Valor total</TableHead>
-                <TableHead className="w-24" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {reportsWithValues.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                    Nenhum repasse lançado ainda.
-                  </TableCell>
-                </TableRow>
-              )}
-              {reportsWithValues.map((r) => {
-                const examCount = r.examCounts.reduce((s, e) => s + e.count, 0);
-                return (
-                  <TableRow key={r.id}>
-                    <TableCell className="font-medium capitalize">{formatCompetencia(r.competencia)}</TableCell>
-                    <TableCell>{r.doctor.name}</TableCell>
-                    <TableCell className="text-right tabular-nums">{r.consultationCount}</TableCell>
-                    <TableCell className="text-right tabular-nums">{examCount}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatCurrency(r.consultationValue)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatCurrency(r.examValue)}</TableCell>
-                    <TableCell className="text-right tabular-nums font-medium">
-                      {formatCurrency(r.totalValue)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <ReportFormDialog
-                          doctors={doctorOptions}
-                          report={{
-                            id: r.id,
-                            doctorId: r.doctorId,
-                            competencia: r.competencia,
-                            consultationCount: r.consultationCount,
-                            notes: r.notes,
-                            examCounts: r.examCounts.map((e) => ({
-                              id: e.id,
-                              examTypeId: e.examTypeId,
-                              count: e.count,
-                            })),
-                          }}
-                        />
-                        <DeleteButton
-                          action={deletePeriodReport.bind(null, r.id)}
-                          title={`Excluir repasse de ${r.doctor.name} — ${formatCompetencia(r.competencia)}?`}
-                        />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+          <ReportsTable reports={reportsWithValues} doctors={doctorOptions} />
         </CardContent>
       </Card>
 
@@ -488,6 +449,37 @@ export default async function RepassesMedicosPage() {
             </div>
           </div>
 
+          {doctorYield.length > 0 && (
+            <div>
+              <p className="text-sm font-medium mb-3">Rendimento por médico</p>
+              <p className="text-xs text-muted-foreground mb-3">
+                Quantas consultas cada médico faz, em média, para vender 1 exame.
+              </p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Médico</TableHead>
+                    <TableHead className="text-right">Consultas</TableHead>
+                    <TableHead className="text-right">Exames</TableHead>
+                    <TableHead className="text-right">Consultas por exame</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {doctorYield.map((d) => (
+                    <TableRow key={d.name}>
+                      <TableCell className="font-medium">{d.name}</TableCell>
+                      <TableCell className="text-right tabular-nums">{d.consultas}</TableCell>
+                      <TableCell className="text-right tabular-nums">{d.exames}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {d.exames > 0 ? `${(d.consultas / d.exames).toFixed(1)} : 1` : "Sem exames"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
           {grandTotal > 0 && (
             <div>
               <p className="text-sm font-medium mb-3">Consultas vs. exames (% do valor total)</p>
@@ -504,6 +496,34 @@ export default async function RepassesMedicosPage() {
                   value={totalExames}
                   percent={(totalExames / grandTotal) * 100}
                   formatValue={formatCurrency}
+                  colorClass="bg-amber-500"
+                />
+              </div>
+            </div>
+          )}
+
+          {grandTotalQtd > 0 && (
+            <div>
+              <p className="text-sm font-medium mb-1">Consultas vs. exames (quantidade)</p>
+              <p className="text-xs text-muted-foreground mb-3">
+                Rendimento da unidade:{" "}
+                {unitRatio !== null
+                  ? `${unitRatio.toFixed(1)} consulta(s) para cada exame vendido.`
+                  : "sem exames lançados ainda."}
+              </p>
+              <div className="space-y-3">
+                <RankingBar
+                  label="Consultas"
+                  value={totalConsultasQtd}
+                  percent={(totalConsultasQtd / grandTotalQtd) * 100}
+                  formatValue={(v) => `${v} consulta(s)`}
+                  colorClass="bg-sky-500"
+                />
+                <RankingBar
+                  label="Exames"
+                  value={totalExamesQtd}
+                  percent={(totalExamesQtd / grandTotalQtd) * 100}
+                  formatValue={(v) => `${v} exame(s)`}
                   colorClass="bg-amber-500"
                 />
               </div>
