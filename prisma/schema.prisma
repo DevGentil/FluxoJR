@@ -70,6 +70,9 @@ model Company {
   documents       Document[]
   cashClosings    CashClosing[]
   dreReports      DreReport[]
+  doctors         Doctor[]
+  examTypes       ExamType[]
+  doctorPeriodReports DoctorPeriodReport[]
 
   incomingTransfers Transaction[] @relation("TransactionTransfer")
 }
@@ -283,4 +286,91 @@ model CashClosingLine {
 
   cashClosingId String
   cashClosing   CashClosing @relation(fields: [cashClosingId], references: [id], onDelete: Cascade)
+}
+
+// Médico com contrato de repasse (valor por consulta + valores por tipo de
+// exame, guardados em DoctorExamRate). "active" permite arquivar sem
+// apagar o histórico de períodos já lançados. Sem integração automática
+// com o razão financeiro por enquanto — é só controle/análise.
+model Doctor {
+  id               String   @id @default(cuid())
+  name             String
+  document         String? // CRM
+  paymentMethod    String?
+  consultationRate Decimal  @db.Decimal(14, 2)
+  active           Boolean  @default(true)
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  examRates     DoctorExamRate[]
+  periodReports DoctorPeriodReport[]
+}
+
+// Catálogo de tipos de exame da empresa (ex: "Ultrassom", "Raio-X").
+model ExamType {
+  id   String @id @default(cuid())
+  name String
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  doctorRates DoctorExamRate[]
+  reportLines DoctorPeriodExamCount[]
+
+  @@unique([companyId, name])
+}
+
+// Taxa atual do médico para um tipo de exame — usada como valor-padrão ao
+// lançar um novo período (o período guarda sua própria cópia congelada).
+model DoctorExamRate {
+  id   String  @id @default(cuid())
+  rate Decimal @db.Decimal(14, 2)
+
+  doctorId String
+  doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  examTypeId String
+  examType   ExamType @relation(fields: [examTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorId, examTypeId])
+}
+
+// Repasse agregado de um médico num mês: contagem de consultas (com a taxa
+// congelada) + linhas de contagem por tipo de exame.
+model DoctorPeriodReport {
+  id                String   @id @default(cuid())
+  competencia       DateTime // primeiro dia do mês de referência
+  consultationCount Int
+  consultationRate  Decimal  @db.Decimal(14, 2) // congelada no lançamento
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  doctorId String
+  doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  examCounts DoctorPeriodExamCount[]
+
+  @@unique([doctorId, competencia])
+}
+
+model DoctorPeriodExamCount {
+  id    String  @id @default(cuid())
+  count Int
+  rate  Decimal @db.Decimal(14, 2) // congelada no lançamento
+
+  reportId String
+  report   DoctorPeriodReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  examTypeId String
+  examType   ExamType @relation(fields: [examTypeId], references: [id], onDelete: Restrict)
+
+  @@unique([reportId, examTypeId])
 }
