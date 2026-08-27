@@ -14,24 +14,38 @@ export interface PeriodReportInput {
   doctorId: string;
   competencia: string; // "YYYY-MM"
   consultationCount: number;
+  hoursWorked?: number;
   notes?: string;
   examCounts: PeriodExamCountInput[];
 }
 
-function validate(input: PeriodReportInput): string | null {
+// A validação de consultas/exames vs. horas depende do paymentModel do
+// médico (HOURLY não usa consultas/exames, os outros dois não usam horas)
+// — por isso recebe o médico já carregado em vez de inferir do payload.
+function validate(input: PeriodReportInput, doctor: { paymentModel: string }): string | null {
   if (!input.doctorId) return "Selecione o médico.";
   if (!/^\d{4}-\d{2}$/.test(input.competencia)) return "Informe o mês de referência.";
+
+  if (doctor.paymentModel === "HOURLY") {
+    if (!Number.isFinite(input.hoursWorked) || (input.hoursWorked as number) <= 0) {
+      return "Informe uma quantidade de horas trabalhadas válida.";
+    }
+    return null;
+  }
+
   if (!Number.isInteger(input.consultationCount) || input.consultationCount < 0) {
     return "Informe uma quantidade de consultas válida.";
   }
-  for (const e of input.examCounts) {
-    if (!e.examTypeId) return "Selecione o tipo de exame em todas as linhas.";
-    if (!Number.isInteger(e.count) || e.count <= 0) return "Toda quantidade de exame deve ser maior que zero.";
-  }
-  const seen = new Set<string>();
-  for (const e of input.examCounts) {
-    if (seen.has(e.examTypeId)) return "Não repita o mesmo tipo de exame nas linhas.";
-    seen.add(e.examTypeId);
+  if (doctor.paymentModel === "CONSULTATION_AND_EXAM") {
+    for (const e of input.examCounts) {
+      if (!e.examTypeId) return "Selecione o tipo de exame em todas as linhas.";
+      if (!Number.isInteger(e.count) || e.count <= 0) return "Toda quantidade de exame deve ser maior que zero.";
+    }
+    const seen = new Set<string>();
+    for (const e of input.examCounts) {
+      if (seen.has(e.examTypeId)) return "Não repita o mesmo tipo de exame nas linhas.";
+      seen.add(e.examTypeId);
+    }
   }
   return null;
 }
@@ -52,15 +66,15 @@ async function buildExamCountsData(companyId: string, doctorId: string, examCoun
 }
 
 export async function createPeriodReport(input: PeriodReportInput): Promise<{ error?: string }> {
-  const error = validate(input);
-  if (error) return { error };
-
   try {
     await requireUser();
     const companyId = await getActiveCompanyId();
 
     const doctor = await prisma.doctor.findFirst({ where: { id: input.doctorId, companyId } });
     if (!doctor) return { error: "Médico não encontrado." };
+
+    const error = validate(input, doctor);
+    if (error) return { error };
 
     const competenciaDate = new Date(`${input.competencia}-01T00:00:00`);
     const existing = await prisma.doctorPeriodReport.findUnique({
@@ -70,15 +84,20 @@ export async function createPeriodReport(input: PeriodReportInput): Promise<{ er
       return { error: "Já existe um repasse cadastrado para esse médico nesse mês. Edite o existente." };
     }
 
-    const examCountsData = await buildExamCountsData(companyId, input.doctorId, input.examCounts);
+    const isHourly = doctor.paymentModel === "HOURLY";
+    const examCountsData = isHourly
+      ? []
+      : await buildExamCountsData(companyId, input.doctorId, doctor.paymentModel === "CONSULTATION_AND_EXAM" ? input.examCounts : []);
 
     await prisma.doctorPeriodReport.create({
       data: {
         doctorId: input.doctorId,
         companyId,
         competencia: competenciaDate,
-        consultationCount: input.consultationCount,
-        consultationRate: doctor.consultationRate,
+        consultationCount: isHourly ? null : input.consultationCount,
+        consultationRate: isHourly ? null : doctor.consultationRate,
+        hoursWorked: isHourly ? input.hoursWorked : null,
+        hourlyRate: isHourly ? doctor.hourlyRate : null,
         notes: input.notes?.trim() || null,
         examCounts: { create: examCountsData },
       },
@@ -92,9 +111,6 @@ export async function createPeriodReport(input: PeriodReportInput): Promise<{ er
 }
 
 export async function updatePeriodReport(id: string, input: PeriodReportInput): Promise<{ error?: string }> {
-  const error = validate(input);
-  if (error) return { error };
-
   try {
     await requireUser();
     const companyId = await getActiveCompanyId();
@@ -105,6 +121,9 @@ export async function updatePeriodReport(id: string, input: PeriodReportInput): 
     const doctor = await prisma.doctor.findFirst({ where: { id: input.doctorId, companyId } });
     if (!doctor) return { error: "Médico não encontrado." };
 
+    const error = validate(input, doctor);
+    if (error) return { error };
+
     const competenciaDate = new Date(`${input.competencia}-01T00:00:00`);
     const duplicate = await prisma.doctorPeriodReport.findUnique({
       where: { doctorId_competencia: { doctorId: input.doctorId, competencia: competenciaDate } },
@@ -113,7 +132,10 @@ export async function updatePeriodReport(id: string, input: PeriodReportInput): 
       return { error: "Já existe outro repasse cadastrado para esse médico nesse mês." };
     }
 
-    const examCountsData = await buildExamCountsData(companyId, input.doctorId, input.examCounts);
+    const isHourly = doctor.paymentModel === "HOURLY";
+    const examCountsData = isHourly
+      ? []
+      : await buildExamCountsData(companyId, input.doctorId, doctor.paymentModel === "CONSULTATION_AND_EXAM" ? input.examCounts : []);
 
     await prisma.$transaction(async (tx) => {
       await tx.doctorPeriodExamCount.deleteMany({ where: { reportId: id } });
@@ -122,8 +144,10 @@ export async function updatePeriodReport(id: string, input: PeriodReportInput): 
         data: {
           doctorId: input.doctorId,
           competencia: competenciaDate,
-          consultationCount: input.consultationCount,
-          consultationRate: doctor.consultationRate,
+          consultationCount: isHourly ? null : input.consultationCount,
+          consultationRate: isHourly ? null : doctor.consultationRate,
+          hoursWorked: isHourly ? input.hoursWorked : null,
+          hourlyRate: isHourly ? doctor.hourlyRate : null,
           notes: input.notes?.trim() || null,
           examCounts: { create: examCountsData },
         },

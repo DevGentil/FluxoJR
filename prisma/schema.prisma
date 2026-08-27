@@ -288,21 +288,33 @@ model CashClosingLine {
   cashClosing   CashClosing @relation(fields: [cashClosingId], references: [id], onDelete: Cascade)
 }
 
-// Médico com contrato de repasse (valor por consulta + valores por tipo de
-// exame, guardados em DoctorExamRate). "active" permite arquivar sem
-// apagar o histórico de períodos já lançados. Sem integração automática
-// com o razão financeiro por enquanto — é só controle/análise.
+// Modelo de remuneração do médico: só consulta, consulta + exame, ou
+// plantão pago por hora trabalhada (sem consulta/exame nenhum).
+enum DoctorPaymentModel {
+  CONSULTATION
+  CONSULTATION_AND_EXAM
+  HOURLY
+}
+
+// Médico com contrato de repasse. Em CONSULTATION/CONSULTATION_AND_EXAM,
+// consultationRate é obrigatório (examRates só se aplica ao segundo). Em
+// HOURLY, hourlyRate é obrigatório e consultationRate/examRates não se
+// aplicam. "active" permite arquivar sem apagar o histórico de períodos já
+// lançados. Sem integração automática com o razão financeiro por
+// enquanto — é só controle/análise.
 model Doctor {
-  id               String   @id @default(cuid())
+  id               String             @id @default(cuid())
   name             String
-  specialty        String   @default("Geral") // ex: Pediatra, Clínico Geral
+  specialty        String             @default("Geral") // ex: Pediatra, Clínico Geral
   document         String? // CRM
   paymentMethod    String?
-  consultationRate Decimal  @db.Decimal(14, 2)
-  active           Boolean  @default(true)
+  paymentModel     DoctorPaymentModel @default(CONSULTATION_AND_EXAM)
+  consultationRate Decimal?           @db.Decimal(14, 2)
+  hourlyRate       Decimal?           @db.Decimal(14, 2) // plantão
+  active           Boolean            @default(true)
   notes            String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -341,12 +353,16 @@ model DoctorExamRate {
 }
 
 // Repasse agregado de um médico num mês: contagem de consultas (com a taxa
-// congelada) + linhas de contagem por tipo de exame.
+// congelada) + linhas de contagem por tipo de exame, OU (médico HOURLY)
+// horas trabalhadas com a taxa/hora congelada. Os campos usados dependem
+// do paymentModel do médico no momento do lançamento.
 model DoctorPeriodReport {
   id                String   @id @default(cuid())
   competencia       DateTime // primeiro dia do mês de referência
-  consultationCount Int
-  consultationRate  Decimal  @db.Decimal(14, 2) // congelada no lançamento
+  consultationCount Int?
+  consultationRate  Decimal? @db.Decimal(14, 2) // congelada no lançamento
+  hoursWorked       Decimal? @db.Decimal(8, 2) // plantão
+  hourlyRate        Decimal? @db.Decimal(14, 2) // congelada no lançamento
   notes             String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

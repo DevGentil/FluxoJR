@@ -10,8 +10,14 @@ import { DoctorFormDialog } from "./doctor-form-dialog";
 import { ExamTypeFormDialog } from "./exam-type-form-dialog";
 import { ReportFormDialog } from "./report-form-dialog";
 import { ReportsTable } from "./reports-table";
-import { deleteDoctor } from "./doctors-actions";
+import { deleteDoctor, type DoctorPaymentModel } from "./doctors-actions";
 import { deleteExamType } from "./exam-types-actions";
+
+const PAYMENT_MODEL_LABELS: Record<DoctorPaymentModel, string> = {
+  CONSULTATION: "Só consulta",
+  CONSULTATION_AND_EXAM: "Consulta + exame",
+  HOURLY: "Plantão (por hora)",
+};
 
 function formatCompetencia(value: Date) {
   return value.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
@@ -64,8 +70,9 @@ async function ConsolidatedSummary({ companyIds, scopeLabel }: { companyIds: str
       let consultationCount = 0;
       let examCount = 0;
       for (const r of reports) {
-        consultationCount += r.consultationCount;
-        totalValue += r.consultationCount * Number(r.consultationRate);
+        consultationCount += r.consultationCount ?? 0;
+        totalValue += (r.consultationCount ?? 0) * Number(r.consultationRate ?? 0);
+        totalValue += Number(r.hoursWorked ?? 0) * Number(r.hourlyRate ?? 0);
         for (const e of r.examCounts) {
           examCount += e.count;
           totalValue += e.count * Number(e.rate);
@@ -244,7 +251,9 @@ export default async function RepassesMedicosPage() {
   const doctorOptions = doctors.map((d) => ({
     id: d.id,
     name: d.name,
-    consultationRate: Number(d.consultationRate),
+    paymentModel: d.paymentModel,
+    consultationRate: d.consultationRate != null ? Number(d.consultationRate) : null,
+    hourlyRate: d.hourlyRate != null ? Number(d.hourlyRate) : null,
     examRates: d.examRates.map((r) => ({
       examTypeId: r.examTypeId,
       examTypeName: r.examType.name,
@@ -254,29 +263,43 @@ export default async function RepassesMedicosPage() {
 
   // Métricas: ranking por médico, split consultas vs. exames (por valor e
   // por quantidade) e rendimento (consultas por exame vendido), somando
-  // todos os repasses já lançados (sem filtro de período na v1).
+  // todos os repasses já lançados (sem filtro de período na v1). Médicos
+  // HOURLY (plantão) não entram nesse cálculo de consultas/exames — o
+  // valor deles aparece à parte, em valorPlantao.
   const reportsWithValues = reports.map((r) => {
-    const consultationValue = r.consultationCount * Number(r.consultationRate);
+    const consultationValue = (r.consultationCount ?? 0) * Number(r.consultationRate ?? 0);
     const examValue = r.examCounts.reduce((s, e) => s + e.count * Number(e.rate), 0);
     const examCount = r.examCounts.reduce((s, e) => s + e.count, 0);
+    const hourlyValue = Number(r.hoursWorked ?? 0) * Number(r.hourlyRate ?? 0);
     return {
       id: r.id,
       competencia: r.competencia,
       doctorId: r.doctorId,
       doctorName: r.doctor.name,
+      paymentModel: r.doctor.paymentModel,
       notes: r.notes,
-      consultationCount: r.consultationCount,
+      consultationCount: r.consultationCount ?? 0,
       examCount,
       consultationValue,
       examValue,
-      totalValue: consultationValue + examValue,
+      hoursWorked: r.hoursWorked != null ? Number(r.hoursWorked) : null,
+      hourlyValue,
+      totalValue: consultationValue + examValue + hourlyValue,
       examCounts: r.examCounts.map((e) => ({ id: e.id, examTypeId: e.examTypeId, count: e.count })),
     };
   });
 
   const byDoctor = new Map<
     string,
-    { name: string; total: number; consultas: number; exames: number; valorConsultas: number; valorExames: number }
+    {
+      name: string;
+      total: number;
+      consultas: number;
+      exames: number;
+      valorConsultas: number;
+      valorExames: number;
+      valorPlantao: number;
+    }
   >();
   let totalConsultas = 0;
   let totalExames = 0;
@@ -285,12 +308,13 @@ export default async function RepassesMedicosPage() {
   for (const r of reportsWithValues) {
     const entry =
       byDoctor.get(r.doctorId) ??
-      { name: r.doctorName, total: 0, consultas: 0, exames: 0, valorConsultas: 0, valorExames: 0 };
+      { name: r.doctorName, total: 0, consultas: 0, exames: 0, valorConsultas: 0, valorExames: 0, valorPlantao: 0 };
     entry.total += r.totalValue;
     entry.consultas += r.consultationCount;
     entry.exames += r.examCount;
     entry.valorConsultas += r.consultationValue;
     entry.valorExames += r.examValue;
+    entry.valorPlantao += r.hourlyValue;
     byDoctor.set(r.doctorId, entry);
     totalConsultas += r.consultationValue;
     totalExames += r.examValue;
@@ -305,28 +329,41 @@ export default async function RepassesMedicosPage() {
   // competência usada em ReportsTable, só que somando todos os médicos.
   const byMonth = new Map<
     string,
-    { key: string; competencia: Date; consultas: number; exames: number; valorConsultas: number; valorExames: number }
+    {
+      key: string;
+      competencia: Date;
+      consultas: number;
+      exames: number;
+      valorConsultas: number;
+      valorExames: number;
+      valorPlantao: number;
+    }
   >();
   for (const r of reportsWithValues) {
     const key = r.competencia.toISOString().slice(0, 7);
     const entry =
       byMonth.get(key) ??
-      { key, competencia: r.competencia, consultas: 0, exames: 0, valorConsultas: 0, valorExames: 0 };
+      { key, competencia: r.competencia, consultas: 0, exames: 0, valorConsultas: 0, valorExames: 0, valorPlantao: 0 };
     entry.consultas += r.consultationCount;
     entry.exames += r.examCount;
     entry.valorConsultas += r.consultationValue;
     entry.valorExames += r.examValue;
+    entry.valorPlantao += r.hourlyValue;
     byMonth.set(key, entry);
   }
   const monthMetrics = Array.from(byMonth.values()).sort((a, b) => b.competencia.getTime() - a.competencia.getTime());
 
   // Rendimento por médico e mês — cada repasse já é um par médico+mês, só
   // reordena por médico (asc) e depois mês (desc) pra ficar fácil de ler.
-  const doctorMonthRows = [...reportsWithValues].sort((a, b) => {
-    const byName = a.doctorName.localeCompare(b.doctorName);
-    if (byName !== 0) return byName;
-    return b.competencia.getTime() - a.competencia.getTime();
-  });
+  // Médicos HOURLY (plantão) não têm consultas/exames — não fazem sentido
+  // nessa tabela de rendimento.
+  const doctorMonthRows = reportsWithValues
+    .filter((r) => r.paymentModel !== "HOURLY")
+    .sort((a, b) => {
+      const byName = a.doctorName.localeCompare(b.doctorName);
+      if (byName !== 0) return byName;
+      return b.competencia.getTime() - a.competencia.getTime();
+    });
 
   return (
     <div className="space-y-6">
@@ -350,7 +387,8 @@ export default async function RepassesMedicosPage() {
                 <TableHead>Especialização</TableHead>
                 <TableHead>CRM</TableHead>
                 <TableHead>Pagamento</TableHead>
-                <TableHead className="text-right">Consulta</TableHead>
+                <TableHead>Modelo</TableHead>
+                <TableHead className="text-right">Valor</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-24" />
               </TableRow>
@@ -358,7 +396,7 @@ export default async function RepassesMedicosPage() {
             <TableBody>
               {doctors.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     Nenhum médico cadastrado ainda.
                   </TableCell>
                 </TableRow>
@@ -369,8 +407,17 @@ export default async function RepassesMedicosPage() {
                   <TableCell>{d.specialty}</TableCell>
                   <TableCell>{d.document || "—"}</TableCell>
                   <TableCell>{d.paymentMethod || "—"}</TableCell>
+                  <TableCell className="text-muted-foreground text-sm">
+                    {PAYMENT_MODEL_LABELS[d.paymentModel]}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatCurrency(Number(d.consultationRate))}
+                    {d.paymentModel === "HOURLY"
+                      ? d.hourlyRate != null
+                        ? `${formatCurrency(Number(d.hourlyRate))}/h`
+                        : "—"
+                      : d.consultationRate != null
+                        ? formatCurrency(Number(d.consultationRate))
+                        : "—"}
                   </TableCell>
                   <TableCell>
                     <Badge variant={d.active ? "secondary" : "outline"}>{d.active ? "Ativo" : "Inativo"}</Badge>
@@ -385,7 +432,9 @@ export default async function RepassesMedicosPage() {
                           specialty: d.specialty,
                           document: d.document,
                           paymentMethod: d.paymentMethod,
-                          consultationRate: Number(d.consultationRate),
+                          paymentModel: d.paymentModel,
+                          consultationRate: d.consultationRate != null ? Number(d.consultationRate) : null,
+                          hourlyRate: d.hourlyRate != null ? Number(d.hourlyRate) : null,
                           active: d.active,
                           notes: d.notes,
                           examRates: d.examRates.map((r) => ({
@@ -514,6 +563,7 @@ export default async function RepassesMedicosPage() {
                     <TableHead>Mês</TableHead>
                     <TableHead className="text-right">Valor consultas</TableHead>
                     <TableHead className="text-right">Valor exames</TableHead>
+                    <TableHead className="text-right">Valor plantão</TableHead>
                     <TableHead className="text-right">Valor total</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -523,8 +573,9 @@ export default async function RepassesMedicosPage() {
                       <TableCell className="font-medium capitalize">{formatCompetencia(m.competencia)}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatCurrency(m.valorConsultas)}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatCurrency(m.valorExames)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(m.valorPlantao)}</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">
-                        {formatCurrency(m.valorConsultas + m.valorExames)}
+                        {formatCurrency(m.valorConsultas + m.valorExames + m.valorPlantao)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -548,13 +599,14 @@ export default async function RepassesMedicosPage() {
 
           {doctorRanking.length > 0 && (
             <div>
-              <p className="text-sm font-medium mb-3">Valor por médico (consultas x exames)</p>
+              <p className="text-sm font-medium mb-3">Valor por médico (consultas x exames x plantão)</p>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Médico</TableHead>
                     <TableHead className="text-right">Valor consultas</TableHead>
                     <TableHead className="text-right">Valor exames</TableHead>
+                    <TableHead className="text-right">Valor plantão</TableHead>
                     <TableHead className="text-right">Valor total</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -564,6 +616,7 @@ export default async function RepassesMedicosPage() {
                       <TableCell className="font-medium">{d.name}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatCurrency(d.valorConsultas)}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatCurrency(d.valorExames)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(d.valorPlantao)}</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">
                         {formatCurrency(d.total)}
                       </TableCell>

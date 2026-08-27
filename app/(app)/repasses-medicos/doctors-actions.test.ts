@@ -14,6 +14,7 @@ function baseInput(examTypeId: string, overrides: Partial<DoctorInput> = {}): Do
     specialty: "Clínico Geral",
     document: "CRM 12345",
     paymentMethod: "PIX",
+    paymentModel: "CONSULTATION_AND_EXAM",
     consultationRate: 80,
     active: true,
     examRates: [{ examTypeId, rate: 45 }],
@@ -52,6 +53,38 @@ describe("createDoctor", () => {
     const examType = await seedExamType(company.id);
 
     const result = await createDoctor(baseInput(examType.id, { specialty: "" }));
+
+    expect(result.error).toBeTruthy();
+    await expect(testPrisma.doctor.count()).resolves.toBe(0);
+  });
+
+  it("cria médico HOURLY (plantão) sem consultationRate nem examRates", async () => {
+    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
+    const examType = await seedExamType(company.id);
+
+    const result = await createDoctor(
+      baseInput(examType.id, {
+        paymentModel: "HOURLY",
+        consultationRate: undefined,
+        hourlyRate: 150,
+        examRates: [{ examTypeId: examType.id, rate: 45 }], // deve ser ignorado
+      })
+    );
+
+    expect(result.error).toBeUndefined();
+    const doctor = await testPrisma.doctor.findFirstOrThrow({ include: { examRates: true } });
+    expect(doctor.consultationRate).toBeNull();
+    expect(Number(doctor.hourlyRate)).toBe(150);
+    expect(doctor.examRates).toHaveLength(0);
+  });
+
+  it("recusa médico HOURLY sem valor por hora", async () => {
+    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
+    const examType = await seedExamType(company.id);
+
+    const result = await createDoctor(
+      baseInput(examType.id, { paymentModel: "HOURLY", consultationRate: undefined, hourlyRate: undefined })
+    );
 
     expect(result.error).toBeTruthy();
     await expect(testPrisma.doctor.count()).resolves.toBe(0);

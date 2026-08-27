@@ -8,6 +8,7 @@ import { DeleteButton } from "@/components/delete-button";
 import { ReportFormDialog } from "./report-form-dialog";
 import { deletePeriodReport } from "./reports-actions";
 import { formatCurrency } from "@/lib/format";
+import type { DoctorPaymentModel } from "./doctors-actions";
 
 function formatCompetencia(value: Date) {
   return value.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
@@ -16,7 +17,9 @@ function formatCompetencia(value: Date) {
 interface DoctorOption {
   id: string;
   name: string;
-  consultationRate: number;
+  paymentModel: DoctorPaymentModel;
+  consultationRate: number | null;
+  hourlyRate: number | null;
   examRates: { examTypeId: string; examTypeName: string; rate: number }[];
 }
 
@@ -25,10 +28,13 @@ interface ReportRow {
   competencia: Date;
   doctorId: string;
   doctorName: string;
+  paymentModel: DoctorPaymentModel;
   consultationCount: number;
   examCount: number;
   consultationValue: number;
   examValue: number;
+  hoursWorked: number | null;
+  hourlyValue: number;
   totalValue: number;
   notes: string | null;
   examCounts: { id: string; examTypeId: string; count: number }[];
@@ -95,8 +101,10 @@ export function ReportsTable({ reports, doctors }: Props) {
             <TableHead>Médico</TableHead>
             <TableHead className="text-right">Consultas</TableHead>
             <TableHead className="text-right">Exames</TableHead>
+            <TableHead className="text-right">Horas</TableHead>
             <TableHead className="text-right">Valor consultas</TableHead>
             <TableHead className="text-right">Valor exames</TableHead>
+            <TableHead className="text-right">Valor plantão</TableHead>
             <TableHead className="text-right">Valor total</TableHead>
             <TableHead className="w-24" />
           </TableRow>
@@ -104,7 +112,7 @@ export function ReportsTable({ reports, doctors }: Props) {
         <TableBody>
           {groups.length === 0 && (
             <TableRow>
-              <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+              <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                 {isSearching ? "Nenhum repasse encontrado para essa busca." : "Nenhum repasse lançado ainda."}
               </TableCell>
             </TableRow>
@@ -113,9 +121,11 @@ export function ReportsTable({ reports, doctors }: Props) {
             const isExpanded = isSearching || expandedMonths.has(group.key);
             const consultationCount = group.reports.reduce((s, r) => s + r.consultationCount, 0);
             const examCount = group.reports.reduce((s, r) => s + r.examCount, 0);
+            const hoursWorked = group.reports.reduce((s, r) => s + (r.hoursWorked ?? 0), 0);
             const consultationValue = group.reports.reduce((s, r) => s + r.consultationValue, 0);
             const examValue = group.reports.reduce((s, r) => s + r.examValue, 0);
-            const totalValue = consultationValue + examValue;
+            const hourlyValue = group.reports.reduce((s, r) => s + r.hourlyValue, 0);
+            const totalValue = consultationValue + examValue + hourlyValue;
             return (
               <Fragment key={group.key}>
                 <TableRow
@@ -137,9 +147,13 @@ export function ReportsTable({ reports, doctors }: Props) {
                   <TableCell className="text-right tabular-nums font-semibold">{consultationCount}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">{examCount}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">
+                    {hoursWorked > 0 ? hoursWorked : "—"}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-semibold">
                     {formatCurrency(consultationValue)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">{formatCurrency(examValue)}</TableCell>
+                  <TableCell className="text-right tabular-nums font-semibold">{formatCurrency(hourlyValue)}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">{formatCurrency(totalValue)}</TableCell>
                   <TableCell />
                 </TableRow>
@@ -150,8 +164,10 @@ export function ReportsTable({ reports, doctors }: Props) {
                       <TableCell>{r.doctorName}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.consultationCount}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.examCount}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.hoursWorked ?? "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatCurrency(r.consultationValue)}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatCurrency(r.examValue)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(r.hourlyValue)}</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">
                         {formatCurrency(r.totalValue)}
                       </TableCell>
@@ -164,6 +180,7 @@ export function ReportsTable({ reports, doctors }: Props) {
                               doctorId: r.doctorId,
                               competencia: r.competencia,
                               consultationCount: r.consultationCount,
+                              hoursWorked: r.hoursWorked,
                               notes: r.notes,
                               examCounts: r.examCounts,
                             }}

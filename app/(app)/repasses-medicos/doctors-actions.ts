@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 
+export type DoctorPaymentModel = "CONSULTATION" | "CONSULTATION_AND_EXAM" | "HOURLY";
+
 export interface DoctorExamRateInput {
   examTypeId: string;
   rate: number;
@@ -15,7 +17,9 @@ export interface DoctorInput {
   specialty: string;
   document?: string;
   paymentMethod?: string;
-  consultationRate: number;
+  paymentModel: DoctorPaymentModel;
+  consultationRate?: number;
+  hourlyRate?: number;
   active: boolean;
   notes?: string;
   examRates: DoctorExamRateInput[];
@@ -24,19 +28,41 @@ export interface DoctorInput {
 function validate(input: DoctorInput): string | null {
   if (!input.name.trim()) return "Informe o nome do médico.";
   if (!input.specialty.trim()) return "Informe a especialização do médico.";
-  if (!Number.isFinite(input.consultationRate) || input.consultationRate < 0) {
+
+  if (input.paymentModel === "HOURLY") {
+    if (!Number.isFinite(input.hourlyRate) || (input.hourlyRate as number) < 0) {
+      return "Informe um valor por hora válido.";
+    }
+    return null;
+  }
+
+  if (!Number.isFinite(input.consultationRate) || (input.consultationRate as number) < 0) {
     return "Informe um valor de consulta válido.";
   }
-  for (const r of input.examRates) {
-    if (!r.examTypeId) return "Selecione o tipo de exame em todas as linhas.";
-    if (!Number.isFinite(r.rate) || r.rate < 0) return "Todo valor de exame deve ser válido.";
-  }
-  const seen = new Set<string>();
-  for (const r of input.examRates) {
-    if (seen.has(r.examTypeId)) return "Não repita o mesmo tipo de exame nas taxas do médico.";
-    seen.add(r.examTypeId);
+  if (input.paymentModel === "CONSULTATION_AND_EXAM") {
+    for (const r of input.examRates) {
+      if (!r.examTypeId) return "Selecione o tipo de exame em todas as linhas.";
+      if (!Number.isFinite(r.rate) || r.rate < 0) return "Todo valor de exame deve ser válido.";
+    }
+    const seen = new Set<string>();
+    for (const r of input.examRates) {
+      if (seen.has(r.examTypeId)) return "Não repita o mesmo tipo de exame nas taxas do médico.";
+      seen.add(r.examTypeId);
+    }
   }
   return null;
+}
+
+// Normaliza os campos pro modelo de pagamento escolhido — evita gravar
+// lixo (ex: hourlyRate preenchido num médico CONSULTATION) se o form
+// mandar valores antigos de quando o usuário trocou de modelo na tela.
+function normalize(input: DoctorInput) {
+  const examRates = input.paymentModel === "CONSULTATION_AND_EXAM" ? input.examRates : [];
+  return {
+    consultationRate: input.paymentModel === "HOURLY" ? null : input.consultationRate ?? null,
+    hourlyRate: input.paymentModel === "HOURLY" ? input.hourlyRate ?? null : null,
+    examRates,
+  };
 }
 
 export async function createDoctor(input: DoctorInput): Promise<{ error?: string }> {
@@ -46,6 +72,7 @@ export async function createDoctor(input: DoctorInput): Promise<{ error?: string
   try {
     await requireUser();
     const companyId = await getActiveCompanyId();
+    const { consultationRate, hourlyRate, examRates } = normalize(input);
 
     await prisma.doctor.create({
       data: {
@@ -54,11 +81,13 @@ export async function createDoctor(input: DoctorInput): Promise<{ error?: string
         specialty: input.specialty.trim(),
         document: input.document?.trim() || null,
         paymentMethod: input.paymentMethod?.trim() || null,
-        consultationRate: input.consultationRate,
+        paymentModel: input.paymentModel,
+        consultationRate,
+        hourlyRate,
         active: input.active,
         notes: input.notes?.trim() || null,
         examRates: {
-          create: input.examRates.map((r) => ({ examTypeId: r.examTypeId, rate: r.rate })),
+          create: examRates.map((r) => ({ examTypeId: r.examTypeId, rate: r.rate })),
         },
       },
     });
@@ -80,6 +109,7 @@ export async function updateDoctor(id: string, input: DoctorInput): Promise<{ er
 
     const doctor = await prisma.doctor.findFirst({ where: { id, companyId } });
     if (!doctor) return { error: "Médico não encontrado." };
+    const { consultationRate, hourlyRate, examRates } = normalize(input);
 
     await prisma.$transaction(async (tx) => {
       await tx.doctorExamRate.deleteMany({ where: { doctorId: id } });
@@ -90,11 +120,13 @@ export async function updateDoctor(id: string, input: DoctorInput): Promise<{ er
           specialty: input.specialty.trim(),
           document: input.document?.trim() || null,
           paymentMethod: input.paymentMethod?.trim() || null,
-          consultationRate: input.consultationRate,
+          paymentModel: input.paymentModel,
+          consultationRate,
+          hourlyRate,
           active: input.active,
           notes: input.notes?.trim() || null,
           examRates: {
-            create: input.examRates.map((r) => ({ examTypeId: r.examTypeId, rate: r.rate })),
+            create: examRates.map((r) => ({ examTypeId: r.examTypeId, rate: r.rate })),
           },
         },
       });

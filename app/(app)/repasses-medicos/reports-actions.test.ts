@@ -58,6 +58,46 @@ describe("createPeriodReport", () => {
     await expect(testPrisma.doctorPeriodReport.count()).resolves.toBe(0);
   });
 
+  it("cria repasse de médico HOURLY congelando a taxa por hora", async () => {
+    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
+    const doctor = await testPrisma.doctor.create({
+      data: { companyId: company.id, name: "Dr. Plantonista", paymentModel: "HOURLY", hourlyRate: 150 },
+    });
+
+    const result = await createPeriodReport({
+      doctorId: doctor.id,
+      competencia: "2026-08",
+      consultationCount: 0,
+      hoursWorked: 24,
+      examCounts: [],
+    });
+
+    expect(result.error).toBeUndefined();
+    const report = await testPrisma.doctorPeriodReport.findFirstOrThrow();
+    expect(report.consultationCount).toBeNull();
+    expect(report.consultationRate).toBeNull();
+    expect(Number(report.hoursWorked)).toBe(24);
+    expect(Number(report.hourlyRate)).toBe(150);
+  });
+
+  it("recusa repasse HOURLY sem horas trabalhadas", async () => {
+    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
+    const doctor = await testPrisma.doctor.create({
+      data: { companyId: company.id, name: "Dr. Plantonista", paymentModel: "HOURLY", hourlyRate: 150 },
+    });
+
+    const result = await createPeriodReport({
+      doctorId: doctor.id,
+      competencia: "2026-08",
+      consultationCount: 0,
+      hoursWorked: 0,
+      examCounts: [],
+    });
+
+    expect(result.error).toBeTruthy();
+    await expect(testPrisma.doctorPeriodReport.count()).resolves.toBe(0);
+  });
+
   it("recusa dois repasses do mesmo médico no mesmo mês", async () => {
     const { doctor } = await seedDoctorWithRates();
     await createPeriodReport({ doctorId: doctor.id, competencia: "2026-08", consultationCount: 20, examCounts: [] });
