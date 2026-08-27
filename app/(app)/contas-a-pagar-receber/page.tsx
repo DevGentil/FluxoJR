@@ -9,10 +9,15 @@ import { ScheduledFormDialog } from "./scheduled-form-dialog";
 import { MarkPaidDialog } from "./mark-paid-dialog";
 import { ImportDialog } from "./import-dialog";
 import { DeleteButton } from "@/components/delete-button";
+import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { deleteScheduledEntry } from "./actions";
 
+function effectiveStatus(status: string, dueDate: Date) {
+  return status === "PENDING" && dueDate < new Date() ? "OVERDUE" : status;
+}
+
 function statusBadge(status: string, dueDate: Date) {
-  const effective = status === "PENDING" && dueDate < new Date() ? "OVERDUE" : status;
+  const effective = effectiveStatus(status, dueDate);
   const map: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
     PENDING: { label: "Pendente", variant: "secondary" },
     OVERDUE: { label: "Atrasado", variant: "destructive" },
@@ -119,7 +124,7 @@ async function EntriesTable({ companyId, type }: { companyId: string; type: "PAY
   );
 }
 
-async function ConsolidatedEntriesTable({
+async function ConsolidatedEntriesSummary({
   companyIds,
   type,
 }: {
@@ -131,7 +136,7 @@ async function ConsolidatedEntriesTable({
       ? []
       : await prisma.scheduledEntry.findMany({
           where: { companyId: { in: companyIds }, type },
-          include: { company: true, category: true, supplier: true },
+          include: { company: true },
           orderBy: [{ company: { name: "asc" } }, { dueDate: "asc" }],
         });
 
@@ -145,56 +150,98 @@ async function ConsolidatedEntriesTable({
     );
   }
 
-  const groups: { companyName: string; entries: typeof entries }[] = [];
-  for (const entry of entries) {
-    const last = groups[groups.length - 1];
-    if (last && last.companyName === entry.company.name) {
-      last.entries.push(entry);
-    } else {
-      groups.push({ companyName: entry.company.name, entries: [entry] });
-    }
+  interface CompanySummary {
+    companyId: string;
+    companyName: string;
+    pending: number;
+    overdue: number;
+    paid: number;
+    openAmount: number;
+    nextDueDate: Date | null;
   }
 
+  const summaries: CompanySummary[] = [];
+  for (const entry of entries) {
+    let summary = summaries.find((s) => s.companyId === entry.companyId);
+    if (!summary) {
+      summary = {
+        companyId: entry.companyId,
+        companyName: entry.company.name,
+        pending: 0,
+        overdue: 0,
+        paid: 0,
+        openAmount: 0,
+        nextDueDate: null,
+      };
+      summaries.push(summary);
+    }
+
+    const status = effectiveStatus(entry.status, entry.dueDate);
+    if (status === "PENDING" || status === "OVERDUE") {
+      if (status === "PENDING") summary.pending += 1;
+      else summary.overdue += 1;
+      summary.openAmount += Number(entry.amount);
+      if (!summary.nextDueDate || entry.dueDate < summary.nextDueDate) {
+        summary.nextDueDate = entry.dueDate;
+      }
+    } else if (status === "PAID") {
+      summary.paid += 1;
+    }
+  }
+  summaries.sort((a, b) => a.companyName.localeCompare(b.companyName));
+
+  const totalOpen = summaries.reduce((sum, s) => sum + s.openAmount, 0);
+  const totalOverdue = summaries.reduce((sum, s) => sum + s.overdue, 0);
+
   return (
-    <div className="space-y-4">
-      {groups.map((group) => (
-        <Card key={group.companyName}>
-          <CardHeader>
-            <CardTitle>
-              {group.companyName} — {group.entries.length} lançamento(s)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Vencimento</TableHead>
-                  <TableHead>Descrição</TableHead>
-                  <TableHead>Categoria</TableHead>
-                  <TableHead>Fornecedor</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Valor</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {group.entries.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell>{formatDate(entry.dueDate)}</TableCell>
-                    <TableCell className="max-w-64 truncate">{entry.description}</TableCell>
-                    <TableCell>{entry.category?.name ?? "—"}</TableCell>
-                    <TableCell>{entry.supplier?.name ?? "—"}</TableCell>
-                    <TableCell>{statusBadge(entry.status, entry.dueDate)}</TableCell>
-                    <TableCell className="text-right tabular-nums font-medium">
-                      {formatCurrency(Number(entry.amount))}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          {summaries.length} empresa(s) — {formatCurrency(totalOpen)} em aberto
+          {totalOverdue > 0 && (
+            <span className="text-destructive font-normal ml-2">({totalOverdue} atrasado(s))</span>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Empresa</TableHead>
+              <TableHead className="text-right">Pendentes</TableHead>
+              <TableHead className="text-right">Atrasados</TableHead>
+              <TableHead className="text-right">Total em aberto</TableHead>
+              <TableHead>Próximo vencimento</TableHead>
+              <TableHead className="w-32" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {summaries.map((s) => (
+              <TableRow key={s.companyId}>
+                <TableCell className="font-medium">{s.companyName}</TableCell>
+                <TableCell className="text-right tabular-nums">{s.pending}</TableCell>
+                <TableCell className="text-right">
+                  {s.overdue > 0 ? (
+                    <Badge variant="destructive">{s.overdue}</Badge>
+                  ) : (
+                    <span className="text-muted-foreground tabular-nums">0</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-right tabular-nums font-medium">
+                  {formatCurrency(s.openAmount)}
+                </TableCell>
+                <TableCell>{s.nextDueDate ? formatDate(s.nextDueDate) : "—"}</TableCell>
+                <TableCell>
+                  <div className="flex justify-end">
+                    <SwitchToCompanyButton companyId={s.companyId} />
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -204,9 +251,9 @@ async function ConsolidatedEntries({ companyIds, scopeLabel }: { companyIds: str
       <div>
         <h1 className="text-2xl font-semibold">Contas a Pagar e a Receber</h1>
         <p className="text-muted-foreground text-sm">
-          Visão consolidada de todos os lançamentos previstos — {scopeLabel}. Somente leitura; para
-          cadastrar, editar, excluir ou dar baixa num lançamento, selecione uma empresa específica no menu
-          à esquerda.
+          Resumo por empresa dos lançamentos previstos — {scopeLabel}. Para ver o detalhe linha a linha,
+          cadastrar, editar, excluir ou dar baixa num lançamento, entre na empresa específica (use "Ver
+          detalhes" ou o menu à esquerda).
         </p>
       </div>
 
@@ -216,10 +263,10 @@ async function ConsolidatedEntries({ companyIds, scopeLabel }: { companyIds: str
           <TabsTrigger value="receivable">A Receber</TabsTrigger>
         </TabsList>
         <TabsContent value="payable" className="mt-4">
-          <ConsolidatedEntriesTable companyIds={companyIds} type="PAYABLE" />
+          <ConsolidatedEntriesSummary companyIds={companyIds} type="PAYABLE" />
         </TabsContent>
         <TabsContent value="receivable" className="mt-4">
-          <ConsolidatedEntriesTable companyIds={companyIds} type="RECEIVABLE" />
+          <ConsolidatedEntriesSummary companyIds={companyIds} type="RECEIVABLE" />
         </TabsContent>
       </Tabs>
     </div>
