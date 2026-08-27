@@ -11,6 +11,7 @@ import { ExamTypeFormDialog } from "./exam-type-form-dialog";
 import { ReportFormDialog } from "./report-form-dialog";
 import { ReportsTable } from "./reports-table";
 import { MetricsTable } from "./metrics-table";
+import { MonthRangeFilter } from "./month-range-filter";
 import { deleteDoctor, type DoctorPaymentModel } from "./doctors-actions";
 import { deleteExamType } from "./exam-types-actions";
 
@@ -19,6 +20,26 @@ const PAYMENT_MODEL_LABELS: Record<DoctorPaymentModel, string> = {
   CONSULTATION_AND_EXAM: "Consulta + exame",
   HOURLY: "Plantão (por hora)",
 };
+
+interface Props {
+  searchParams: Promise<{ from?: string; to?: string }>;
+}
+
+function monthKey(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthPresets() {
+  const now = new Date();
+  const thisMonth = monthKey(now);
+  const threeMonthsAgo = monthKey(new Date(now.getFullYear(), now.getMonth() - 2, 1));
+  const startOfYear = monthKey(new Date(now.getFullYear(), 0, 1));
+  return [
+    { label: "Este mês", from: thisMonth, to: thisMonth },
+    { label: "Últimos 3 meses", from: threeMonthsAgo, to: thisMonth },
+    { label: "Este ano", from: startOfYear, to: thisMonth },
+  ];
+}
 
 function RankingBar({
   label,
@@ -222,7 +243,7 @@ async function ConsolidatedSummary({ companyIds, scopeLabel }: { companyIds: str
   );
 }
 
-export default async function RepassesMedicosPage() {
+export default async function RepassesMedicosPage({ searchParams }: Props) {
   const scope = await getActiveScope();
   if (scope.type !== "company") {
     const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
@@ -230,6 +251,14 @@ export default async function RepassesMedicosPage() {
   }
 
   const companyId = scope.companyId;
+  const params = await searchParams;
+  // Filtro de período por competência (mês) — "De"/"Até" no formato
+  // "YYYY-MM". Sem filtro por padrão (mostra tudo), compartilhado entre
+  // "Repasses por período" e "Métricas de Custo".
+  const range = params.from && params.to ? { from: params.from, to: params.to } : null;
+  const competenciaFilter = range
+    ? { gte: new Date(`${range.from}-01T00:00:00`), lte: new Date(`${range.to}-01T00:00:00`) }
+    : undefined;
 
   const [doctors, examTypes, reports] = await Promise.all([
     prisma.doctor.findMany({
@@ -239,7 +268,7 @@ export default async function RepassesMedicosPage() {
     }),
     prisma.examType.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
     prisma.doctorPeriodReport.findMany({
-      where: { companyId },
+      where: { companyId, ...(competenciaFilter ? { competencia: competenciaFilter } : {}) },
       include: { doctor: true, examCounts: { include: { examType: true } } },
       orderBy: [{ competencia: "desc" }, { doctor: { name: "asc" } }],
     }),
@@ -424,7 +453,8 @@ export default async function RepassesMedicosPage() {
           <CardTitle>{reports.length} repasse(s) por período</CardTitle>
           <ReportFormDialog doctors={doctorOptions} />
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <MonthRangeFilter presets={monthPresets()} range={range} />
           <ReportsTable reports={reportsWithValues} doctors={doctorOptions} />
         </CardContent>
       </Card>
@@ -433,7 +463,8 @@ export default async function RepassesMedicosPage() {
         <CardHeader>
           <CardTitle>Métricas de Custo</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <MonthRangeFilter presets={monthPresets()} range={range} />
           <MetricsTable reports={reportsWithValues} />
         </CardContent>
       </Card>

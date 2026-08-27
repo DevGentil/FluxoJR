@@ -1,7 +1,8 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/format";
 import type { DoctorPaymentModel } from "./doctors-actions";
@@ -43,6 +44,7 @@ interface Props {
  * mesmo detalhamento por médico. Evita espalhar a mesma informação em
  * várias tabelas separadas. */
 export function MetricsTable({ reports }: Props) {
+  const [search, setSearch] = useState("");
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
 
   function toggleMonth(key: string) {
@@ -54,20 +56,40 @@ export function MetricsTable({ reports }: Props) {
     });
   }
 
+  // A busca por médico ignora o agrupamento por mês e mostra direto os
+  // meses com pelo menos um médico batendo com o nome — mesmo padrão da
+  // busca em ReportsTable ("Repasses por período").
+  const isSearching = search.trim().length > 0;
+  const filteredReports = useMemo(() => {
+    if (!isSearching) return reports;
+    const q = search.trim().toLowerCase();
+    return reports.filter((r) => r.doctorName.toLowerCase().includes(q));
+  }, [reports, search, isSearching]);
+
   // Já vem ordenado por competência desc, depois médico asc (da query).
   const groups = useMemo(() => {
     const result: { key: string; competencia: Date; reports: ReportRow[] }[] = [];
-    for (const r of reports) {
+    for (const r of filteredReports) {
       const key = r.competencia.toISOString().slice(0, 7);
       const last = result[result.length - 1];
       if (last && last.key === key) last.reports.push(r);
       else result.push({ key, competencia: r.competencia, reports: [r] });
     }
     return result;
-  }, [reports]);
+  }, [filteredReports]);
 
   return (
-    <Table>
+    <div className="space-y-3">
+      <div className="relative max-w-xs">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar por médico..."
+          className="pl-8"
+        />
+      </div>
+      <Table>
       <TableHeader>
         <TableRow>
           <TableHead>Mês / Médico</TableHead>
@@ -86,12 +108,12 @@ export function MetricsTable({ reports }: Props) {
         {groups.length === 0 && (
           <TableRow>
             <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
-              Sem repasses lançados ainda para calcular métricas.
+              {isSearching ? "Nenhum médico encontrado para essa busca." : "Sem repasses lançados ainda para calcular métricas."}
             </TableCell>
           </TableRow>
         )}
         {groups.map((group) => {
-          const isExpanded = expandedMonths.has(group.key);
+          const isExpanded = isSearching || expandedMonths.has(group.key);
           const consultas = group.reports.reduce((s, r) => s + r.consultationCount, 0);
           const exames = group.reports.reduce((s, r) => s + r.examCount, 0);
           const horas = group.reports.reduce((s, r) => s + (r.hoursWorked ?? 0), 0);
@@ -102,16 +124,17 @@ export function MetricsTable({ reports }: Props) {
           return (
             <Fragment key={group.key}>
               <TableRow
-                className="cursor-pointer bg-muted/40 hover:bg-muted/40"
-                onClick={() => toggleMonth(group.key)}
+                className={isSearching ? "bg-muted/40 hover:bg-muted/40" : "cursor-pointer bg-muted/40 hover:bg-muted/40"}
+                onClick={isSearching ? undefined : () => toggleMonth(group.key)}
               >
                 <TableCell className="font-semibold capitalize">
                   <span className="flex items-center gap-1.5">
-                    {isExpanded ? (
-                      <ChevronDown className="size-4 text-muted-foreground shrink-0" />
-                    ) : (
-                      <ChevronRight className="size-4 text-muted-foreground shrink-0" />
-                    )}
+                    {!isSearching &&
+                      (isExpanded ? (
+                        <ChevronDown className="size-4 text-muted-foreground shrink-0" />
+                      ) : (
+                        <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+                      ))}
                     {formatCompetencia(group.competencia)}
                   </span>
                 </TableCell>
@@ -154,6 +177,7 @@ export function MetricsTable({ reports }: Props) {
           );
         })}
       </TableBody>
-    </Table>
+      </Table>
+    </div>
   );
 }
