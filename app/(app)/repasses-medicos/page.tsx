@@ -431,7 +431,7 @@ export default async function RepassesMedicosPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Métricas</CardTitle>
+          <CardTitle>Métricas de Custo</CardTitle>
         </CardHeader>
         <CardContent>
           <MetricsTable reports={reportsWithValues} />
