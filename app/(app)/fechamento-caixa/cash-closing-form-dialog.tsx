@@ -25,6 +25,7 @@ import {
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { formatCurrency, toDateInputValue } from "@/lib/format";
 import { createCashClosing, updateCashClosing } from "./actions";
+import { CashClosingSummary, type CashClosingSummaryData } from "./cash-closing-summary";
 
 interface AccountOption {
   id: string;
@@ -59,6 +60,7 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<CashClosingSummaryData | null>(null);
   const nextId = useRef(0);
 
   const [date, setDate] = useState(closing ? toDateInputValue(closing.date) : toDateInputValue(new Date()));
@@ -100,6 +102,7 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
 
   function reset() {
     setError(null);
+    setSummary(null);
     if (!closing) {
       setDate(toDateInputValue(new Date()));
       setAccountId(accounts[0]?.id ?? "");
@@ -112,17 +115,19 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
 
   function handleSubmit() {
     setError(null);
+    const sangriaLines = sangrias
+      .filter((l) => l.label.trim() || l.amount)
+      .map((l) => ({ label: l.label, amount: Number(l.amount) }));
+    const pagamentoLines = pagamentos
+      .filter((l) => l.label.trim() || l.amount)
+      .map((l) => ({ label: l.label, amount: Number(l.amount) }));
     const payload = {
       date,
       accountId,
       countedCash: Number(countedCash),
       notes: notes || undefined,
-      sangrias: sangrias
-        .filter((l) => l.label.trim() || l.amount)
-        .map((l) => ({ label: l.label, amount: Number(l.amount) })),
-      pagamentos: pagamentos
-        .filter((l) => l.label.trim() || l.amount)
-        .map((l) => ({ label: l.label, amount: Number(l.amount) })),
+      sangrias: sangriaLines,
+      pagamentos: pagamentoLines,
     };
 
     startTransition(async () => {
@@ -131,9 +136,21 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
         setError(result.error);
         return;
       }
-      toast.success(closing ? "Fechamento atualizado." : "Fechamento salvo.");
-      setOpen(false);
-      reset();
+      if (closing) {
+        toast.success("Fechamento atualizado.");
+        setOpen(false);
+        reset();
+        return;
+      }
+      toast.success("Fechamento salvo.");
+      setSummary({
+        date,
+        accountName: accounts.find((a) => a.id === accountId)?.name ?? "",
+        countedCash: payload.countedCash,
+        notes: payload.notes ?? null,
+        sangrias: sangriaLines.map((l, i) => ({ id: `s${i}`, ...l })),
+        pagamentos: pagamentoLines.map((l, i) => ({ id: `p${i}`, ...l })),
+      });
     });
   }
 
@@ -199,106 +216,132 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
         </DialogTrigger>
       )}
       <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{closing ? "Editar fechamento de caixa" : "Novo fechamento de caixa"}</DialogTitle>
-          <DialogDescription>
-            Sangrias de cada caixa individual e pagamentos em dinheiro do dia, confrontados com a contagem
-            física.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="date">Data</Label>
-              <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+        {summary ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Fechamento salvo</DialogTitle>
+              <DialogDescription>Resumo do que foi lançado.</DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[65vh] overflow-y-auto pr-1">
+              <CashClosingSummary data={summary} />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="accountId">Conta</Label>
-              <Select
-                name="accountId"
-                items={Object.fromEntries(accounts.map((a) => [a.id, a.name]))}
-                value={accountId}
-                onValueChange={(v) => setAccountId(v ?? "")}
-                required
+            <DialogFooter>
+              <Button
+                onClick={() => {
+                  setOpen(false);
+                  reset();
+                }}
               >
-                <SelectTrigger id="accountId" className="w-full">
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                Fechar
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>{closing ? "Editar fechamento de caixa" : "Novo fechamento de caixa"}</DialogTitle>
+              <DialogDescription>
+                Sangrias de cada caixa individual e pagamentos em dinheiro do dia, confrontados com a contagem
+                física.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="date">Data</Label>
+                  <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="accountId">Conta</Label>
+                  <Select
+                    name="accountId"
+                    items={Object.fromEntries(accounts.map((a) => [a.id, a.name]))}
+                    value={accountId}
+                    onValueChange={(v) => setAccountId(v ?? "")}
+                    required
+                  >
+                    <SelectTrigger id="accountId" className="w-full">
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Sangrias (dinheiro retirado de cada caixa)</Label>
+                {renderLines(sangrias, setSangrias, "s", "Ex: CX Anna Carolina")}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Pagamentos (saídas em dinheiro do dia)</Label>
+                {renderLines(pagamentos, setPagamentos, "p", "Ex: Fornecedor X")}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="countedCash">Dinheiro contado (fisicamente)</Label>
+                <Input
+                  id="countedCash"
+                  type="number"
+                  step="0.01"
+                  value={countedCash}
+                  onChange={(e) => setCountedCash(e.target.value)}
+                  placeholder="R$"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notes">Observações (opcional)</Label>
+                <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+              </div>
+
+              <div className="rounded-lg border p-3 space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total sangrias</span>
+                  <span className="tabular-nums text-emerald-600 dark:text-emerald-400">
+                    {formatCurrency(totalSangrias)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total pagamentos</span>
+                  <span className="tabular-nums text-red-600 dark:text-red-400">
+                    {formatCurrency(totalPagamentos)}
+                  </span>
+                </div>
+                <div className="flex justify-between font-medium">
+                  <span>Valor do caixa (calculado)</span>
+                  <span className="tabular-nums">{formatCurrency(valorCaixa)}</span>
+                </div>
+                <div className="flex justify-between font-medium">
+                  <span>Diferença (contado − calculado)</span>
+                  <span
+                    className={`tabular-nums ${
+                      diferenca === 0 ? "text-muted-foreground" : "text-red-600 dark:text-red-400"
+                    }`}
+                  >
+                    {formatCurrency(diferenca)}
+                  </span>
+                </div>
+              </div>
+
+              {error && <p className="text-sm text-destructive">{error}</p>}
             </div>
-          </div>
 
-          <div className="space-y-2">
-            <Label>Sangrias (dinheiro retirado de cada caixa)</Label>
-            {renderLines(sangrias, setSangrias, "s", "Ex: CX Anna Carolina")}
-          </div>
-
-          <div className="space-y-2">
-            <Label>Pagamentos (saídas em dinheiro do dia)</Label>
-            {renderLines(pagamentos, setPagamentos, "p", "Ex: Fornecedor X")}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="countedCash">Dinheiro contado (fisicamente)</Label>
-            <Input
-              id="countedCash"
-              type="number"
-              step="0.01"
-              value={countedCash}
-              onChange={(e) => setCountedCash(e.target.value)}
-              placeholder="R$"
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="notes">Observações (opcional)</Label>
-            <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
-          </div>
-
-          <div className="rounded-lg border p-3 space-y-1 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Total sangrias</span>
-              <span className="tabular-nums text-emerald-600 dark:text-emerald-400">
-                {formatCurrency(totalSangrias)}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Total pagamentos</span>
-              <span className="tabular-nums text-red-600 dark:text-red-400">{formatCurrency(totalPagamentos)}</span>
-            </div>
-            <div className="flex justify-between font-medium">
-              <span>Valor do caixa (calculado)</span>
-              <span className="tabular-nums">{formatCurrency(valorCaixa)}</span>
-            </div>
-            <div className="flex justify-between font-medium">
-              <span>Diferença (contado − calculado)</span>
-              <span
-                className={`tabular-nums ${
-                  diferenca === 0 ? "text-muted-foreground" : "text-red-600 dark:text-red-400"
-                }`}
-              >
-                {formatCurrency(diferenca)}
-              </span>
-            </div>
-          </div>
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
-
-        <DialogFooter>
-          <Button onClick={handleSubmit} disabled={isPending}>
-            {isPending ? "Salvando..." : "Salvar"}
-          </Button>
-        </DialogFooter>
+            <DialogFooter>
+              <Button onClick={handleSubmit} disabled={isPending}>
+                {isPending ? "Salvando..." : "Salvar"}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -1,30 +1,18 @@
 import { prisma } from "@/lib/prisma";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
-import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { DeleteButton } from "@/components/delete-button";
 import { CashClosingFormDialog } from "./cash-closing-form-dialog";
+import { CashClosingRow, type CashClosingRowData } from "./cash-closing-row";
 import { deleteCashClosing } from "./actions";
+import { formatDate } from "@/lib/format";
 
-function computeTotals(lines: { type: string; amount: unknown }[]) {
-  let totalSangrias = 0;
-  let totalPagamentos = 0;
-  for (const line of lines) {
-    const amount = Number(line.amount);
-    if (line.type === "SANGRIA") totalSangrias += amount;
-    else totalPagamentos += amount;
-  }
-  const valorCaixa = totalSangrias - totalPagamentos;
-  return { totalSangrias, totalPagamentos, valorCaixa };
-}
-
-function DiferencaBadge({ diferenca }: { diferenca: number }) {
-  if (Math.abs(diferenca) < 0.005) {
-    return <span className="text-muted-foreground">R$ 0,00</span>;
-  }
-  return <Badge variant="destructive">{formatCurrency(diferenca)}</Badge>;
+function toLines(lines: { id: string; type: string; label: string; amount: unknown; order: number }[], type: "SANGRIA" | "PAGAMENTO") {
+  return lines
+    .filter((l) => l.type === type)
+    .sort((a, b) => a.order - b.order)
+    .map((l) => ({ id: l.id, label: l.label, amount: Number(l.amount) }));
 }
 
 export default async function FechamentoCaixaPage() {
@@ -35,7 +23,7 @@ export default async function FechamentoCaixaPage() {
     const [closings, accounts] = await Promise.all([
       prisma.cashClosing.findMany({
         where: { companyId: scope.companyId },
-        include: { lines: true },
+        include: { lines: true, account: true },
         orderBy: { date: "desc" },
       }),
       prisma.account.findMany({ where: { companyId: scope.companyId }, orderBy: { name: "asc" } }),
@@ -80,25 +68,24 @@ export default async function FechamentoCaixaPage() {
                   </TableRow>
                 )}
                 {closings.map((closing) => {
-                  const { totalSangrias, totalPagamentos, valorCaixa } = computeTotals(closing.lines);
                   const countedCash = Number(closing.countedCash);
-                  const diferenca = countedCash - valorCaixa;
+                  const sangrias = toLines(closing.lines, "SANGRIA");
+                  const pagamentos = toLines(closing.lines, "PAGAMENTO");
+                  const rowData: CashClosingRowData = {
+                    id: closing.id,
+                    date: closing.date,
+                    accountName: closing.account.name,
+                    countedCash,
+                    notes: closing.notes,
+                    sangrias,
+                    pagamentos,
+                  };
                   return (
-                    <TableRow key={closing.id}>
-                      <TableCell className="font-medium">{formatDate(closing.date)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
-                        {formatCurrency(totalSangrias)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-red-600 dark:text-red-400">
-                        {formatCurrency(totalPagamentos)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(valorCaixa)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(countedCash)}</TableCell>
-                      <TableCell className="text-right">
-                        <DiferencaBadge diferenca={diferenca} />
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex justify-end gap-1">
+                    <CashClosingRow
+                      key={closing.id}
+                      closing={rowData}
+                      actions={
+                        <>
                           <CashClosingFormDialog
                             accounts={accountOptions}
                             closing={{
@@ -107,14 +94,8 @@ export default async function FechamentoCaixaPage() {
                               accountId: closing.accountId,
                               countedCash,
                               notes: closing.notes,
-                              sangrias: closing.lines
-                                .filter((l) => l.type === "SANGRIA")
-                                .sort((a, b) => a.order - b.order)
-                                .map((l) => ({ id: l.id, label: l.label, amount: Number(l.amount) })),
-                              pagamentos: closing.lines
-                                .filter((l) => l.type === "PAGAMENTO")
-                                .sort((a, b) => a.order - b.order)
-                                .map((l) => ({ id: l.id, label: l.label, amount: Number(l.amount) })),
+                              sangrias,
+                              pagamentos,
                             }}
                           />
                           <DeleteButton
@@ -122,9 +103,9 @@ export default async function FechamentoCaixaPage() {
                             title={`Excluir fechamento de ${formatDate(closing.date)}?`}
                             description="A transação de entrada gerada por esse fechamento também será excluída."
                           />
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                        </>
+                      }
+                    />
                   );
                 })}
               </TableBody>
@@ -141,7 +122,7 @@ export default async function FechamentoCaixaPage() {
       ? []
       : await prisma.cashClosing.findMany({
           where: { companyId: { in: companyIds } },
-          include: { lines: true, company: true },
+          include: { lines: true, company: true, account: true },
           orderBy: [{ company: { name: "asc" } }, { date: "desc" }],
         });
 
@@ -190,25 +171,17 @@ export default async function FechamentoCaixaPage() {
                 </TableHeader>
                 <TableBody>
                   {group.closings.map((closing) => {
-                    const { totalSangrias, totalPagamentos, valorCaixa } = computeTotals(closing.lines);
-                    const countedCash = Number(closing.countedCash);
-                    const diferenca = countedCash - valorCaixa;
-                    return (
-                      <TableRow key={closing.id}>
-                        <TableCell className="font-medium">{formatDate(closing.date)}</TableCell>
-                        <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
-                          {formatCurrency(totalSangrias)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-red-600 dark:text-red-400">
-                          {formatCurrency(totalPagamentos)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">{formatCurrency(valorCaixa)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatCurrency(countedCash)}</TableCell>
-                        <TableCell className="text-right">
-                          <DiferencaBadge diferenca={diferenca} />
-                        </TableCell>
-                      </TableRow>
-                    );
+                    const rowData: CashClosingRowData = {
+                      id: closing.id,
+                      date: closing.date,
+                      accountName: closing.account.name,
+                      companyName: closing.company.name,
+                      countedCash: Number(closing.countedCash),
+                      notes: closing.notes,
+                      sangrias: toLines(closing.lines, "SANGRIA"),
+                      pagamentos: toLines(closing.lines, "PAGAMENTO"),
+                    };
+                    return <CashClosingRow key={closing.id} closing={rowData} />;
                   })}
                 </TableBody>
               </Table>
