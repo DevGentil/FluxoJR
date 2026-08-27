@@ -3,11 +3,8 @@ import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { formatCurrency } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
-import { DateRangePresets } from "@/components/date-range-presets";
+import { PeriodFilter } from "@/components/period-filter";
 import { ExportCsvButton } from "./export-csv-button";
 
 interface Props {
@@ -296,24 +293,7 @@ export default async function RelatoriosPage({ searchParams }: Props) {
         )}
       </div>
 
-      <Card>
-        <CardContent className="pt-6 space-y-3">
-          <DateRangePresets basePath="/relatorios" presets={presets} />
-          <form key={`${range.from}-${range.to}`} className="flex flex-wrap items-end gap-3" method="GET">
-            <div className="space-y-1">
-              <Label htmlFor="from">De</Label>
-              <Input id="from" name="from" type="date" defaultValue={range.from} className="w-40" />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="to">Até</Label>
-              <Input id="to" name="to" type="date" defaultValue={range.to} className="w-40" />
-            </div>
-            <Button type="submit" size="sm" variant="secondary">
-              Aplicar
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+      <PeriodFilter basePath="/relatorios" presets={presets} range={range} />
 
       {isConsolidated ? (
         <CompanyComparisonTable rows={allRows} />
