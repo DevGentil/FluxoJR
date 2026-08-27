@@ -170,7 +170,7 @@ export default async function BalancoPage({ searchParams }: Props) {
       <Card>
         <CardContent className="pt-6 space-y-3">
           <DateRangePresets basePath="/balanco" presets={presets} />
-          <form className="flex flex-wrap items-end gap-3" method="GET">
+          <form key={`${range.from}-${range.to}`} className="flex flex-wrap items-end gap-3" method="GET">
             <div className="space-y-1">
               <Label htmlFor="from">De</Label>
               <Input id="from" name="from" type="date" defaultValue={range.from} className="w-40" />
