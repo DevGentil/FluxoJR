@@ -1,4 +1,3 @@
-import { Fragment } from "react";
 import { prisma } from "@/lib/prisma";
 import { getActiveScope, getScopeLabel, resolveCompanyIds } from "@/lib/scope";
 import { formatDate } from "@/lib/format";
@@ -10,6 +9,7 @@ import { GroupFormDialog } from "./group-form-dialog";
 import { CompanyFormDialog } from "./company-form-dialog";
 import { DocumentFormDialog } from "./document-form-dialog";
 import { DeleteButton } from "@/components/delete-button";
+import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { deleteGroup, deleteCompany } from "./actions";
 import { deleteDocument } from "./documents-actions";
 import { Download } from "lucide-react";
@@ -93,12 +93,27 @@ async function DocumentsSection({ scope }: { scope: Awaited<ReturnType<typeof ge
           orderBy: [{ company: { name: "asc" } }, { createdAt: "desc" }],
         });
 
-  const groups: { companyName: string; documents: typeof documents }[] = [];
-  for (const doc of documents) {
-    const last = groups[groups.length - 1];
-    if (last && last.companyName === doc.company.name) last.documents.push(doc);
-    else groups.push({ companyName: doc.company.name, documents: [doc] });
+  // Resume por empresa (uma linha por empresa, não uma por documento) —
+  // evita poluir a tela conforme o número de arquivos cresce.
+  interface CompanySummary {
+    companyId: string;
+    companyName: string;
+    count: number;
+    totalSize: number;
+    lastUpload: Date;
   }
+  const summaries: CompanySummary[] = [];
+  for (const doc of documents) {
+    let summary = summaries.find((s) => s.companyId === doc.companyId);
+    if (!summary) {
+      summary = { companyId: doc.companyId, companyName: doc.company.name, count: 0, totalSize: 0, lastUpload: doc.createdAt };
+      summaries.push(summary);
+    }
+    summary.count += 1;
+    summary.totalSize += doc.size;
+    if (doc.createdAt > summary.lastUpload) summary.lastUpload = doc.createdAt;
+  }
+  summaries.sort((a, b) => a.companyName.localeCompare(b.companyName));
 
   return (
     <Card>
@@ -109,47 +124,33 @@ async function DocumentsSection({ scope }: { scope: Awaited<ReturnType<typeof ge
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Arquivo</TableHead>
-              <TableHead>Descrição</TableHead>
-              <TableHead>Tamanho</TableHead>
-              <TableHead>Enviado em</TableHead>
-              <TableHead className="w-12" />
+              <TableHead>Empresa</TableHead>
+              <TableHead className="text-right">Arquivos</TableHead>
+              <TableHead className="text-right">Tamanho total</TableHead>
+              <TableHead>Último envio</TableHead>
+              <TableHead className="w-32" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {documents.length === 0 && (
+            {summaries.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                   Nenhum documento nesse escopo.
                 </TableCell>
               </TableRow>
             )}
-            {groups.map((group) => (
-              <Fragment key={group.companyName}>
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableCell colSpan={5} className="font-semibold">
-                    {group.companyName}
-                  </TableCell>
-                </TableRow>
-                {group.documents.map((doc) => (
-                  <TableRow key={doc.id}>
-                    <TableCell className="font-medium">{doc.fileName}</TableCell>
-                    <TableCell className="max-w-80 truncate">{doc.description}</TableCell>
-                    <TableCell>{formatBytes(doc.size)}</TableCell>
-                    <TableCell>{formatDate(doc.createdAt)}</TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        nativeButton={false}
-                        render={<a href={`/api/documents/${doc.id}`} />}
-                      >
-                        <Download className="size-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </Fragment>
+            {summaries.map((s) => (
+              <TableRow key={s.companyId}>
+                <TableCell className="font-medium">{s.companyName}</TableCell>
+                <TableCell className="text-right tabular-nums">{s.count}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatBytes(s.totalSize)}</TableCell>
+                <TableCell>{formatDate(s.lastUpload)}</TableCell>
+                <TableCell>
+                  <div className="flex justify-end">
+                    <SwitchToCompanyButton companyId={s.companyId} />
+                  </div>
+                </TableCell>
+              </TableRow>
             ))}
           </TableBody>
         </Table>
