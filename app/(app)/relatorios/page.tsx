@@ -1,11 +1,16 @@
 import { prisma } from "@/lib/prisma";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { PeriodFilter } from "@/components/period-filter";
+import { DeleteButton } from "@/components/delete-button";
+import { DreReportFormDialog } from "./dre-report-form-dialog";
+import { deleteDreReport } from "./dre-reports-actions";
 import { ExportCsvButton } from "./export-csv-button";
+import { Download } from "lucide-react";
 
 interface Props {
   searchParams: Promise<{ from?: string; to?: string }>;
@@ -41,6 +46,16 @@ function presetRange(kind: "today" | "week" | "month") {
     from.setDate(1);
   }
   return { from: toISODate(from), to: toISODate(to) };
+}
+
+function formatCompetencia(value: Date) {
+  return value.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function resultColor(value: number) {
@@ -208,6 +223,74 @@ function CompanyComparisonTable({ rows }: { rows: ReportRow[] }) {
   );
 }
 
+/** DREs realizados: arquivos oficiais (Excel/PDF) fechados pelo contador
+ * para um mês específico, guardados como referência ao lado do DRE que o
+ * sistema calcula automaticamente. Só existe no escopo de uma empresa —
+ * cada arquivo pertence a uma unidade específica. */
+async function DreReportsSection({ companyId }: { companyId: string }) {
+  const reports = await prisma.dreReport.findMany({
+    where: { companyId },
+    orderBy: { competencia: "desc" },
+  });
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle>DREs realizados</CardTitle>
+        <DreReportFormDialog />
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Mês</TableHead>
+              <TableHead>Arquivo</TableHead>
+              <TableHead>Observações</TableHead>
+              <TableHead>Tamanho</TableHead>
+              <TableHead>Enviado em</TableHead>
+              <TableHead className="w-24" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {reports.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                  Nenhum DRE realizado enviado ainda.
+                </TableCell>
+              </TableRow>
+            )}
+            {reports.map((r) => (
+              <TableRow key={r.id}>
+                <TableCell className="font-medium capitalize">{formatCompetencia(r.competencia)}</TableCell>
+                <TableCell className="max-w-64 truncate">{r.fileName}</TableCell>
+                <TableCell className="max-w-64 truncate text-muted-foreground">{r.notes || "—"}</TableCell>
+                <TableCell>{formatBytes(r.size)}</TableCell>
+                <TableCell>{formatDate(r.createdAt)}</TableCell>
+                <TableCell>
+                  <div className="flex justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      nativeButton={false}
+                      render={<a href={`/api/dre-reports/${r.id}`} />}
+                    >
+                      <Download className="size-4" />
+                    </Button>
+                    <DeleteButton
+                      action={deleteDreReport.bind(null, r.id)}
+                      title={`Excluir o DRE de ${formatCompetencia(r.competencia)}?`}
+                    />
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default async function RelatoriosPage({ searchParams }: Props) {
   const params = await searchParams;
   const range = { from: params.from || defaultRange().from, to: params.to || defaultRange().to };
@@ -344,6 +427,8 @@ export default async function RelatoriosPage({ searchParams }: Props) {
               emptyLabel="Nenhuma saída no período selecionado."
             />
           </div>
+
+          {scope.type === "company" && <DreReportsSection companyId={scope.companyId} />}
         </>
       )}
     </div>
