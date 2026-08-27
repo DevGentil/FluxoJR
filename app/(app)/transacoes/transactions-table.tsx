@@ -17,7 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { TransactionFormDialog } from "./transaction-form-dialog";
 import { DeleteButton } from "@/components/delete-button";
@@ -55,6 +55,7 @@ interface Props {
 export function TransactionsTable({ transactions, accounts, categories, suppliers = [], otherCompanies = [] }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
 
   const allSelected = transactions.length > 0 && selected.size === transactions.length;
   const someSelected = selected.size > 0 && !allSelected;
@@ -74,6 +75,15 @@ export function TransactionsTable({ transactions, accounts, categories, supplier
     });
   }
 
+  function toggleDay(dayId: string) {
+    setExpandedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(dayId)) next.delete(dayId);
+      else next.add(dayId);
+      return next;
+    });
+  }
+
   function handleBulkDelete() {
     startTransition(async () => {
       const result = await deleteTransactions(selectedIds);
@@ -86,14 +96,25 @@ export function TransactionsTable({ transactions, accounts, categories, supplier
     });
   }
 
-  // Já vem ordenado por conta na consulta — agrupa visualmente as linhas
-  // adjacentes da mesma conta, com um cabeçalho por grupo.
+  // Já vem ordenado por conta e depois por data (mais recente primeiro) na
+  // consulta — agrupa visualmente em conta -> dia, com totais de
+  // entradas/saídas por dia. Reduz a poluição de listar cada lançamento
+  // solto quando o volume cresce; clicar num dia expande o detalhe.
   const groups = useMemo(() => {
-    const result: { accountName: string; transactions: TransactionRow[] }[] = [];
+    const result: { accountName: string; days: { key: string; date: Date; transactions: TransactionRow[] }[] }[] = [];
     for (const t of transactions) {
-      const last = result[result.length - 1];
-      if (last && last.accountName === t.accountName) last.transactions.push(t);
-      else result.push({ accountName: t.accountName, transactions: [t] });
+      let accGroup = result[result.length - 1];
+      if (!accGroup || accGroup.accountName !== t.accountName) {
+        accGroup = { accountName: t.accountName, days: [] };
+        result.push(accGroup);
+      }
+      const dayKey = t.date.toISOString().slice(0, 10);
+      let dayGroup = accGroup.days[accGroup.days.length - 1];
+      if (!dayGroup || dayGroup.key !== dayKey) {
+        dayGroup = { key: dayKey, date: t.date, transactions: [] };
+        accGroup.days.push(dayGroup);
+      }
+      dayGroup.transactions.push(t);
     }
     return result;
   }, [transactions]);
@@ -159,59 +180,102 @@ export function TransactionsTable({ transactions, accounts, categories, supplier
                   {group.accountName}
                 </TableCell>
               </TableRow>
-              {group.transactions.map((t) => (
-                <TableRow key={t.id} data-state={selected.has(t.id) ? "selected" : undefined}>
-                  <TableCell>
-                    <Checkbox
-                      checked={selected.has(t.id)}
-                      onCheckedChange={(checked) => toggleOne(t.id, Boolean(checked))}
-                      aria-label={`Selecionar transação ${t.description}`}
-                    />
-                  </TableCell>
-                  <TableCell>{formatDate(t.date)}</TableCell>
-                  <TableCell className="max-w-64 truncate">{t.description}</TableCell>
-                  <TableCell>{t.categoryName ?? "—"}</TableCell>
-                  <TableCell>{t.supplierName ?? "—"}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Badge variant="outline">
-                        {t.source === "MANUAL" ? "Manual" : t.source === "IMPORT" ? "Importado" : "Baixa"}
-                      </Badge>
-                      {t.transferCompanyId && <Badge variant="secondary">Transferência</Badge>}
-                    </div>
-                  </TableCell>
-                  <TableCell
-                    className={`text-right tabular-nums font-medium ${
-                      t.type === "INCOME" ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
-                    }`}
-                  >
-                    {t.type === "INCOME" ? "+" : "-"}
-                    {formatCurrency(t.amount)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-1">
-                      <TransactionFormDialog
-                        accounts={accounts}
-                        categories={categories}
-                        suppliers={suppliers}
-                        otherCompanies={otherCompanies}
-                        transaction={{
-                          id: t.id,
-                          date: t.date,
-                          amount: t.amount,
-                          type: t.type,
-                          description: t.description,
-                          accountId: t.accountId,
-                          categoryId: t.categoryId,
-                          supplierId: t.supplierId,
-                          transferCompanyId: t.transferCompanyId,
-                        }}
-                      />
-                      <DeleteButton action={deleteTransaction.bind(null, t.id)} title="Excluir transação?" />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {group.days.map((day) => {
+                const dayId = `${group.accountName}__${day.key}`;
+                const isExpanded = expandedDays.has(dayId);
+                const income = day.transactions
+                  .filter((t) => t.type === "INCOME")
+                  .reduce((s, t) => s + t.amount, 0);
+                const expense = day.transactions
+                  .filter((t) => t.type === "EXPENSE")
+                  .reduce((s, t) => s + t.amount, 0);
+                return (
+                  <Fragment key={dayId}>
+                    <TableRow className="cursor-pointer" onClick={() => toggleDay(dayId)}>
+                      <TableCell onClick={(e) => e.stopPropagation()} />
+                      <TableCell className="font-medium">
+                        <span className="flex items-center gap-1.5">
+                          {isExpanded ? (
+                            <ChevronDown className="size-4 text-muted-foreground shrink-0" />
+                          ) : (
+                            <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+                          )}
+                          {formatDate(day.date)}
+                        </span>
+                      </TableCell>
+                      <TableCell colSpan={3} className="text-muted-foreground text-sm">
+                        {day.transactions.length} transação(ões)
+                      </TableCell>
+                      <TableCell />
+                      <TableCell className="text-right tabular-nums text-sm">
+                        {income > 0 && (
+                          <div className="text-emerald-600 dark:text-emerald-400">+{formatCurrency(income)}</div>
+                        )}
+                        {expense > 0 && (
+                          <div className="text-red-600 dark:text-red-400">-{formatCurrency(expense)}</div>
+                        )}
+                      </TableCell>
+                      <TableCell />
+                    </TableRow>
+                    {isExpanded &&
+                      day.transactions.map((t) => (
+                        <TableRow key={t.id} data-state={selected.has(t.id) ? "selected" : undefined}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selected.has(t.id)}
+                              onCheckedChange={(checked) => toggleOne(t.id, Boolean(checked))}
+                              aria-label={`Selecionar transação ${t.description}`}
+                            />
+                          </TableCell>
+                          <TableCell className="pl-6 text-muted-foreground text-sm">{formatDate(t.date)}</TableCell>
+                          <TableCell className="max-w-64 truncate">{t.description}</TableCell>
+                          <TableCell>{t.categoryName ?? "—"}</TableCell>
+                          <TableCell>{t.supplierName ?? "—"}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-1">
+                              <Badge variant="outline">
+                                {t.source === "MANUAL" ? "Manual" : t.source === "IMPORT" ? "Importado" : "Baixa"}
+                              </Badge>
+                              {t.transferCompanyId && <Badge variant="secondary">Transferência</Badge>}
+                            </div>
+                          </TableCell>
+                          <TableCell
+                            className={`text-right tabular-nums font-medium ${
+                              t.type === "INCOME"
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-red-600 dark:text-red-400"
+                            }`}
+                          >
+                            {t.type === "INCOME" ? "+" : "-"}
+                            {formatCurrency(t.amount)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex justify-end gap-1">
+                              <TransactionFormDialog
+                                accounts={accounts}
+                                categories={categories}
+                                suppliers={suppliers}
+                                otherCompanies={otherCompanies}
+                                transaction={{
+                                  id: t.id,
+                                  date: t.date,
+                                  amount: t.amount,
+                                  type: t.type,
+                                  description: t.description,
+                                  accountId: t.accountId,
+                                  categoryId: t.categoryId,
+                                  supplierId: t.supplierId,
+                                  transferCompanyId: t.transferCompanyId,
+                                }}
+                              />
+                              <DeleteButton action={deleteTransaction.bind(null, t.id)} title="Excluir transação?" />
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </Fragment>
+                );
+              })}
             </Fragment>
           ))}
         </TableBody>

@@ -10,6 +10,7 @@ import { TransactionFormDialog } from "./transaction-form-dialog";
 import { ImportDialog } from "./import-dialog";
 import { TransactionsTable } from "./transactions-table";
 import { OpenCompanyButton } from "@/components/open-company-button";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 interface Props {
@@ -168,6 +169,19 @@ export default async function TransacoesPage({ searchParams }: Props) {
           <p className="text-muted-foreground text-sm">Entradas e saídas lançadas manualmente ou importadas.</p>
         </div>
         <div className="flex gap-2">
+          <ExportCsvButton
+            headers={["Data", "Conta", "Descrição", "Categoria", "Fornecedor", "Tipo", "Valor"]}
+            rows={transactions.map((t) => [
+              t.date.toISOString().slice(0, 10).split("-").reverse().join("/"),
+              t.account.name,
+              t.description,
+              t.category?.name ?? "",
+              t.supplier?.name ?? "",
+              t.type === "INCOME" ? "Entrada" : "Saída",
+              Number(t.amount),
+            ])}
+            fileName={`transacoes-${new Date().toISOString().slice(0, 10)}.csv`}
+          />
           <ImportDialog accounts={accountOptions} categories={categoryOptions} />
           <TransactionFormDialog
             accounts={accountOptions}
