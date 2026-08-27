@@ -9,7 +9,7 @@ import { PeriodFilter } from "@/components/period-filter";
 import { DeleteButton } from "@/components/delete-button";
 import { DreReportFormDialog } from "./dre-report-form-dialog";
 import { deleteDreReport } from "./dre-reports-actions";
-import { ExportCsvButton } from "./export-csv-button";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import { Download } from "lucide-react";
 
 interface Props {
