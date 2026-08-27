@@ -1,12 +1,14 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
-import { getPeriodBalanceReport } from "@/lib/balance-report";
+import { getPeriodBalanceReport, type PeriodBalanceReport } from "@/lib/balance-report";
 import { formatCurrency } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 
 interface Props {
   searchParams: Promise<{ from?: string; to?: string }>;
@@ -43,6 +45,98 @@ function netFlowColor(value: number) {
   if (value > 0) return "text-emerald-600 dark:text-emerald-400";
   if (value < 0) return "text-red-600 dark:text-red-400";
   return "";
+}
+
+/** Posição de contas agrupada por empresa (uma seção por unidade, com
+ * subtotal e atalho pro balanço daquela empresa) em vez de uma lista única
+ * misturando contas de empresas diferentes. */
+function AccountsPositionByCompany({ report }: { report: PeriodBalanceReport }) {
+  const groups: { companyId: string; companyName: string; accounts: PeriodBalanceReport["accounts"] }[] = [];
+  for (const account of report.accounts) {
+    let group = groups.find((g) => g.companyId === account.companyId);
+    if (!group) {
+      group = { companyId: account.companyId, companyName: account.companyName, accounts: [] };
+      groups.push(group);
+    }
+    group.accounts.push(account);
+  }
+  groups.sort((a, b) => a.companyName.localeCompare(b.companyName));
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Conta</TableHead>
+          <TableHead className="text-right">Saldo inicial</TableHead>
+          <TableHead className="text-right">Saldo final</TableHead>
+          <TableHead className="text-right">Variação</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {groups.length === 0 && (
+          <TableRow>
+            <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+              Nenhuma conta cadastrada para esse escopo.
+            </TableCell>
+          </TableRow>
+        )}
+        {groups.map((group) => {
+          const subtotalOpening = group.accounts.reduce((s, a) => s + a.opening, 0);
+          const subtotalClosing = group.accounts.reduce((s, a) => s + a.closing, 0);
+          return (
+            <Fragment key={group.companyId}>
+              <TableRow className="bg-muted/40 hover:bg-muted/40">
+                <TableCell colSpan={3} className="font-semibold">
+                  {group.companyName}
+                </TableCell>
+                <TableCell className="text-right">
+                  <SwitchToCompanyButton companyId={group.companyId} label="Ver balanço" />
+                </TableCell>
+              </TableRow>
+              {group.accounts.map((a) => (
+                <TableRow key={a.accountId}>
+                  <TableCell className="pl-6">{a.accountName}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCurrency(a.opening)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCurrency(a.closing)}</TableCell>
+                  <TableCell className={`text-right tabular-nums ${netFlowColor(a.variation)}`}>
+                    {formatCurrency(a.variation)}
+                  </TableCell>
+                </TableRow>
+              ))}
+              <TableRow>
+                <TableCell className="text-muted-foreground text-sm">Subtotal {group.companyName}</TableCell>
+                <TableCell className="text-right tabular-nums text-muted-foreground text-sm">
+                  {formatCurrency(subtotalOpening)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums text-muted-foreground text-sm">
+                  {formatCurrency(subtotalClosing)}
+                </TableCell>
+                <TableCell
+                  className={`text-right tabular-nums text-sm ${netFlowColor(subtotalClosing - subtotalOpening)}`}
+                >
+                  {formatCurrency(subtotalClosing - subtotalOpening)}
+                </TableCell>
+              </TableRow>
+            </Fragment>
+          );
+        })}
+      </TableBody>
+      {groups.length > 0 && (
+        <TableFooter>
+          <TableRow>
+            <TableCell>Total consolidado</TableCell>
+            <TableCell className="text-right tabular-nums">{formatCurrency(report.totalOpening)}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatCurrency(report.totalClosing)}</TableCell>
+            <TableCell
+              className={`text-right tabular-nums ${netFlowColor(report.totalClosing - report.totalOpening)}`}
+            >
+              {formatCurrency(report.totalClosing - report.totalOpening)}
+            </TableCell>
+          </TableRow>
+        </TableFooter>
+      )}
+    </Table>
+  );
 }
 
 export default async function BalancoPage({ searchParams }: Props) {
@@ -145,49 +239,51 @@ export default async function BalancoPage({ searchParams }: Props) {
           <CardTitle>Posição de contas</CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {showCompanyColumn && <TableHead>Empresa</TableHead>}
-                <TableHead>Conta</TableHead>
-                <TableHead className="text-right">Saldo inicial</TableHead>
-                <TableHead className="text-right">Saldo final</TableHead>
-                <TableHead className="text-right">Variação</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {report.accounts.length === 0 && (
+          {showCompanyColumn ? (
+            <AccountsPositionByCompany report={report} />
+          ) : (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={showCompanyColumn ? 5 : 4} className="text-center text-muted-foreground py-8">
-                    Nenhuma conta cadastrada para esse escopo.
-                  </TableCell>
+                  <TableHead>Conta</TableHead>
+                  <TableHead className="text-right">Saldo inicial</TableHead>
+                  <TableHead className="text-right">Saldo final</TableHead>
+                  <TableHead className="text-right">Variação</TableHead>
                 </TableRow>
+              </TableHeader>
+              <TableBody>
+                {report.accounts.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                      Nenhuma conta cadastrada para esse escopo.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {report.accounts.map((a) => (
+                  <TableRow key={a.accountId}>
+                    <TableCell className="font-medium">{a.accountName}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatCurrency(a.opening)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatCurrency(a.closing)}</TableCell>
+                    <TableCell className={`text-right tabular-nums ${netFlowColor(a.variation)}`}>
+                      {formatCurrency(a.variation)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+              {report.accounts.length > 0 && (
+                <TableFooter>
+                  <TableRow>
+                    <TableCell>Total consolidado</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatCurrency(report.totalOpening)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatCurrency(report.totalClosing)}</TableCell>
+                    <TableCell className={`text-right tabular-nums ${netFlowColor(report.totalClosing - report.totalOpening)}`}>
+                      {formatCurrency(report.totalClosing - report.totalOpening)}
+                    </TableCell>
+                  </TableRow>
+                </TableFooter>
               )}
-              {report.accounts.map((a) => (
-                <TableRow key={a.accountId}>
-                  {showCompanyColumn && <TableCell>{a.companyName}</TableCell>}
-                  <TableCell className="font-medium">{a.accountName}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatCurrency(a.opening)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatCurrency(a.closing)}</TableCell>
-                  <TableCell className={`text-right tabular-nums ${netFlowColor(a.variation)}`}>
-                    {formatCurrency(a.variation)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-            {report.accounts.length > 0 && (
-              <TableFooter>
-                <TableRow>
-                  <TableCell colSpan={showCompanyColumn ? 2 : 1}>Total consolidado</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatCurrency(report.totalOpening)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatCurrency(report.totalClosing)}</TableCell>
-                  <TableCell className={`text-right tabular-nums ${netFlowColor(report.totalClosing - report.totalOpening)}`}>
-                    {formatCurrency(report.totalClosing - report.totalOpening)}
-                  </TableCell>
-                </TableRow>
-              </TableFooter>
-            )}
-          </Table>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
