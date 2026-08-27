@@ -1,4 +1,3 @@
-import { Fragment } from "react";
 import { prisma } from "@/lib/prisma";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { getAccountBalance } from "@/lib/cashflow";
@@ -20,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { AccountFormDialog } from "./account-form-dialog";
 import { DeleteButton } from "@/components/delete-button";
+import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { deleteAccount } from "./actions";
 
 async function ConsolidatedAccounts({ companyIds, scopeLabel }: { companyIds: string[]; scopeLabel: string }) {
@@ -34,87 +34,80 @@ async function ConsolidatedAccounts({ companyIds, scopeLabel }: { companyIds: st
 
   const balances = await Promise.all(accounts.map((a) => getAccountBalance(a.id)));
   const totalBalance = balances.reduce((sum, b) => sum + b, 0);
-  const companyCount = new Set(accounts.map((a) => a.companyId)).size;
 
-  // Agrupa por empresa (já vem ordenado por nome da empresa) — todo o bloco
-  // de uma unidade, depois o da próxima, com subtotal por empresa.
-  const groups: { companyName: string; accounts: { account: (typeof accounts)[number]; balance: number }[] }[] = [];
+  // Resume por empresa (uma linha por empresa, não uma por conta) — evita
+  // poluir a tela conforme o número de empresas/contas cresce.
+  interface CompanySummary {
+    companyId: string;
+    companyName: string;
+    accountCount: number;
+    balance: number;
+  }
+  const summaries: CompanySummary[] = [];
   accounts.forEach((account, i) => {
-    const balance = balances[i];
-    const last = groups[groups.length - 1];
-    if (last && last.companyName === account.company.name) {
-      last.accounts.push({ account, balance });
-    } else {
-      groups.push({ companyName: account.company.name, accounts: [{ account, balance }] });
+    let summary = summaries.find((s) => s.companyId === account.companyId);
+    if (!summary) {
+      summary = { companyId: account.companyId, companyName: account.company.name, accountCount: 0, balance: 0 };
+      summaries.push(summary);
     }
+    summary.accountCount += 1;
+    summary.balance += balances[i];
   });
+  summaries.sort((a, b) => a.companyName.localeCompare(b.companyName));
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Contas Bancárias</h1>
         <p className="text-muted-foreground text-sm">
-          Visão consolidada de todas as contas — {scopeLabel}. Somente leitura; para cadastrar, editar ou
-          excluir uma conta, selecione uma empresa específica no menu à esquerda.
+          Resumo por empresa — {scopeLabel}. Para ver as contas de uma unidade, use &quot;Ver detalhes&quot;
+          ou o menu à esquerda.
         </p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>
-            {accounts.length} conta(s) em {companyCount} empresa(s)
+            {accounts.length} conta(s) em {summaries.length} empresa(s)
           </CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>Tipo</TableHead>
+                <TableHead>Empresa</TableHead>
+                <TableHead className="text-right">Contas</TableHead>
                 <TableHead className="text-right">Saldo atual</TableHead>
+                <TableHead className="w-32" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {accounts.length === 0 && (
+              {summaries.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                     Nenhuma conta cadastrada nesse escopo.
                   </TableCell>
                 </TableRow>
               )}
-              {groups.map((group) => {
-                const groupTotal = group.accounts.reduce((sum, a) => sum + a.balance, 0);
-                return (
-                  <Fragment key={group.companyName}>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableCell colSpan={3} className="font-semibold">
-                        {group.companyName}
-                      </TableCell>
-                    </TableRow>
-                    {group.accounts.map(({ account, balance }) => (
-                      <TableRow key={account.id}>
-                        <TableCell>{account.name}</TableCell>
-                        <TableCell>{account.type}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatCurrency(balance)}</TableCell>
-                      </TableRow>
-                    ))}
-                    <TableRow>
-                      <TableCell colSpan={2} className="text-muted-foreground text-sm">
-                        Subtotal {group.companyName}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground text-sm">
-                        {formatCurrency(groupTotal)}
-                      </TableCell>
-                    </TableRow>
-                  </Fragment>
-                );
-              })}
+              {summaries.map((s) => (
+                <TableRow key={s.companyId}>
+                  <TableCell className="font-medium">{s.companyName}</TableCell>
+                  <TableCell className="text-right tabular-nums">{s.accountCount}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCurrency(s.balance)}</TableCell>
+                  <TableCell>
+                    <div className="flex justify-end">
+                      <SwitchToCompanyButton companyId={s.companyId} />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
-            {accounts.length > 0 && (
+            {summaries.length > 0 && (
               <TableFooter>
                 <TableRow>
                   <TableCell colSpan={2}>Total consolidado</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(totalBalance)}</TableCell>
+                  <TableCell />
                 </TableRow>
               </TableFooter>
             )}
