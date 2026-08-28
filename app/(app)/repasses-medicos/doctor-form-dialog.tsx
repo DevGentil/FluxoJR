@@ -24,15 +24,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Plus, Trash2, Pencil } from "lucide-react";
-import { createDoctor, updateDoctor, type DoctorInput, type DoctorPaymentModel } from "./doctors-actions";
+import { createDoctor, updateDoctor, type DoctorInput } from "./doctors-actions";
 
-const PAYMENT_MODEL_LABELS: Record<DoctorPaymentModel, string> = {
-  CONSULTATION: "Só consulta",
-  CONSULTATION_AND_EXAM: "Consulta + exame",
-  HOURLY: "Plantão (por hora)",
-};
-
-interface ServiceItemOption {
+export interface ServiceItemOption {
   id: string;
   name: string;
 }
@@ -51,9 +45,6 @@ interface Props {
     specialty: string;
     document: string | null;
     paymentMethod: string | null;
-    paymentModel: DoctorPaymentModel;
-    consultationRate: number | null;
-    hourlyRate: number | null;
     active: boolean;
     notes: string | null;
     serviceRates: { id: string; serviceItemId: string; rate: number }[];
@@ -70,13 +61,6 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
   const [specialty, setSpecialty] = useState(doctor?.specialty ?? "");
   const [document, setDocument] = useState(doctor?.document ?? "");
   const [paymentMethod, setPaymentMethod] = useState(doctor?.paymentMethod ?? "");
-  const [paymentModel, setPaymentModel] = useState<DoctorPaymentModel>(
-    doctor?.paymentModel ?? "CONSULTATION_AND_EXAM"
-  );
-  const [consultationRate, setConsultationRate] = useState(
-    doctor?.consultationRate != null ? String(doctor.consultationRate) : ""
-  );
-  const [hourlyRate, setHourlyRate] = useState(doctor?.hourlyRate != null ? String(doctor.hourlyRate) : "");
   const [active, setActive] = useState(doctor?.active ?? true);
   const [notes, setNotes] = useState(doctor?.notes ?? "");
   const [rates, setRates] = useState<RateLine[]>(
@@ -107,9 +91,6 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
       setSpecialty("");
       setDocument("");
       setPaymentMethod("");
-      setPaymentModel("CONSULTATION_AND_EXAM");
-      setConsultationRate("");
-      setHourlyRate("");
       setActive(true);
       setNotes("");
       setRates([]);
@@ -123,17 +104,11 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
       specialty,
       document: document || undefined,
       paymentMethod: paymentMethod || undefined,
-      paymentModel,
-      consultationRate: paymentModel === "HOURLY" ? undefined : Number(consultationRate),
-      hourlyRate: paymentModel === "HOURLY" ? Number(hourlyRate) : undefined,
       active,
       notes: notes || undefined,
-      serviceRates:
-        paymentModel === "CONSULTATION_AND_EXAM"
-          ? rates
-              .filter((r) => r.serviceItemId || r.rate)
-              .map((r) => ({ serviceItemId: r.serviceItemId, rate: Number(r.rate) }))
-          : [],
+      serviceRates: rates
+        .filter((r) => r.serviceItemId || r.rate)
+        .map((r) => ({ serviceItemId: r.serviceItemId, rate: Number(r.rate) })),
     };
 
     startTransition(async () => {
@@ -147,6 +122,8 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
       reset();
     });
   }
+
+  const itemLabels = Object.fromEntries(serviceItems.map((s) => [s.id, s.name]));
 
   return (
     <Dialog
@@ -170,7 +147,8 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
         <DialogHeader>
           <DialogTitle>{doctor ? "Editar médico" : "Novo médico"}</DialogTitle>
           <DialogDescription>
-            Contrato de repasse: valor da consulta e valor por tipo de exame.
+            O contrato é a lista do que ele recebe. Um médico pode combinar consulta, exame, procedimento e
+            plantão — inclua só os itens que se aplicam a ele.
           </DialogDescription>
         </DialogHeader>
 
@@ -209,102 +187,57 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="paymentModel">Modelo de pagamento</Label>
-            <Select
-              items={PAYMENT_MODEL_LABELS}
-              value={paymentModel}
-              onValueChange={(v) => setPaymentModel((v as DoctorPaymentModel) ?? "CONSULTATION_AND_EXAM")}
-              required
-            >
-              <SelectTrigger id="paymentModel" className="w-full">
-                <SelectValue placeholder="Selecione" />
-              </SelectTrigger>
-              <SelectContent>
-                {(Object.entries(PAYMENT_MODEL_LABELS) as [DoctorPaymentModel, string][]).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Contrato de repasse</Label>
+            <div className="space-y-2">
+              {rates.map((line) => (
+                <div key={line.id} className="flex items-center gap-2">
+                  <Select
+                    items={itemLabels}
+                    value={line.serviceItemId}
+                    onValueChange={(v) => updateRate(line.id, "serviceItemId", v ?? "")}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Item do catálogo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {serviceItems.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={line.rate}
+                    onChange={(e) => updateRate(line.id, "rate", e.target.value)}
+                    placeholder="R$"
+                    className="w-28"
+                  />
+                  <Button type="button" variant="ghost" size="icon" onClick={() => removeRate(line.id)}>
+                    <Trash2 className="size-4 text-destructive" />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addRate}
+                disabled={serviceItems.length === 0}
+              >
+                <Plus className="size-4" />
+                Adicionar item
+              </Button>
+              {serviceItems.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Cadastre um item no catálogo de procedimentos primeiro.
+                </p>
+              )}
+            </div>
           </div>
-
-          {paymentModel === "HOURLY" ? (
-            <div className="space-y-2">
-              <Label htmlFor="hourlyRate">Valor por hora (R$)</Label>
-              <Input
-                id="hourlyRate"
-                type="number"
-                step="0.01"
-                min="0"
-                value={hourlyRate}
-                onChange={(e) => setHourlyRate(e.target.value)}
-                required
-              />
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Label htmlFor="consultationRate">Valor por consulta (R$)</Label>
-              <Input
-                id="consultationRate"
-                type="number"
-                step="0.01"
-                min="0"
-                value={consultationRate}
-                onChange={(e) => setConsultationRate(e.target.value)}
-                required
-              />
-            </div>
-          )}
-
-          {paymentModel === "CONSULTATION_AND_EXAM" && (
-            <div className="space-y-2">
-              <Label>Valor por tipo de exame</Label>
-              <div className="space-y-2">
-                {rates.map((line) => (
-                  <div key={line.id} className="flex items-center gap-2">
-                    <Select
-                      items={Object.fromEntries(serviceItems.map((e) => [e.id, e.name]))}
-                      value={line.serviceItemId}
-                      onValueChange={(v) => updateRate(line.id, "serviceItemId", v ?? "")}
-                    >
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Tipo de exame" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {serviceItems.map((e) => (
-                          <SelectItem key={e.id} value={e.id}>
-                            {e.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={line.rate}
-                      onChange={(e) => updateRate(line.id, "rate", e.target.value)}
-                      placeholder="R$"
-                      className="w-28"
-                    />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => removeRate(line.id)}>
-                      <Trash2 className="size-4 text-destructive" />
-                    </Button>
-                  </div>
-                ))}
-                <Button type="button" variant="outline" size="sm" onClick={addRate} disabled={serviceItems.length === 0}>
-                  <Plus className="size-4" />
-                  Adicionar tipo de exame
-                </Button>
-                {serviceItems.length === 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Cadastre um tipo de exame primeiro para poder definir taxas.
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
 
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={active} onCheckedChange={(c) => setActive(Boolean(c))} />

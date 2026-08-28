@@ -5,108 +5,115 @@ import { deleteServiceItem } from "./service-items-actions";
 
 beforeEach(resetDb);
 
-async function seedDoctorWithRates() {
+/** Médico com contrato de consulta + exame, o caso mais comum. */
+async function seedDoctorWithContract() {
   const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-  const serviceItem = await testPrisma.serviceItem.create({ data: { companyId: company.id, name: "Ultrassom" } });
+  const consulta = await testPrisma.serviceItem.create({
+    data: { companyId: company.id, name: "Consulta CT", category: "CONSULTA" },
+  });
+  const exame = await testPrisma.serviceItem.create({
+    data: { companyId: company.id, name: "Ultrassom", category: "EXAME" },
+  });
   const doctor = await testPrisma.doctor.create({
     data: {
       companyId: company.id,
       name: "Dr. João Silva",
-      consultationRate: 80,
-      serviceRates: { create: [{ serviceItemId: serviceItem.id, rate: 45 }] },
+      serviceRates: {
+        create: [
+          { serviceItemId: consulta.id, rate: 80 },
+          { serviceItemId: exame.id, rate: 45 },
+        ],
+      },
     },
   });
-  return { company, serviceItem, doctor };
+  return { company, consulta, exame, doctor };
 }
 
 describe("createPeriodReport", () => {
-  it("cria o repasse congelando a taxa de consulta e a de exame", async () => {
-    const { doctor, serviceItem } = await seedDoctorWithRates();
+  it("cria o lançamento congelando a taxa contratada de cada item", async () => {
+    const { doctor, consulta, exame } = await seedDoctorWithContract();
 
     const result = await createPeriodReport({
       doctorId: doctor.id,
       competencia: "2026-08",
-      consultationCount: 40,
-      examCounts: [{ serviceItemId: serviceItem.id, count: 10 }],
+      lines: [
+        { serviceItemId: consulta.id, quantity: 40 },
+        { serviceItemId: exame.id, quantity: 10 },
+      ],
     });
 
     expect(result.error).toBeUndefined();
-    const reports = await testPrisma.doctorPeriodReport.findMany({ include: { examCounts: true } });
+    const reports = await testPrisma.doctorPeriodReport.findMany({ include: { lines: true } });
     expect(reports).toHaveLength(1);
-    expect(reports[0].consultationCount).toBe(40);
-    expect(Number(reports[0].consultationRate)).toBe(80);
-    expect(reports[0].examCounts).toHaveLength(1);
-    expect(reports[0].examCounts[0].count).toBe(10);
-    expect(Number(reports[0].examCounts[0].rate)).toBe(45);
+    expect(reports[0].lines).toHaveLength(2);
+
+    const linhaConsulta = reports[0].lines.find((l) => l.serviceItemId === consulta.id)!;
+    expect(Number(linhaConsulta.quantity)).toBe(40);
+    expect(Number(linhaConsulta.rate)).toBe(80);
   });
 
-  it("recusa exame sem taxa cadastrada pro médico", async () => {
+  it("aceita quantidade fracionada (horas de plantão)", async () => {
     const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const serviceItem = await testPrisma.serviceItem.create({ data: { companyId: company.id, name: "Raio-X" } });
+    const plantao = await testPrisma.serviceItem.create({
+      data: { companyId: company.id, name: "Plantão por hora", category: "PLANTAO" },
+    });
     const doctor = await testPrisma.doctor.create({
-      data: { companyId: company.id, name: "Dr. Sem Taxas", consultationRate: 80 },
+      data: {
+        companyId: company.id,
+        name: "Dr. Plantonista",
+        serviceRates: { create: [{ serviceItemId: plantao.id, rate: 180 }] },
+      },
     });
 
     const result = await createPeriodReport({
       doctorId: doctor.id,
       competencia: "2026-08",
-      consultationCount: 10,
-      examCounts: [{ serviceItemId: serviceItem.id, count: 2 }],
+      lines: [{ serviceItemId: plantao.id, quantity: 40.5 }],
+    });
+
+    expect(result.error).toBeUndefined();
+    const line = await testPrisma.doctorPeriodLine.findFirstOrThrow();
+    expect(Number(line.quantity)).toBe(40.5);
+    expect(Number(line.rate)).toBe(180);
+  });
+
+  it("recusa item que o médico não tem contratado", async () => {
+    const { company, doctor } = await seedDoctorWithContract();
+    const semContrato = await testPrisma.serviceItem.create({
+      data: { companyId: company.id, name: "Raio-X", category: "EXAME" },
+    });
+
+    const result = await createPeriodReport({
+      doctorId: doctor.id,
+      competencia: "2026-08",
+      lines: [{ serviceItemId: semContrato.id, quantity: 2 }],
     });
 
     expect(result.error).toBeTruthy();
     await expect(testPrisma.doctorPeriodReport.count()).resolves.toBe(0);
   });
 
-  it("cria repasse de médico HOURLY congelando a taxa por hora", async () => {
-    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const doctor = await testPrisma.doctor.create({
-      data: { companyId: company.id, name: "Dr. Plantonista", paymentModel: "HOURLY", hourlyRate: 150 },
-    });
+  it("recusa lançamento sem nenhuma linha", async () => {
+    const { doctor } = await seedDoctorWithContract();
 
-    const result = await createPeriodReport({
-      doctorId: doctor.id,
-      competencia: "2026-08",
-      consultationCount: 0,
-      hoursWorked: 24,
-      examCounts: [],
-    });
-
-    expect(result.error).toBeUndefined();
-    const report = await testPrisma.doctorPeriodReport.findFirstOrThrow();
-    expect(report.consultationCount).toBeNull();
-    expect(report.consultationRate).toBeNull();
-    expect(Number(report.hoursWorked)).toBe(24);
-    expect(Number(report.hourlyRate)).toBe(150);
-  });
-
-  it("recusa repasse HOURLY sem horas trabalhadas", async () => {
-    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const doctor = await testPrisma.doctor.create({
-      data: { companyId: company.id, name: "Dr. Plantonista", paymentModel: "HOURLY", hourlyRate: 150 },
-    });
-
-    const result = await createPeriodReport({
-      doctorId: doctor.id,
-      competencia: "2026-08",
-      consultationCount: 0,
-      hoursWorked: 0,
-      examCounts: [],
-    });
+    const result = await createPeriodReport({ doctorId: doctor.id, competencia: "2026-08", lines: [] });
 
     expect(result.error).toBeTruthy();
     await expect(testPrisma.doctorPeriodReport.count()).resolves.toBe(0);
   });
 
   it("recusa dois repasses do mesmo médico no mesmo mês", async () => {
-    const { doctor } = await seedDoctorWithRates();
-    await createPeriodReport({ doctorId: doctor.id, competencia: "2026-08", consultationCount: 20, examCounts: [] });
+    const { doctor, consulta } = await seedDoctorWithContract();
+    await createPeriodReport({
+      doctorId: doctor.id,
+      competencia: "2026-08",
+      lines: [{ serviceItemId: consulta.id, quantity: 20 }],
+    });
 
     const result = await createPeriodReport({
       doctorId: doctor.id,
       competencia: "2026-08",
-      consultationCount: 30,
-      examCounts: [],
+      lines: [{ serviceItemId: consulta.id, quantity: 30 }],
     });
 
     expect(result.error).toBeTruthy();
@@ -115,43 +122,46 @@ describe("createPeriodReport", () => {
 });
 
 describe("updatePeriodReport", () => {
-  it("não recalcula sozinho quando a taxa do médico muda depois (fica congelado até editar)", async () => {
-    const { doctor, serviceItem } = await seedDoctorWithRates();
+  it("não recalcula sozinho quando o contrato muda depois (fica congelado até editar)", async () => {
+    const { doctor, consulta } = await seedDoctorWithContract();
     await createPeriodReport({
       doctorId: doctor.id,
       competencia: "2026-08",
-      consultationCount: 10,
-      examCounts: [{ serviceItemId: serviceItem.id, count: 5 }],
+      lines: [{ serviceItemId: consulta.id, quantity: 10 }],
     });
     const report = await testPrisma.doctorPeriodReport.findFirstOrThrow();
 
-    // Taxa do médico muda depois do lançamento.
-    await testPrisma.doctor.update({ where: { id: doctor.id }, data: { consultationRate: 200 } });
+    // O contrato do médico muda depois do lançamento.
+    await testPrisma.doctorServiceRate.updateMany({
+      where: { doctorId: doctor.id, serviceItemId: consulta.id },
+      data: { rate: 200 },
+    });
 
-    const untouched = await testPrisma.doctorPeriodReport.findUniqueOrThrow({ where: { id: report.id } });
-    expect(Number(untouched.consultationRate)).toBe(80);
+    const untouched = await testPrisma.doctorPeriodLine.findFirstOrThrow();
+    expect(Number(untouched.rate)).toBe(80);
 
-    // Editar o repasse busca a taxa ATUAL do médico e recongela.
+    // Editar o lançamento busca a taxa ATUAL e recongela.
     const result = await updatePeriodReport(report.id, {
       doctorId: doctor.id,
       competencia: "2026-08",
-      consultationCount: 10,
-      examCounts: [{ serviceItemId: serviceItem.id, count: 5 }],
+      lines: [{ serviceItemId: consulta.id, quantity: 10 }],
     });
     expect(result.error).toBeUndefined();
-    const updated = await testPrisma.doctorPeriodReport.findUniqueOrThrow({ where: { id: report.id } });
-    expect(Number(updated.consultationRate)).toBe(200);
+    const updated = await testPrisma.doctorPeriodLine.findFirstOrThrow();
+    expect(Number(updated.rate)).toBe(200);
   });
 });
 
 describe("deletePeriodReport", () => {
-  it("exclui o repasse e suas linhas de exame", async () => {
-    const { doctor, serviceItem } = await seedDoctorWithRates();
+  it("exclui o lançamento e suas linhas", async () => {
+    const { doctor, consulta, exame } = await seedDoctorWithContract();
     await createPeriodReport({
       doctorId: doctor.id,
       competencia: "2026-08",
-      consultationCount: 10,
-      examCounts: [{ serviceItemId: serviceItem.id, count: 5 }],
+      lines: [
+        { serviceItemId: consulta.id, quantity: 10 },
+        { serviceItemId: exame.id, quantity: 5 },
+      ],
     });
     const report = await testPrisma.doctorPeriodReport.findFirstOrThrow();
 
@@ -159,23 +169,22 @@ describe("deletePeriodReport", () => {
 
     expect(result.error).toBeUndefined();
     await expect(testPrisma.doctorPeriodReport.count()).resolves.toBe(0);
-    await expect(testPrisma.doctorPeriodExamCount.count()).resolves.toBe(0);
+    await expect(testPrisma.doctorPeriodLine.count()).resolves.toBe(0);
   });
 });
 
 describe("deleteServiceItem", () => {
-  it("recusa excluir tipo de exame com repasses lançados", async () => {
-    const { serviceItem, doctor } = await seedDoctorWithRates();
+  it("recusa excluir item com repasses lançados", async () => {
+    const { doctor, exame } = await seedDoctorWithContract();
     await createPeriodReport({
       doctorId: doctor.id,
       competencia: "2026-08",
-      consultationCount: 10,
-      examCounts: [{ serviceItemId: serviceItem.id, count: 5 }],
+      lines: [{ serviceItemId: exame.id, quantity: 5 }],
     });
 
-    const result = await deleteServiceItem(serviceItem.id);
+    const result = await deleteServiceItem(exame.id);
 
     expect(result?.error).toBeTruthy();
-    await expect(testPrisma.serviceItem.count()).resolves.toBe(1);
+    await expect(testPrisma.serviceItem.count()).resolves.toBe(2);
   });
 });

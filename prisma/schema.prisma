@@ -289,33 +289,22 @@ model CashClosingLine {
   cashClosing   CashClosing @relation(fields: [cashClosingId], references: [id], onDelete: Cascade)
 }
 
-// Modelo de remuneração do médico: só consulta, consulta + exame, ou
-// plantão pago por hora trabalhada (sem consulta/exame nenhum).
-enum DoctorPaymentModel {
-  CONSULTATION
-  CONSULTATION_AND_EXAM
-  HOURLY
-}
-
-// Médico com contrato de repasse. Em CONSULTATION/CONSULTATION_AND_EXAM,
-// consultationRate é obrigatório (examRates só se aplica ao segundo). Em
-// HOURLY, hourlyRate é obrigatório e consultationRate/examRates não se
-// aplicam. "active" permite arquivar sem apagar o histórico de períodos já
-// lançados. Sem integração automática com o razão financeiro por
-// enquanto — é só controle/análise.
+// Médico com contrato de repasse. O contrato inteiro mora em
+// DoctorServiceRate — uma linha por item que ele recebe (consulta CT,
+// consulta particular, exame, procedimento, plantão, auxílio). Não existe
+// "modelo de pagamento" fixo: as planilhas reais mostram médicos que
+// combinam livremente plantão + consulta, ou consulta + auxílio
+// combustível. "active" arquiva sem apagar o histórico.
 model Doctor {
-  id               String             @id @default(cuid())
-  name             String
-  specialty        String             @default("Geral") // ex: Pediatra, Clínico Geral
-  document         String? // CRM
-  paymentMethod    String?
-  paymentModel     DoctorPaymentModel @default(CONSULTATION_AND_EXAM)
-  consultationRate Decimal?           @db.Decimal(14, 2)
-  hourlyRate       Decimal?           @db.Decimal(14, 2) // plantão
-  active           Boolean            @default(true)
-  notes            String?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  id            String   @id @default(cuid())
+  name          String
+  specialty     String   @default("Geral")
+  document      String? // CRM
+  paymentMethod String?
+  active        Boolean  @default(true)
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -369,7 +358,7 @@ model ServiceItem {
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   doctorRates DoctorServiceRate[]
-  reportLines DoctorPeriodExamCount[]
+  reportLines DoctorPeriodLine[]
 
   @@unique([companyId, name])
 }
@@ -396,9 +385,15 @@ model TaxBracket {
 
 // Taxa atual do médico para um tipo de exame — usada como valor-padrão ao
 // lançar um novo período (o período guarda sua própria cópia congelada).
+// Valor que UM médico recebe por UM item do catálogo. É o contrato: o
+// mesmo procedimento pode ter valor diferente por médico (na planilha,
+// Bioimpedância aparece a 60, 70 e 78 reais dependendo do nutricionista).
 model DoctorServiceRate {
-  id   String  @id @default(cuid())
-  rate Decimal @db.Decimal(14, 2)
+  id            String    @id @default(cuid())
+  rate          Decimal   @db.Decimal(14, 2)
+  // "Última conferência" da planilha: coluna que criaram e nunca
+  // conseguiram manter preenchida.
+  lastCheckedAt DateTime?
 
   doctorId String
   doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
@@ -413,16 +408,14 @@ model DoctorServiceRate {
 // congelada) + linhas de contagem por tipo de exame, OU (médico HOURLY)
 // horas trabalhadas com a taxa/hora congelada. Os campos usados dependem
 // do paymentModel do médico no momento do lançamento.
+// Lançamento mensal de um médico. Tudo que ele fez no mês vira linha em
+// DoctorPeriodLine — não há mais campo fixo de consulta ou de hora.
 model DoctorPeriodReport {
-  id                String   @id @default(cuid())
-  competencia       DateTime // primeiro dia do mês de referência
-  consultationCount Int?
-  consultationRate  Decimal? @db.Decimal(14, 2) // congelada no lançamento
-  hoursWorked       Decimal? @db.Decimal(8, 2) // plantão
-  hourlyRate        Decimal? @db.Decimal(14, 2) // congelada no lançamento
-  notes             String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id          String   @id @default(cuid())
+  competencia DateTime // primeiro dia do mês de referência
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   doctorId String
   doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
@@ -430,15 +423,18 @@ model DoctorPeriodReport {
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  examCounts DoctorPeriodExamCount[]
+  lines DoctorPeriodLine[]
 
   @@unique([doctorId, competencia])
 }
 
-model DoctorPeriodExamCount {
-  id    String  @id @default(cuid())
-  count Int
-  rate  Decimal @db.Decimal(14, 2) // congelada no lançamento
+// Uma linha do lançamento: quantos de um item o médico fez no mês, com a
+// taxa congelada no momento do lançamento. Quantidade é decimal porque
+// cobre tanto "42 consultas" quanto "40,5 horas de plantão".
+model DoctorPeriodLine {
+  id       String  @id @default(cuid())
+  quantity Decimal @db.Decimal(10, 2)
+  rate     Decimal @db.Decimal(14, 2) // congelada no lançamento
 
   reportId String
   report   DoctorPeriodReport @relation(fields: [reportId], references: [id], onDelete: Cascade)

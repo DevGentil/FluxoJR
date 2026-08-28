@@ -4,8 +4,12 @@ import { createDoctor, updateDoctor, deleteDoctor, type DoctorInput } from "./do
 
 beforeEach(resetDb);
 
-async function seedServiceItem(companyId: string, name = "Ultrassom") {
-  return testPrisma.serviceItem.create({ data: { companyId, name } });
+async function seedItem(
+  companyId: string,
+  name = "Ultrassom",
+  category: "CONSULTA" | "EXAME" | "PLANTAO" = "EXAME"
+) {
+  return testPrisma.serviceItem.create({ data: { companyId, name, category } });
 }
 
 function baseInput(serviceItemId: string, overrides: Partial<DoctorInput> = {}): DoctorInput {
@@ -14,8 +18,6 @@ function baseInput(serviceItemId: string, overrides: Partial<DoctorInput> = {}):
     specialty: "Clínico Geral",
     document: "CRM 12345",
     paymentMethod: "PIX",
-    paymentModel: "CONSULTATION_AND_EXAM",
-    consultationRate: 80,
     active: true,
     serviceRates: [{ serviceItemId, rate: 45 }],
     ...overrides,
@@ -23,26 +25,56 @@ function baseInput(serviceItemId: string, overrides: Partial<DoctorInput> = {}):
 }
 
 describe("createDoctor", () => {
-  it("cria o médico com as taxas de exame", async () => {
+  it("cria o médico com o contrato de repasse", async () => {
     const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const serviceItem = await seedServiceItem(company.id);
+    const item = await seedItem(company.id);
 
-    const result = await createDoctor(baseInput(serviceItem.id));
+    const result = await createDoctor(baseInput(item.id));
 
     expect(result.error).toBeUndefined();
     const doctors = await testPrisma.doctor.findMany({ include: { serviceRates: true } });
     expect(doctors).toHaveLength(1);
     expect(doctors[0]).toMatchObject({ name: "Dr. João Silva", document: "CRM 12345" });
-    expect(Number(doctors[0].consultationRate)).toBe(80);
     expect(doctors[0].serviceRates).toHaveLength(1);
     expect(Number(doctors[0].serviceRates[0].rate)).toBe(45);
   });
 
+  it("aceita um médico que combina consulta, exame e plantão", async () => {
+    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
+    const consulta = await seedItem(company.id, "Consulta CT", "CONSULTA");
+    const exame = await seedItem(company.id, "Raio-X", "EXAME");
+    const plantao = await seedItem(company.id, "Plantão 10hrs", "PLANTAO");
+
+    const result = await createDoctor(
+      baseInput(consulta.id, {
+        serviceRates: [
+          { serviceItemId: consulta.id, rate: 32 },
+          { serviceItemId: exame.id, rate: 5 },
+          { serviceItemId: plantao.id, rate: 1800 },
+        ],
+      })
+    );
+
+    expect(result.error).toBeUndefined();
+    const doctor = await testPrisma.doctor.findFirstOrThrow({ include: { serviceRates: true } });
+    expect(doctor.serviceRates).toHaveLength(3);
+  });
+
+  it("marca a data de conferência ao cadastrar o contrato", async () => {
+    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
+    const item = await seedItem(company.id);
+
+    await createDoctor(baseInput(item.id));
+
+    const rate = await testPrisma.doctorServiceRate.findFirstOrThrow();
+    expect(rate.lastCheckedAt).toBeInstanceOf(Date);
+  });
+
   it("recusa sem nome", async () => {
     const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const serviceItem = await seedServiceItem(company.id);
+    const item = await seedItem(company.id);
 
-    const result = await createDoctor(baseInput(serviceItem.id, { name: "" }));
+    const result = await createDoctor(baseInput(item.id, { name: "" }));
 
     expect(result.error).toBeTruthy();
     await expect(testPrisma.doctor.count()).resolves.toBe(0);
@@ -50,40 +82,25 @@ describe("createDoctor", () => {
 
   it("recusa sem especialização", async () => {
     const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const serviceItem = await seedServiceItem(company.id);
+    const item = await seedItem(company.id);
 
-    const result = await createDoctor(baseInput(serviceItem.id, { specialty: "" }));
+    const result = await createDoctor(baseInput(item.id, { specialty: "" }));
 
     expect(result.error).toBeTruthy();
     await expect(testPrisma.doctor.count()).resolves.toBe(0);
   });
 
-  it("cria médico HOURLY (plantão) sem consultationRate nem serviceRates", async () => {
+  it("recusa o mesmo item repetido no contrato", async () => {
     const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const serviceItem = await seedServiceItem(company.id);
+    const item = await seedItem(company.id);
 
     const result = await createDoctor(
-      baseInput(serviceItem.id, {
-        paymentModel: "HOURLY",
-        consultationRate: undefined,
-        hourlyRate: 150,
-        serviceRates: [{ serviceItemId: serviceItem.id, rate: 45 }], // deve ser ignorado
+      baseInput(item.id, {
+        serviceRates: [
+          { serviceItemId: item.id, rate: 45 },
+          { serviceItemId: item.id, rate: 60 },
+        ],
       })
-    );
-
-    expect(result.error).toBeUndefined();
-    const doctor = await testPrisma.doctor.findFirstOrThrow({ include: { serviceRates: true } });
-    expect(doctor.consultationRate).toBeNull();
-    expect(Number(doctor.hourlyRate)).toBe(150);
-    expect(doctor.serviceRates).toHaveLength(0);
-  });
-
-  it("recusa médico HOURLY sem valor por hora", async () => {
-    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const serviceItem = await seedServiceItem(company.id);
-
-    const result = await createDoctor(
-      baseInput(serviceItem.id, { paymentModel: "HOURLY", consultationRate: undefined, hourlyRate: undefined })
     );
 
     expect(result.error).toBeTruthy();
@@ -92,16 +109,16 @@ describe("createDoctor", () => {
 });
 
 describe("updateDoctor", () => {
-  it("substitui as taxas de exame (upsert completo)", async () => {
+  it("substitui o contrato inteiro", async () => {
     const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const serviceItem = await seedServiceItem(company.id, "Ultrassom");
-    const serviceItem2 = await seedServiceItem(company.id, "Raio-X");
-    await createDoctor(baseInput(serviceItem.id));
+    const item = await seedItem(company.id, "Ultrassom");
+    const item2 = await seedItem(company.id, "Raio-X");
+    await createDoctor(baseInput(item.id));
     const doctor = await testPrisma.doctor.findFirstOrThrow();
 
     const result = await updateDoctor(
       doctor.id,
-      baseInput(serviceItem.id, { consultationRate: 100, serviceRates: [{ serviceItemId: serviceItem2.id, rate: 60 }] })
+      baseInput(item.id, { serviceRates: [{ serviceItemId: item2.id, rate: 60 }] })
     );
 
     expect(result.error).toBeUndefined();
@@ -109,21 +126,55 @@ describe("updateDoctor", () => {
       where: { id: doctor.id },
       include: { serviceRates: true },
     });
-    expect(Number(updated.consultationRate)).toBe(100);
     expect(updated.serviceRates).toHaveLength(1);
-    expect(updated.serviceRates[0].serviceItemId).toBe(serviceItem2.id);
+    expect(updated.serviceRates[0].serviceItemId).toBe(item2.id);
+  });
+
+  it("só reinicia a conferência do valor que mudou", async () => {
+    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
+    const mantido = await seedItem(company.id, "Ultrassom");
+    const alterado = await seedItem(company.id, "Raio-X");
+    await createDoctor(
+      baseInput(mantido.id, {
+        serviceRates: [
+          { serviceItemId: mantido.id, rate: 45 },
+          { serviceItemId: alterado.id, rate: 5 },
+        ],
+      })
+    );
+    const doctor = await testPrisma.doctor.findFirstOrThrow();
+
+    // Recua a conferência de ambos para simular um contrato antigo.
+    const antigo = new Date("2020-01-01T00:00:00Z");
+    await testPrisma.doctorServiceRate.updateMany({ data: { lastCheckedAt: antigo } });
+
+    await updateDoctor(
+      doctor.id,
+      baseInput(mantido.id, {
+        serviceRates: [
+          { serviceItemId: mantido.id, rate: 45 }, // igual
+          { serviceItemId: alterado.id, rate: 8 }, // mudou
+        ],
+      })
+    );
+
+    const rates = await testPrisma.doctorServiceRate.findMany();
+    const inalterado = rates.find((r) => r.serviceItemId === mantido.id)!;
+    const novo = rates.find((r) => r.serviceItemId === alterado.id)!;
+    expect(inalterado.lastCheckedAt?.getTime()).toBe(antigo.getTime());
+    expect(novo.lastCheckedAt!.getTime()).toBeGreaterThan(antigo.getTime());
   });
 
   it("não afeta médico de outra empresa (escopo)", async () => {
     await testPrisma.company.create({ data: { name: "Empresa A" } });
     const empresaB = await testPrisma.company.create({ data: { name: "Empresa B" } });
-    const serviceItemB = await seedServiceItem(empresaB.id);
+    const itemB = await seedItem(empresaB.id);
     const doctorB = await testPrisma.doctor.create({
-      data: { companyId: empresaB.id, name: "Dr. de B", consultationRate: 50 },
+      data: { companyId: empresaB.id, name: "Dr. de B" },
     });
 
     // getActiveCompanyId() pega a empresa mais antiga — Empresa A nesse cenário.
-    const result = await updateDoctor(doctorB.id, baseInput(serviceItemB.id, { name: "Tentativa de invasão" }));
+    const result = await updateDoctor(doctorB.id, baseInput(itemB.id, { name: "Tentativa de invasão" }));
 
     expect(result.error).toBeTruthy();
     const unchanged = await testPrisma.doctor.findUniqueOrThrow({ where: { id: doctorB.id } });
@@ -132,10 +183,10 @@ describe("updateDoctor", () => {
 });
 
 describe("deleteDoctor", () => {
-  it("exclui o médico e suas taxas de exame", async () => {
+  it("exclui o médico e o contrato dele", async () => {
     const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const serviceItem = await seedServiceItem(company.id);
-    await createDoctor(baseInput(serviceItem.id));
+    const item = await seedItem(company.id);
+    await createDoctor(baseInput(item.id));
     const doctor = await testPrisma.doctor.findFirstOrThrow();
 
     const result = await deleteDoctor(doctor.id);

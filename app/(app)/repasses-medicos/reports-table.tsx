@@ -5,22 +5,12 @@ import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DeleteButton } from "@/components/delete-button";
-import { ReportFormDialog } from "./report-form-dialog";
+import { ReportFormDialog, type DoctorOption } from "./report-form-dialog";
 import { deletePeriodReport } from "./reports-actions";
 import { formatCurrency } from "@/lib/format";
-import type { DoctorPaymentModel } from "./doctors-actions";
 
 function formatCompetencia(value: Date) {
   return value.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
-}
-
-interface DoctorOption {
-  id: string;
-  name: string;
-  paymentModel: DoctorPaymentModel;
-  consultationRate: number | null;
-  hourlyRate: number | null;
-  serviceRates: { serviceItemId: string; serviceItemName: string; rate: number }[];
 }
 
 interface ReportRow {
@@ -28,7 +18,6 @@ interface ReportRow {
   competencia: Date;
   doctorId: string;
   doctorName: string;
-  paymentModel: DoctorPaymentModel;
   consultationCount: number;
   examCount: number;
   consultationValue: number;
@@ -37,7 +26,7 @@ interface ReportRow {
   hourlyValue: number;
   totalValue: number;
   notes: string | null;
-  examCounts: { id: string; serviceItemId: string; count: number }[];
+  lines: { id: string; serviceItemId: string; quantity: number }[];
 }
 
 interface Props {
@@ -165,10 +154,8 @@ export function ReportsTable({ reports, doctors }: Props) {
                               id: r.id,
                               doctorId: r.doctorId,
                               competencia: r.competencia,
-                              consultationCount: r.consultationCount,
-                              hoursWorked: r.hoursWorked,
                               notes: r.notes,
-                              examCounts: r.examCounts,
+                              lines: r.lines,
                             }}
                           />
                           <DeleteButton

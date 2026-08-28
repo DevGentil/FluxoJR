@@ -5,76 +5,65 @@ import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 
-export interface PeriodExamCountInput {
+export interface PeriodLineInput {
   serviceItemId: string;
-  count: number;
+  quantity: number;
 }
 
 export interface PeriodReportInput {
   doctorId: string;
   competencia: string; // "YYYY-MM"
-  consultationCount: number;
-  hoursWorked?: number;
   notes?: string;
-  examCounts: PeriodExamCountInput[];
+  /** O que o médico fez no mês: quantidade por item do contrato dele. */
+  lines: PeriodLineInput[];
 }
 
-// A validação de consultas/exames vs. horas depende do paymentModel do
-// médico (HOURLY não usa consultas/exames, os outros dois não usam horas)
-// — por isso recebe o médico já carregado em vez de inferir do payload.
-function validate(input: PeriodReportInput, doctor: { paymentModel: string }): string | null {
+function validate(input: PeriodReportInput): string | null {
   if (!input.doctorId) return "Selecione o médico.";
   if (!/^\d{4}-\d{2}$/.test(input.competencia)) return "Informe o mês de referência.";
+  if (input.lines.length === 0) return "Lance pelo menos um item.";
 
-  if (doctor.paymentModel === "HOURLY") {
-    if (!Number.isFinite(input.hoursWorked) || (input.hoursWorked as number) <= 0) {
-      return "Informe uma quantidade de horas trabalhadas válida.";
+  for (const l of input.lines) {
+    if (!l.serviceItemId) return "Selecione o item em todas as linhas.";
+    if (!Number.isFinite(l.quantity) || l.quantity <= 0) {
+      return "Toda quantidade deve ser maior que zero.";
     }
-    return null;
   }
-
-  if (!Number.isInteger(input.consultationCount) || input.consultationCount < 0) {
-    return "Informe uma quantidade de consultas válida.";
-  }
-  if (doctor.paymentModel === "CONSULTATION_AND_EXAM") {
-    for (const e of input.examCounts) {
-      if (!e.serviceItemId) return "Selecione o tipo de exame em todas as linhas.";
-      if (!Number.isInteger(e.count) || e.count <= 0) return "Toda quantidade de exame deve ser maior que zero.";
-    }
-    const seen = new Set<string>();
-    for (const e of input.examCounts) {
-      if (seen.has(e.serviceItemId)) return "Não repita o mesmo tipo de exame nas linhas.";
-      seen.add(e.serviceItemId);
-    }
+  const seen = new Set<string>();
+  for (const l of input.lines) {
+    if (seen.has(l.serviceItemId)) return "Não repita o mesmo item nas linhas.";
+    seen.add(l.serviceItemId);
   }
   return null;
 }
 
-async function buildExamCountsData(companyId: string, doctorId: string, examCounts: PeriodExamCountInput[]) {
+/** Congela a taxa contratada do médico em cada linha. O valor fica preso ao
+ * lançamento: se o contrato mudar depois, o histórico não se mexe. */
+async function buildLinesData(doctorId: string, lines: PeriodLineInput[]) {
   const rates = await prisma.doctorServiceRate.findMany({
-    where: { doctorId, serviceItemId: { in: examCounts.map((e) => e.serviceItemId) } },
+    where: { doctorId, serviceItemId: { in: lines.map((l) => l.serviceItemId) } },
   });
-  const rateByServiceItem = new Map(rates.map((r) => [r.serviceItemId, Number(r.rate)]));
+  const rateByItem = new Map(rates.map((r) => [r.serviceItemId, Number(r.rate)]));
 
-  return examCounts.map((e) => {
-    const rate = rateByServiceItem.get(e.serviceItemId);
+  return lines.map((l) => {
+    const rate = rateByItem.get(l.serviceItemId);
     if (rate === undefined) {
-      throw new Error("Esse médico não tem taxa cadastrada para um dos tipos de exame selecionados.");
+      throw new Error("Esse médico não tem valor contratado para um dos itens selecionados.");
     }
-    return { serviceItemId: e.serviceItemId, count: e.count, rate };
+    return { serviceItemId: l.serviceItemId, quantity: l.quantity, rate };
   });
 }
 
 export async function createPeriodReport(input: PeriodReportInput): Promise<{ error?: string }> {
+  const error = validate(input);
+  if (error) return { error };
+
   try {
     await requireUser();
     const companyId = await getActiveCompanyId();
 
     const doctor = await prisma.doctor.findFirst({ where: { id: input.doctorId, companyId } });
     if (!doctor) return { error: "Médico não encontrado." };
-
-    const error = validate(input, doctor);
-    if (error) return { error };
 
     const competenciaDate = new Date(`${input.competencia}-01T00:00:00`);
     const existing = await prisma.doctorPeriodReport.findUnique({
@@ -84,22 +73,15 @@ export async function createPeriodReport(input: PeriodReportInput): Promise<{ er
       return { error: "Já existe um repasse cadastrado para esse médico nesse mês. Edite o existente." };
     }
 
-    const isHourly = doctor.paymentModel === "HOURLY";
-    const examCountsData = isHourly
-      ? []
-      : await buildExamCountsData(companyId, input.doctorId, doctor.paymentModel === "CONSULTATION_AND_EXAM" ? input.examCounts : []);
+    const linesData = await buildLinesData(input.doctorId, input.lines);
 
     await prisma.doctorPeriodReport.create({
       data: {
         doctorId: input.doctorId,
         companyId,
         competencia: competenciaDate,
-        consultationCount: isHourly ? null : input.consultationCount,
-        consultationRate: isHourly ? null : doctor.consultationRate,
-        hoursWorked: isHourly ? input.hoursWorked : null,
-        hourlyRate: isHourly ? doctor.hourlyRate : null,
         notes: input.notes?.trim() || null,
-        examCounts: { create: examCountsData },
+        lines: { create: linesData },
       },
     });
 
@@ -111,6 +93,9 @@ export async function createPeriodReport(input: PeriodReportInput): Promise<{ er
 }
 
 export async function updatePeriodReport(id: string, input: PeriodReportInput): Promise<{ error?: string }> {
+  const error = validate(input);
+  if (error) return { error };
+
   try {
     await requireUser();
     const companyId = await getActiveCompanyId();
@@ -121,9 +106,6 @@ export async function updatePeriodReport(id: string, input: PeriodReportInput): 
     const doctor = await prisma.doctor.findFirst({ where: { id: input.doctorId, companyId } });
     if (!doctor) return { error: "Médico não encontrado." };
 
-    const error = validate(input, doctor);
-    if (error) return { error };
-
     const competenciaDate = new Date(`${input.competencia}-01T00:00:00`);
     const duplicate = await prisma.doctorPeriodReport.findUnique({
       where: { doctorId_competencia: { doctorId: input.doctorId, competencia: competenciaDate } },
@@ -132,24 +114,17 @@ export async function updatePeriodReport(id: string, input: PeriodReportInput): 
       return { error: "Já existe outro repasse cadastrado para esse médico nesse mês." };
     }
 
-    const isHourly = doctor.paymentModel === "HOURLY";
-    const examCountsData = isHourly
-      ? []
-      : await buildExamCountsData(companyId, input.doctorId, doctor.paymentModel === "CONSULTATION_AND_EXAM" ? input.examCounts : []);
+    const linesData = await buildLinesData(input.doctorId, input.lines);
 
     await prisma.$transaction(async (tx) => {
-      await tx.doctorPeriodExamCount.deleteMany({ where: { reportId: id } });
+      await tx.doctorPeriodLine.deleteMany({ where: { reportId: id } });
       await tx.doctorPeriodReport.update({
         where: { id },
         data: {
           doctorId: input.doctorId,
           competencia: competenciaDate,
-          consultationCount: isHourly ? null : input.consultationCount,
-          consultationRate: isHourly ? null : doctor.consultationRate,
-          hoursWorked: isHourly ? input.hoursWorked : null,
-          hourlyRate: isHourly ? doctor.hourlyRate : null,
           notes: input.notes?.trim() || null,
-          examCounts: { create: examCountsData },
+          lines: { create: linesData },
         },
       });
     });

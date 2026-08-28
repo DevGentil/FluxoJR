@@ -25,21 +25,19 @@ import {
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { formatCurrency, toDateInputValue } from "@/lib/format";
 import { createPeriodReport, updatePeriodReport, type PeriodReportInput } from "./reports-actions";
-import type { DoctorPaymentModel } from "./doctors-actions";
 
-interface DoctorOption {
+export interface DoctorOption {
   id: string;
   name: string;
-  paymentModel: DoctorPaymentModel;
-  consultationRate: number | null;
-  hourlyRate: number | null;
+  /** Só os itens que esse médico tem contratados — não dá para lançar um
+   * item sem valor combinado com ele. */
   serviceRates: { serviceItemId: string; serviceItemName: string; rate: number }[];
 }
 
-interface ExamCountLine {
+interface LineState {
   id: string;
   serviceItemId: string;
-  count: string;
+  quantity: string;
 }
 
 interface Props {
@@ -48,10 +46,8 @@ interface Props {
     id: string;
     doctorId: string;
     competencia: Date;
-    consultationCount: number | null;
-    hoursWorked: number | null;
     notes: string | null;
-    examCounts: { id: string; serviceItemId: string; count: number }[];
+    lines: { id: string; serviceItemId: string; quantity: number }[];
   };
 }
 
@@ -70,57 +66,45 @@ export function ReportFormDialog({ doctors, report }: Props) {
   const [competencia, setCompetencia] = useState(
     report ? toDateInputValue(report.competencia).slice(0, 7) : currentMonth()
   );
-  const [consultationCount, setConsultationCount] = useState(
-    report?.consultationCount != null ? String(report.consultationCount) : ""
-  );
-  const [hoursWorked, setHoursWorked] = useState(
-    report?.hoursWorked != null ? String(report.hoursWorked) : ""
-  );
   const [notes, setNotes] = useState(report?.notes ?? "");
-  const [examLines, setExamLines] = useState<ExamCountLine[]>(
-    report?.examCounts.map((e) => ({ id: e.id, serviceItemId: e.serviceItemId, count: String(e.count) })) ?? []
+  const [lines, setLines] = useState<LineState[]>(
+    report?.lines.map((l) => ({ id: l.id, serviceItemId: l.serviceItemId, quantity: String(l.quantity) })) ?? []
   );
 
   const selectedDoctor = doctors.find((d) => d.id === doctorId);
 
   function newId() {
     nextId.current += 1;
-    return `e${nextId.current}`;
+    return `l${nextId.current}`;
   }
 
   function addLine() {
-    setExamLines((prev) => [...prev, { id: newId(), serviceItemId: "", count: "" }]);
+    setLines((prev) => [...prev, { id: newId(), serviceItemId: "", quantity: "" }]);
   }
 
-  function updateLine(id: string, field: "serviceItemId" | "count", value: string) {
-    setExamLines((prev) => prev.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
+  function updateLine(id: string, field: "serviceItemId" | "quantity", value: string) {
+    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
   }
 
   function removeLine(id: string) {
-    setExamLines((prev) => prev.filter((l) => l.id !== id));
+    setLines((prev) => prev.filter((l) => l.id !== id));
   }
 
-  const isHourly = selectedDoctor?.paymentModel === "HOURLY";
-  const consultationValue = isHourly ? 0 : (Number(consultationCount) || 0) * (selectedDoctor?.consultationRate ?? 0);
-  const examValue = useMemo(() => {
-    if (!selectedDoctor || isHourly) return 0;
-    return examLines.reduce((sum, l) => {
+  const total = useMemo(() => {
+    if (!selectedDoctor) return 0;
+    return lines.reduce((sum, l) => {
       const rate = selectedDoctor.serviceRates.find((r) => r.serviceItemId === l.serviceItemId)?.rate ?? 0;
-      return sum + (Number(l.count) || 0) * rate;
+      return sum + (Number(l.quantity) || 0) * rate;
     }, 0);
-  }, [examLines, selectedDoctor, isHourly]);
-  const hourlyValue = isHourly ? (Number(hoursWorked) || 0) * (selectedDoctor?.hourlyRate ?? 0) : 0;
-  const totalValue = consultationValue + examValue + hourlyValue;
+  }, [lines, selectedDoctor]);
 
   function reset() {
     setError(null);
     if (!report) {
       setDoctorId(doctors[0]?.id ?? "");
       setCompetencia(currentMonth());
-      setConsultationCount("");
-      setHoursWorked("");
       setNotes("");
-      setExamLines([]);
+      setLines([]);
     }
   }
 
@@ -129,18 +113,14 @@ export function ReportFormDialog({ doctors, report }: Props) {
     const payload: PeriodReportInput = {
       doctorId,
       competencia,
-      consultationCount: Number(consultationCount) || 0,
-      hoursWorked: Number(hoursWorked) || 0,
       notes: notes || undefined,
-      examCounts: examLines
-        .filter((l) => l.serviceItemId || l.count)
-        .map((l) => ({ serviceItemId: l.serviceItemId, count: Number(l.count) || 0 })),
+      lines: lines
+        .filter((l) => l.serviceItemId || l.quantity)
+        .map((l) => ({ serviceItemId: l.serviceItemId, quantity: Number(l.quantity) || 0 })),
     };
 
     startTransition(async () => {
-      const result = report
-        ? await updatePeriodReport(report.id, payload)
-        : await createPeriodReport(payload);
+      const result = report ? await updatePeriodReport(report.id, payload) : await createPeriodReport(payload);
       if (result.error) {
         setError(result.error);
         return;
@@ -150,6 +130,10 @@ export function ReportFormDialog({ doctors, report }: Props) {
       reset();
     });
   }
+
+  const contractLabels = Object.fromEntries(
+    (selectedDoctor?.serviceRates ?? []).map((r) => [r.serviceItemId, r.serviceItemName])
+  );
 
   return (
     <Dialog
@@ -172,7 +156,7 @@ export function ReportFormDialog({ doctors, report }: Props) {
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{report ? "Editar repasse" : "Novo repasse"}</DialogTitle>
-          <DialogDescription>Total de consultas e exames de um médico num mês.</DialogDescription>
+          <DialogDescription>O que o médico fez no mês, item a item.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
@@ -182,7 +166,10 @@ export function ReportFormDialog({ doctors, report }: Props) {
               <Select
                 items={Object.fromEntries(doctors.map((d) => [d.id, d.name]))}
                 value={doctorId}
-                onValueChange={(v) => setDoctorId(v ?? "")}
+                onValueChange={(v) => {
+                  setDoctorId(v ?? "");
+                  setLines([]);
+                }}
                 required
               >
                 <SelectTrigger id="doctorId" className="w-full">
@@ -209,56 +196,22 @@ export function ReportFormDialog({ doctors, report }: Props) {
             </div>
           </div>
 
-          {isHourly ? (
+          <div className="space-y-2">
+            <Label>Itens do mês</Label>
             <div className="space-y-2">
-              <Label htmlFor="hoursWorked">
-                Horas trabalhadas (R$ {selectedDoctor?.hourlyRate != null ? formatCurrency(selectedDoctor.hourlyRate) : "—"}
-                /hora)
-              </Label>
-              <Input
-                id="hoursWorked"
-                type="number"
-                min="0"
-                step="0.5"
-                value={hoursWorked}
-                onChange={(e) => setHoursWorked(e.target.value)}
-              />
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Label htmlFor="consultationCount">
-                Quantidade de consultas (R${" "}
-                {selectedDoctor?.consultationRate != null ? formatCurrency(selectedDoctor.consultationRate) : "—"}
-                /consulta)
-              </Label>
-              <Input
-                id="consultationCount"
-                type="number"
-                min="0"
-                step="1"
-                value={consultationCount}
-                onChange={(e) => setConsultationCount(e.target.value)}
-              />
-            </div>
-          )}
-
-          {selectedDoctor?.paymentModel === "CONSULTATION_AND_EXAM" && (
-            <div className="space-y-2">
-              <Label>Exames</Label>
-              <div className="space-y-2">
-                {examLines.map((line) => {
-                const rate = selectedDoctor?.serviceRates.find((r) => r.serviceItemId === line.serviceItemId)?.rate;
+              {lines.map((line) => {
+                const rate = selectedDoctor?.serviceRates.find(
+                  (r) => r.serviceItemId === line.serviceItemId
+                )?.rate;
                 return (
                   <div key={line.id} className="flex items-center gap-2">
                     <Select
-                      items={Object.fromEntries(
-                        (selectedDoctor?.serviceRates ?? []).map((r) => [r.serviceItemId, r.serviceItemName])
-                      )}
+                      items={contractLabels}
                       value={line.serviceItemId}
                       onValueChange={(v) => updateLine(line.id, "serviceItemId", v ?? "")}
                     >
                       <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Tipo de exame" />
+                        <SelectValue placeholder="Item" />
                       </SelectTrigger>
                       <SelectContent>
                         {(selectedDoctor?.serviceRates ?? []).map((r) => (
@@ -271,14 +224,14 @@ export function ReportFormDialog({ doctors, report }: Props) {
                     <Input
                       type="number"
                       min="0"
-                      step="1"
-                      value={line.count}
-                      onChange={(e) => updateLine(line.id, "count", e.target.value)}
+                      step="0.5"
+                      value={line.quantity}
+                      onChange={(e) => updateLine(line.id, "quantity", e.target.value)}
                       placeholder="Qtd"
-                      className="w-20"
+                      className="w-24"
                     />
                     <span className="w-24 text-right text-sm text-muted-foreground tabular-nums">
-                      {rate !== undefined ? formatCurrency((Number(line.count) || 0) * rate) : "—"}
+                      {rate !== undefined ? formatCurrency((Number(line.quantity) || 0) * rate) : "—"}
                     </span>
                     <Button type="button" variant="ghost" size="icon" onClick={() => removeLine(line.id)}>
                       <Trash2 className="size-4 text-destructive" />
@@ -294,44 +247,24 @@ export function ReportFormDialog({ doctors, report }: Props) {
                 disabled={!selectedDoctor || selectedDoctor.serviceRates.length === 0}
               >
                 <Plus className="size-4" />
-                Adicionar exame
+                Adicionar item
               </Button>
               {selectedDoctor && selectedDoctor.serviceRates.length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Esse médico não tem taxas de exame cadastradas — edite o médico primeiro.
+                  Esse médico não tem nenhum item contratado — edite o médico primeiro.
                 </p>
               )}
-              </div>
             </div>
-          )}
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="notes">Observações (opcional)</Label>
             <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
 
-          <div className="rounded-lg border p-3 space-y-1 text-sm">
-            {isHourly ? (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Valor do plantão</span>
-                <span className="tabular-nums">{formatCurrency(hourlyValue)}</span>
-              </div>
-            ) : (
-              <>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Valor de consultas</span>
-                  <span className="tabular-nums">{formatCurrency(consultationValue)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Valor de exames</span>
-                  <span className="tabular-nums">{formatCurrency(examValue)}</span>
-                </div>
-              </>
-            )}
-            <div className="flex justify-between font-medium">
-              <span>Valor total do repasse</span>
-              <span className="tabular-nums">{formatCurrency(totalValue)}</span>
-            </div>
+          <div className="rounded-lg border p-3 flex justify-between text-sm font-medium">
+            <span>Valor total do repasse</span>
+            <span className="tabular-nums">{formatCurrency(total)}</span>
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}

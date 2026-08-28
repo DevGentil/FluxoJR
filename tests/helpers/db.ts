@@ -18,7 +18,7 @@ export async function resetDb() {
   await testPrisma.supplier.deleteMany();
   await testPrisma.document.deleteMany();
   await testPrisma.dreReport.deleteMany();
-  await testPrisma.doctorPeriodExamCount.deleteMany();
+  await testPrisma.doctorPeriodLine.deleteMany();
   await testPrisma.doctorPeriodReport.deleteMany();
   await testPrisma.doctorServiceRate.deleteMany();
   await testPrisma.doctor.deleteMany();

@@ -16,14 +16,8 @@ import { ReportsTable } from "./reports-table";
 import { MetricsTable, type MetricRow } from "./metrics-table";
 import { MonthRangeFilter } from "./month-range-filter";
 import { CostCompositionChart, ConversionChart } from "./metrics-charts";
-import { deleteDoctor, type DoctorPaymentModel } from "./doctors-actions";
+import { deleteDoctor } from "./doctors-actions";
 import { Stethoscope, Wallet, Activity, Percent } from "lucide-react";
-
-const PAYMENT_MODEL_LABELS: Record<DoctorPaymentModel, string> = {
-  CONSULTATION: "Só consulta",
-  CONSULTATION_AND_EXAM: "Consulta + exame",
-  HOURLY: "Plantão (por hora)",
-};
 
 interface Props {
   searchParams: Promise<{ from?: string; to?: string }>;
@@ -47,30 +41,60 @@ function monthPresets() {
 
 type DecimalLike = { toString(): string };
 
-/** Valores de um repasse a partir das taxas congeladas no lançamento —
- * compartilhado pela visão de empresa (detalhe por médico) e pela
- * consolidada (detalhe por unidade), pra as duas nunca divergirem no
- * cálculo. */
-function reportValues(r: {
-  consultationCount: number | null;
-  consultationRate: DecimalLike | null;
-  hoursWorked: DecimalLike | null;
-  hourlyRate: DecimalLike | null;
-  examCounts: { count: number; rate: DecimalLike }[];
-}) {
-  const consultationCount = r.consultationCount ?? 0;
-  const consultationValue = consultationCount * Number(r.consultationRate ?? 0);
-  const examCount = r.examCounts.reduce((s, e) => s + e.count, 0);
-  const examValue = r.examCounts.reduce((s, e) => s + e.count * Number(e.rate), 0);
-  const hourlyValue = Number(r.hoursWorked ?? 0) * Number(r.hourlyRate ?? 0);
+interface ReportLine {
+  quantity: DecimalLike;
+  rate: DecimalLike;
+  serviceItem: { category: string };
+}
+
+/** Consolida as linhas de um lançamento nas grandezas que as métricas usam.
+ * O que separa consulta de exame de plantão agora é a categoria do item do
+ * catálogo, não um campo fixo no lançamento — foi assim que deu para
+ * suportar médico que combina os três.
+ *
+ * PROCEDIMENTO entra junto de EXAME: para a taxa de conversão o que importa
+ * é "quantas consultas viraram um serviço vendido", e um procedimento conta
+ * tanto quanto um exame. */
+function reportValues(lines: ReportLine[]) {
+  let consultationCount = 0;
+  let consultationValue = 0;
+  let examCount = 0;
+  let examValue = 0;
+  let plantaoQuantity = 0;
+  let hourlyValue = 0;
+  let otherValue = 0;
+
+  for (const l of lines) {
+    const quantity = Number(l.quantity);
+    const value = quantity * Number(l.rate);
+    switch (l.serviceItem.category) {
+      case "CONSULTA":
+        consultationCount += quantity;
+        consultationValue += value;
+        break;
+      case "EXAME":
+      case "PROCEDIMENTO":
+        examCount += quantity;
+        examValue += value;
+        break;
+      case "PLANTAO":
+        plantaoQuantity += quantity;
+        hourlyValue += value;
+        break;
+      default:
+        otherValue += value;
+    }
+  }
+
   return {
     consultationCount,
     consultationValue,
     examCount,
     examValue,
-    hoursWorked: r.hoursWorked != null ? Number(r.hoursWorked) : null,
+    hoursWorked: plantaoQuantity > 0 ? plantaoQuantity : null,
     hourlyValue,
-    totalValue: consultationValue + examValue + hourlyValue,
+    otherValue,
+    totalValue: consultationValue + examValue + hourlyValue + otherValue,
   };
 }
 
@@ -112,6 +136,22 @@ function conversionByEntity(rows: MetricRow[]) {
     .filter((e) => e.consultas > 0)
     .map((e) => ({ name: e.name, conversao: (e.exames / e.consultas) * 100 }))
     .sort((a, b) => b.conversao - a.conversao);
+}
+
+const CATEGORY_SHORT: Record<string, string> = {
+  CONSULTA: "consulta",
+  EXAME: "exame",
+  PROCEDIMENTO: "procedimento",
+  PLANTAO: "plantão",
+  OUTRO: "outro",
+};
+
+/** Resumo do contrato do médico: quantos itens e de que naturezas. Substitui
+ * o antigo "modelo de pagamento", que assumia que ele era só uma coisa. */
+function contractSummary(rates: { serviceItem: { category: string } }[]) {
+  if (rates.length === 0) return "Sem itens";
+  const kinds = [...new Set(rates.map((r) => CATEGORY_SHORT[r.serviceItem.category] ?? "outro"))];
+  return `${rates.length} ${rates.length === 1 ? "item" : "itens"} · ${kinds.join(", ")}`;
 }
 
 function KpiCard({
@@ -161,7 +201,7 @@ async function ConsolidatedSummary({
     }),
     prisma.doctorPeriodReport.findMany({
       where: { companyId: { in: companyIds }, ...(competenciaFilter ? { competencia: competenciaFilter } : {}) },
-      include: { company: { select: { name: true } }, examCounts: true },
+      include: { company: { select: { name: true } }, lines: { include: { serviceItem: { select: { category: true } } } } },
       orderBy: [{ competencia: "desc" }, { company: { name: "asc" } }],
     }),
   ]);
@@ -169,7 +209,7 @@ async function ConsolidatedSummary({
   // Na visão consolidada a "entidade" comparada dentro de cada período é a
   // unidade, não o médico — as métricas em si são exatamente as mesmas.
   const metricRows: MetricRow[] = reports.map((r) => {
-    const v = reportValues(r);
+    const v = reportValues(r.lines);
     return {
       id: r.id,
       competencia: r.competencia,
@@ -366,7 +406,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
     prisma.taxBracket.findMany({ where: { companyId }, orderBy: { minValue: "asc" } }),
     prisma.doctorPeriodReport.findMany({
       where: { companyId, ...(competenciaFilter ? { competencia: competenciaFilter } : {}) },
-      include: { doctor: true, examCounts: { include: { serviceItem: true } } },
+      include: { doctor: true, lines: { include: { serviceItem: { select: { id: true, name: true, category: true } } } } },
       orderBy: [{ competencia: "desc" }, { doctor: { name: "asc" } }],
     }),
   ]);
@@ -409,9 +449,6 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
   const doctorOptions = doctors.map((d) => ({
     id: d.id,
     name: d.name,
-    paymentModel: d.paymentModel,
-    consultationRate: d.consultationRate != null ? Number(d.consultationRate) : null,
-    hourlyRate: d.hourlyRate != null ? Number(d.hourlyRate) : null,
     serviceRates: d.serviceRates.map((r) => ({
       serviceItemId: r.serviceItemId,
       serviceItemName: r.serviceItem.name,
@@ -419,18 +456,15 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
     })),
   }));
 
-  // Valores de cada repasse a partir das taxas congeladas no lançamento.
-  // Médicos HOURLY (plantão) não têm consultas/exames — o valor deles entra
-  // separado, em hourlyValue.
+  // Valores de cada repasse, derivados das linhas com a taxa congelada.
   const reportsWithValues = reports.map((r) => {
     const { consultationCount, consultationValue, examCount, examValue, hoursWorked, hourlyValue, totalValue } =
-      reportValues(r);
+      reportValues(r.lines);
     return {
       id: r.id,
       competencia: r.competencia,
       doctorId: r.doctorId,
       doctorName: r.doctor.name,
-      paymentModel: r.doctor.paymentModel,
       notes: r.notes,
       consultationCount,
       examCount,
@@ -439,7 +473,11 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
       hoursWorked,
       hourlyValue,
       totalValue,
-      examCounts: r.examCounts.map((e) => ({ id: e.id, serviceItemId: e.serviceItemId, count: e.count })),
+      lines: r.lines.map((l) => ({
+        id: l.id,
+        serviceItemId: l.serviceItemId,
+        quantity: Number(l.quantity),
+      })),
     };
   });
 
@@ -556,8 +594,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
                 <TableHead>Especialização</TableHead>
                 <TableHead>CRM</TableHead>
                 <TableHead>Pagamento</TableHead>
-                <TableHead>Modelo</TableHead>
-                <TableHead className="text-right">Valor</TableHead>
+                <TableHead>Contrato</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-24" />
               </TableRow>
@@ -565,7 +602,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
             <TableBody>
               {doctors.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                     Nenhum médico cadastrado ainda.
                   </TableCell>
                 </TableRow>
@@ -576,18 +613,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
                   <TableCell>{d.specialty}</TableCell>
                   <TableCell>{d.document || "—"}</TableCell>
                   <TableCell>{d.paymentMethod || "—"}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
-                    {PAYMENT_MODEL_LABELS[d.paymentModel]}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {d.paymentModel === "HOURLY"
-                      ? d.hourlyRate != null
-                        ? `${formatCurrency(Number(d.hourlyRate))}/h`
-                        : "—"
-                      : d.consultationRate != null
-                        ? formatCurrency(Number(d.consultationRate))
-                        : "—"}
-                  </TableCell>
+                  <TableCell className="text-muted-foreground text-sm">{contractSummary(d.serviceRates)}</TableCell>
                   <TableCell>
                     <Badge variant={d.active ? "secondary" : "outline"}>{d.active ? "Ativo" : "Inativo"}</Badge>
                   </TableCell>
@@ -601,9 +627,6 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
                           specialty: d.specialty,
                           document: d.document,
                           paymentMethod: d.paymentMethod,
-                          paymentModel: d.paymentModel,
-                          consultationRate: d.consultationRate != null ? Number(d.consultationRate) : null,
-                          hourlyRate: d.hourlyRate != null ? Number(d.hourlyRate) : null,
                           active: d.active,
                           notes: d.notes,
                           serviceRates: d.serviceRates.map((r) => ({
