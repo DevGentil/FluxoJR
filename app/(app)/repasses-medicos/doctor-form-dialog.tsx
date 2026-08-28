@@ -32,19 +32,19 @@ const PAYMENT_MODEL_LABELS: Record<DoctorPaymentModel, string> = {
   HOURLY: "Plantão (por hora)",
 };
 
-interface ExamTypeOption {
+interface ServiceItemOption {
   id: string;
   name: string;
 }
 
 interface RateLine {
   id: string;
-  examTypeId: string;
+  serviceItemId: string;
   rate: string;
 }
 
 interface Props {
-  examTypes: ExamTypeOption[];
+  serviceItems: ServiceItemOption[];
   doctor?: {
     id: string;
     name: string;
@@ -56,11 +56,11 @@ interface Props {
     hourlyRate: number | null;
     active: boolean;
     notes: string | null;
-    examRates: { id: string; examTypeId: string; rate: number }[];
+    serviceRates: { id: string; serviceItemId: string; rate: number }[];
   };
 }
 
-export function DoctorFormDialog({ examTypes, doctor }: Props) {
+export function DoctorFormDialog({ serviceItems, doctor }: Props) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +80,7 @@ export function DoctorFormDialog({ examTypes, doctor }: Props) {
   const [active, setActive] = useState(doctor?.active ?? true);
   const [notes, setNotes] = useState(doctor?.notes ?? "");
   const [rates, setRates] = useState<RateLine[]>(
-    doctor?.examRates.map((r) => ({ id: r.id, examTypeId: r.examTypeId, rate: String(r.rate) })) ?? []
+    doctor?.serviceRates.map((r) => ({ id: r.id, serviceItemId: r.serviceItemId, rate: String(r.rate) })) ?? []
   );
 
   function newId() {
@@ -89,10 +89,10 @@ export function DoctorFormDialog({ examTypes, doctor }: Props) {
   }
 
   function addRate() {
-    setRates((prev) => [...prev, { id: newId(), examTypeId: "", rate: "" }]);
+    setRates((prev) => [...prev, { id: newId(), serviceItemId: "", rate: "" }]);
   }
 
-  function updateRate(id: string, field: "examTypeId" | "rate", value: string) {
+  function updateRate(id: string, field: "serviceItemId" | "rate", value: string) {
     setRates((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
   }
 
@@ -128,11 +128,11 @@ export function DoctorFormDialog({ examTypes, doctor }: Props) {
       hourlyRate: paymentModel === "HOURLY" ? Number(hourlyRate) : undefined,
       active,
       notes: notes || undefined,
-      examRates:
+      serviceRates:
         paymentModel === "CONSULTATION_AND_EXAM"
           ? rates
-              .filter((r) => r.examTypeId || r.rate)
-              .map((r) => ({ examTypeId: r.examTypeId, rate: Number(r.rate) }))
+              .filter((r) => r.serviceItemId || r.rate)
+              .map((r) => ({ serviceItemId: r.serviceItemId, rate: Number(r.rate) }))
           : [],
     };
 
@@ -264,15 +264,15 @@ export function DoctorFormDialog({ examTypes, doctor }: Props) {
                 {rates.map((line) => (
                   <div key={line.id} className="flex items-center gap-2">
                     <Select
-                      items={Object.fromEntries(examTypes.map((e) => [e.id, e.name]))}
-                      value={line.examTypeId}
-                      onValueChange={(v) => updateRate(line.id, "examTypeId", v ?? "")}
+                      items={Object.fromEntries(serviceItems.map((e) => [e.id, e.name]))}
+                      value={line.serviceItemId}
+                      onValueChange={(v) => updateRate(line.id, "serviceItemId", v ?? "")}
                     >
                       <SelectTrigger className="flex-1">
                         <SelectValue placeholder="Tipo de exame" />
                       </SelectTrigger>
                       <SelectContent>
-                        {examTypes.map((e) => (
+                        {serviceItems.map((e) => (
                           <SelectItem key={e.id} value={e.id}>
                             {e.name}
                           </SelectItem>
@@ -293,11 +293,11 @@ export function DoctorFormDialog({ examTypes, doctor }: Props) {
                     </Button>
                   </div>
                 ))}
-                <Button type="button" variant="outline" size="sm" onClick={addRate} disabled={examTypes.length === 0}>
+                <Button type="button" variant="outline" size="sm" onClick={addRate} disabled={serviceItems.length === 0}>
                   <Plus className="size-4" />
                   Adicionar tipo de exame
                 </Button>
-                {examTypes.length === 0 && (
+                {serviceItems.length === 0 && (
                   <p className="text-xs text-muted-foreground">
                     Cadastre um tipo de exame primeiro para poder definir taxas.
                   </p>

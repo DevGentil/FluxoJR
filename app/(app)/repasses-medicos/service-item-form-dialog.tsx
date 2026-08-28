@@ -13,24 +13,24 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { createExamType, updateExamType } from "./exam-types-actions";
+import { createServiceItem, updateServiceItem } from "./service-items-actions";
 import type { ActionState } from "@/lib/actions-utils";
 import { Pencil, Plus } from "lucide-react";
 import { useCloseOnSuccess } from "@/hooks/use-close-on-success";
 
 interface Props {
-  examType?: { id: string; name: string };
+  serviceItem?: { id: string; name: string };
 }
 
-export function ExamTypeFormDialog({ examType }: Props) {
+export function ServiceItemFormDialog({ serviceItem }: Props) {
   const [open, setOpen] = useState(false);
-  const action = examType ? updateExamType.bind(null, examType.id) : createExamType;
+  const action = serviceItem ? updateServiceItem.bind(null, serviceItem.id) : createServiceItem;
   const [state, formAction, pending] = useActionState<ActionState, FormData>(action, undefined);
   useCloseOnSuccess(pending, Boolean(state?.error), () => setOpen(false));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {examType ? (
+      {serviceItem ? (
         <DialogTrigger render={<Button variant="ghost" size="icon" />}>
           <Pencil className="size-4" />
         </DialogTrigger>
@@ -42,7 +42,7 @@ export function ExamTypeFormDialog({ examType }: Props) {
       )}
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{examType ? "Editar tipo de exame" : "Novo tipo de exame"}</DialogTitle>
+          <DialogTitle>{serviceItem ? "Editar tipo de exame" : "Novo tipo de exame"}</DialogTitle>
           <DialogDescription>
             Catálogo de exames da empresa, usado para definir a taxa de cada médico.
           </DialogDescription>
@@ -50,7 +50,7 @@ export function ExamTypeFormDialog({ examType }: Props) {
         <form action={formAction} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Nome</Label>
-            <Input id="name" name="name" required defaultValue={examType?.name} placeholder="Ex: Ultrassom" />
+            <Input id="name" name="name" required defaultValue={serviceItem?.name} placeholder="Ex: Ultrassom" />
           </div>
           {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
           <DialogFooter>

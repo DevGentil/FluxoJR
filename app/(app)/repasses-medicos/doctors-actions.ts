@@ -7,8 +7,8 @@ import { requireUser } from "@/lib/auth";
 
 export type DoctorPaymentModel = "CONSULTATION" | "CONSULTATION_AND_EXAM" | "HOURLY";
 
-export interface DoctorExamRateInput {
-  examTypeId: string;
+export interface DoctorServiceRateInput {
+  serviceItemId: string;
   rate: number;
 }
 
@@ -22,7 +22,7 @@ export interface DoctorInput {
   hourlyRate?: number;
   active: boolean;
   notes?: string;
-  examRates: DoctorExamRateInput[];
+  serviceRates: DoctorServiceRateInput[];
 }
 
 function validate(input: DoctorInput): string | null {
@@ -40,14 +40,14 @@ function validate(input: DoctorInput): string | null {
     return "Informe um valor de consulta válido.";
   }
   if (input.paymentModel === "CONSULTATION_AND_EXAM") {
-    for (const r of input.examRates) {
-      if (!r.examTypeId) return "Selecione o tipo de exame em todas as linhas.";
+    for (const r of input.serviceRates) {
+      if (!r.serviceItemId) return "Selecione o tipo de exame em todas as linhas.";
       if (!Number.isFinite(r.rate) || r.rate < 0) return "Todo valor de exame deve ser válido.";
     }
     const seen = new Set<string>();
-    for (const r of input.examRates) {
-      if (seen.has(r.examTypeId)) return "Não repita o mesmo tipo de exame nas taxas do médico.";
-      seen.add(r.examTypeId);
+    for (const r of input.serviceRates) {
+      if (seen.has(r.serviceItemId)) return "Não repita o mesmo tipo de exame nas taxas do médico.";
+      seen.add(r.serviceItemId);
     }
   }
   return null;
@@ -57,11 +57,11 @@ function validate(input: DoctorInput): string | null {
 // lixo (ex: hourlyRate preenchido num médico CONSULTATION) se o form
 // mandar valores antigos de quando o usuário trocou de modelo na tela.
 function normalize(input: DoctorInput) {
-  const examRates = input.paymentModel === "CONSULTATION_AND_EXAM" ? input.examRates : [];
+  const serviceRates = input.paymentModel === "CONSULTATION_AND_EXAM" ? input.serviceRates : [];
   return {
     consultationRate: input.paymentModel === "HOURLY" ? null : input.consultationRate ?? null,
     hourlyRate: input.paymentModel === "HOURLY" ? input.hourlyRate ?? null : null,
-    examRates,
+    serviceRates,
   };
 }
 
@@ -72,7 +72,7 @@ export async function createDoctor(input: DoctorInput): Promise<{ error?: string
   try {
     await requireUser();
     const companyId = await getActiveCompanyId();
-    const { consultationRate, hourlyRate, examRates } = normalize(input);
+    const { consultationRate, hourlyRate, serviceRates } = normalize(input);
 
     await prisma.doctor.create({
       data: {
@@ -86,8 +86,8 @@ export async function createDoctor(input: DoctorInput): Promise<{ error?: string
         hourlyRate,
         active: input.active,
         notes: input.notes?.trim() || null,
-        examRates: {
-          create: examRates.map((r) => ({ examTypeId: r.examTypeId, rate: r.rate })),
+        serviceRates: {
+          create: serviceRates.map((r) => ({ serviceItemId: r.serviceItemId, rate: r.rate })),
         },
       },
     });
@@ -109,10 +109,10 @@ export async function updateDoctor(id: string, input: DoctorInput): Promise<{ er
 
     const doctor = await prisma.doctor.findFirst({ where: { id, companyId } });
     if (!doctor) return { error: "Médico não encontrado." };
-    const { consultationRate, hourlyRate, examRates } = normalize(input);
+    const { consultationRate, hourlyRate, serviceRates } = normalize(input);
 
     await prisma.$transaction(async (tx) => {
-      await tx.doctorExamRate.deleteMany({ where: { doctorId: id } });
+      await tx.doctorServiceRate.deleteMany({ where: { doctorId: id } });
       await tx.doctor.update({
         where: { id },
         data: {
@@ -125,8 +125,8 @@ export async function updateDoctor(id: string, input: DoctorInput): Promise<{ er
           hourlyRate,
           active: input.active,
           notes: input.notes?.trim() || null,
-          examRates: {
-            create: examRates.map((r) => ({ examTypeId: r.examTypeId, rate: r.rate })),
+          serviceRates: {
+            create: serviceRates.map((r) => ({ serviceItemId: r.serviceItemId, rate: r.rate })),
           },
         },
       });

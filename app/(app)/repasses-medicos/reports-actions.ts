@@ -6,7 +6,7 @@ import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 
 export interface PeriodExamCountInput {
-  examTypeId: string;
+  serviceItemId: string;
   count: number;
 }
 
@@ -38,30 +38,30 @@ function validate(input: PeriodReportInput, doctor: { paymentModel: string }): s
   }
   if (doctor.paymentModel === "CONSULTATION_AND_EXAM") {
     for (const e of input.examCounts) {
-      if (!e.examTypeId) return "Selecione o tipo de exame em todas as linhas.";
+      if (!e.serviceItemId) return "Selecione o tipo de exame em todas as linhas.";
       if (!Number.isInteger(e.count) || e.count <= 0) return "Toda quantidade de exame deve ser maior que zero.";
     }
     const seen = new Set<string>();
     for (const e of input.examCounts) {
-      if (seen.has(e.examTypeId)) return "Não repita o mesmo tipo de exame nas linhas.";
-      seen.add(e.examTypeId);
+      if (seen.has(e.serviceItemId)) return "Não repita o mesmo tipo de exame nas linhas.";
+      seen.add(e.serviceItemId);
     }
   }
   return null;
 }
 
 async function buildExamCountsData(companyId: string, doctorId: string, examCounts: PeriodExamCountInput[]) {
-  const rates = await prisma.doctorExamRate.findMany({
-    where: { doctorId, examTypeId: { in: examCounts.map((e) => e.examTypeId) } },
+  const rates = await prisma.doctorServiceRate.findMany({
+    where: { doctorId, serviceItemId: { in: examCounts.map((e) => e.serviceItemId) } },
   });
-  const rateByExamType = new Map(rates.map((r) => [r.examTypeId, Number(r.rate)]));
+  const rateByServiceItem = new Map(rates.map((r) => [r.serviceItemId, Number(r.rate)]));
 
   return examCounts.map((e) => {
-    const rate = rateByExamType.get(e.examTypeId);
+    const rate = rateByServiceItem.get(e.serviceItemId);
     if (rate === undefined) {
       throw new Error("Esse médico não tem taxa cadastrada para um dos tipos de exame selecionados.");
     }
-    return { examTypeId: e.examTypeId, count: e.count, rate };
+    return { serviceItemId: e.serviceItemId, count: e.count, rate };
   });
 }
 

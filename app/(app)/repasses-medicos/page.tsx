@@ -7,14 +7,14 @@ import { Badge } from "@/components/ui/badge";
 import { DeleteButton } from "@/components/delete-button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { DoctorFormDialog } from "./doctor-form-dialog";
-import { ExamTypeFormDialog } from "./exam-type-form-dialog";
+import { ServiceItemFormDialog } from "./service-item-form-dialog";
 import { ReportFormDialog } from "./report-form-dialog";
 import { ReportsTable } from "./reports-table";
 import { MetricsTable, type MetricRow } from "./metrics-table";
 import { MonthRangeFilter } from "./month-range-filter";
 import { CostCompositionChart, ConversionChart } from "./metrics-charts";
 import { deleteDoctor, type DoctorPaymentModel } from "./doctors-actions";
-import { deleteExamType } from "./exam-types-actions";
+import { deleteServiceItem } from "./service-items-actions";
 import { Stethoscope, Wallet, Activity, Percent } from "lucide-react";
 
 const PAYMENT_MODEL_LABELS: Record<DoctorPaymentModel, string> = {
@@ -354,19 +354,23 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
     ? { gte: new Date(`${range.from}-01T00:00:00`), lte: new Date(`${range.to}-01T00:00:00`) }
     : undefined;
 
-  const [doctors, examTypes, reports] = await Promise.all([
+  const [doctors, serviceItems, reports] = await Promise.all([
     prisma.doctor.findMany({
       where: { companyId },
-      include: { examRates: { include: { examType: true } } },
+      include: { serviceRates: { include: { serviceItem: true } } },
       orderBy: { name: "asc" },
     }),
-    prisma.examType.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
+    prisma.serviceItem.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
     prisma.doctorPeriodReport.findMany({
       where: { companyId, ...(competenciaFilter ? { competencia: competenciaFilter } : {}) },
-      include: { doctor: true, examCounts: { include: { examType: true } } },
+      include: { doctor: true, examCounts: { include: { serviceItem: true } } },
       orderBy: [{ competencia: "desc" }, { doctor: { name: "asc" } }],
     }),
   ]);
+
+  // Client Component so aceita objeto plano — o ServiceItem cru traz
+  // Decimal (price/operationalCost), que nao serializa.
+  const serviceItemOptions = serviceItems.map((s) => ({ id: s.id, name: s.name }));
 
   const doctorOptions = doctors.map((d) => ({
     id: d.id,
@@ -374,9 +378,9 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
     paymentModel: d.paymentModel,
     consultationRate: d.consultationRate != null ? Number(d.consultationRate) : null,
     hourlyRate: d.hourlyRate != null ? Number(d.hourlyRate) : null,
-    examRates: d.examRates.map((r) => ({
-      examTypeId: r.examTypeId,
-      examTypeName: r.examType.name,
+    serviceRates: d.serviceRates.map((r) => ({
+      serviceItemId: r.serviceItemId,
+      serviceItemName: r.serviceItem.name,
       rate: Number(r.rate),
     })),
   }));
@@ -401,7 +405,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
       hoursWorked,
       hourlyValue,
       totalValue,
-      examCounts: r.examCounts.map((e) => ({ id: e.id, examTypeId: e.examTypeId, count: e.count })),
+      examCounts: r.examCounts.map((e) => ({ id: e.id, serviceItemId: e.serviceItemId, count: e.count })),
     };
   });
 
@@ -508,7 +512,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
               <span className="text-muted-foreground font-normal text-sm"> · {activeDoctors} ativo(s)</span>
             )}
           </CardTitle>
-          <DoctorFormDialog examTypes={examTypes} />
+          <DoctorFormDialog serviceItems={serviceItemOptions} />
         </CardHeader>
         <CardContent>
           <Table>
@@ -556,7 +560,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
                   <TableCell>
                     <div className="flex justify-end gap-1">
                       <DoctorFormDialog
-                        examTypes={examTypes}
+                        serviceItems={serviceItemOptions}
                         doctor={{
                           id: d.id,
                           name: d.name,
@@ -568,9 +572,9 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
                           hourlyRate: d.hourlyRate != null ? Number(d.hourlyRate) : null,
                           active: d.active,
                           notes: d.notes,
-                          examRates: d.examRates.map((r) => ({
+                          serviceRates: d.serviceRates.map((r) => ({
                             id: r.id,
-                            examTypeId: r.examTypeId,
+                            serviceItemId: r.serviceItemId,
                             rate: Number(r.rate),
                           })),
                         }}
@@ -592,7 +596,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Tipos de exame</CardTitle>
-          <ExamTypeFormDialog />
+          <ServiceItemFormDialog />
         </CardHeader>
         <CardContent>
           <Table>
@@ -603,21 +607,21 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {examTypes.length === 0 && (
+              {serviceItems.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={2} className="text-center text-muted-foreground py-8">
                     Nenhum tipo de exame cadastrado ainda.
                   </TableCell>
                 </TableRow>
               )}
-              {examTypes.map((e) => (
+              {serviceItems.map((e) => (
                 <TableRow key={e.id}>
                   <TableCell className="font-medium">{e.name}</TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
-                      <ExamTypeFormDialog examType={{ id: e.id, name: e.name }} />
+                      <ServiceItemFormDialog serviceItem={{ id: e.id, name: e.name }} />
                       <DeleteButton
-                        action={deleteExamType.bind(null, e.id)}
+                        action={deleteServiceItem.bind(null, e.id)}
                         title={`Excluir "${e.name}"?`}
                       />
                     </div>

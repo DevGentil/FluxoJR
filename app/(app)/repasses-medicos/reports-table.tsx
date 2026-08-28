@@ -20,7 +20,7 @@ interface DoctorOption {
   paymentModel: DoctorPaymentModel;
   consultationRate: number | null;
   hourlyRate: number | null;
-  examRates: { examTypeId: string; examTypeName: string; rate: number }[];
+  serviceRates: { serviceItemId: string; serviceItemName: string; rate: number }[];
 }
 
 interface ReportRow {
@@ -37,7 +37,7 @@ interface ReportRow {
   hourlyValue: number;
   totalValue: number;
   notes: string | null;
-  examCounts: { id: string; examTypeId: string; count: number }[];
+  examCounts: { id: string; serviceItemId: string; count: number }[];
 }
 
 interface Props {

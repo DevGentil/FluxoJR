@@ -61,17 +61,18 @@ model Company {
   groupId String?
   group   Group?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
 
-  accounts        Account[]
-  categories      Category[]
-  suppliers       Supplier[]
-  transactions    Transaction[]
-  scheduledEntries ScheduledEntry[]
-  importBatches   ImportBatch[]
-  documents       Document[]
-  cashClosings    CashClosing[]
-  dreReports      DreReport[]
-  doctors         Doctor[]
-  examTypes       ExamType[]
+  accounts            Account[]
+  categories          Category[]
+  suppliers           Supplier[]
+  transactions        Transaction[]
+  scheduledEntries    ScheduledEntry[]
+  importBatches       ImportBatch[]
+  documents           Document[]
+  cashClosings        CashClosing[]
+  dreReports          DreReport[]
+  doctors             Doctor[]
+  serviceItems        ServiceItem[]
+  taxBrackets         TaxBracket[]
   doctorPeriodReports DoctorPeriodReport[]
 
   incomingTransfers Transaction[] @relation("TransactionTransfer")
@@ -319,37 +320,93 @@ model Doctor {
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  examRates     DoctorExamRate[]
+  serviceRates  DoctorServiceRate[]
   periodReports DoctorPeriodReport[]
 }
 
-// Catálogo de tipos de exame da empresa (ex: "Ultrassom", "Raio-X").
-model ExamType {
-  id   String @id @default(cuid())
-  name String
+// Categoria semantica do item, usada pelas metricas (conversao = exames
+// por consulta) e para saber o que faz sentido lancar.
+enum ServiceCategory {
+  CONSULTA
+  EXAME
+  PROCEDIMENTO
+  PLANTAO
+  OUTRO
+}
+
+// Convenio a que o item se aplica. 'Consulta CT' e 'Consulta Particular'
+// sao itens distintos, com preco e repasse proprios.
+enum Payer {
+  CT
+  PARTICULAR
+}
+
+// Item do catalogo de servicos da unidade: tudo que pode ser cobrado do
+// paciente e/ou repassado a um medico — consulta, exame, procedimento,
+// plantao, auxilio.
+//
+// price e operationalCost alimentam o calculo de margem (junto das faixas
+// de taxa em TaxBracket); o repasse NAO fica aqui porque varia por medico
+// — mora em DoctorServiceRate.
+model ServiceItem {
+  id              String          @id @default(cuid())
+  name            String
+  // Grupo operacional, que na pratica define o custo de insumo:
+  // 'Proced de baixo custos', 'US', 'ECG e similares', 'Ortopedicos'...
+  // Texto livre porque cada unidade organiza do seu jeito.
+  group           String?
+  category        ServiceCategory @default(EXAME)
+  payer           Payer?
+  // Valor cobrado do paciente. Nulo em item que nao gera receita direta
+  // (plantao, auxilio combustivel).
+  price           Decimal?        @db.Decimal(14, 2)
+  operationalCost Decimal         @default(0) @db.Decimal(14, 2)
+  active          Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  doctorRates DoctorExamRate[]
+  doctorRates DoctorServiceRate[]
   reportLines DoctorPeriodExamCount[]
 
   @@unique([companyId, name])
 }
 
+// Faixa de taxa (cartao/antecipacao) aplicada conforme o valor cobrado do
+// paciente — a planilha de exames usa um percentual diferente por faixa de
+// preco. Fica como dado editavel por empresa, e nao formula chumbada no
+// codigo, porque a negociacao com a maquininha muda e cada unidade pode ter
+// a sua.
+model TaxBracket {
+  id        String   @id @default(cuid())
+  minValue  Decimal  @db.Decimal(14, 2)
+  maxValue  Decimal? @db.Decimal(14, 2) // nulo = sem teto
+  percent   Decimal  @db.Decimal(5, 2)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
 // Taxa atual do médico para um tipo de exame — usada como valor-padrão ao
 // lançar um novo período (o período guarda sua própria cópia congelada).
-model DoctorExamRate {
+model DoctorServiceRate {
   id   String  @id @default(cuid())
   rate Decimal @db.Decimal(14, 2)
 
   doctorId String
   doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
 
-  examTypeId String
-  examType   ExamType @relation(fields: [examTypeId], references: [id], onDelete: Cascade)
+  serviceItemId String
+  serviceItem   ServiceItem @relation(fields: [serviceItemId], references: [id], onDelete: Cascade)
 
-  @@unique([doctorId, examTypeId])
+  @@unique([doctorId, serviceItemId])
 }
 
 // Repasse agregado de um médico num mês: contagem de consultas (com a taxa
@@ -386,8 +443,8 @@ model DoctorPeriodExamCount {
   reportId String
   report   DoctorPeriodReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
-  examTypeId String
-  examType   ExamType @relation(fields: [examTypeId], references: [id], onDelete: Restrict)
+  serviceItemId String
+  serviceItem   ServiceItem @relation(fields: [serviceItemId], references: [id], onDelete: Restrict)
 
-  @@unique([reportId, examTypeId])
+  @@unique([reportId, serviceItemId])
 }

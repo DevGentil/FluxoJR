@@ -33,12 +33,12 @@ interface DoctorOption {
   paymentModel: DoctorPaymentModel;
   consultationRate: number | null;
   hourlyRate: number | null;
-  examRates: { examTypeId: string; examTypeName: string; rate: number }[];
+  serviceRates: { serviceItemId: string; serviceItemName: string; rate: number }[];
 }
 
 interface ExamCountLine {
   id: string;
-  examTypeId: string;
+  serviceItemId: string;
   count: string;
 }
 
@@ -51,7 +51,7 @@ interface Props {
     consultationCount: number | null;
     hoursWorked: number | null;
     notes: string | null;
-    examCounts: { id: string; examTypeId: string; count: number }[];
+    examCounts: { id: string; serviceItemId: string; count: number }[];
   };
 }
 
@@ -78,7 +78,7 @@ export function ReportFormDialog({ doctors, report }: Props) {
   );
   const [notes, setNotes] = useState(report?.notes ?? "");
   const [examLines, setExamLines] = useState<ExamCountLine[]>(
-    report?.examCounts.map((e) => ({ id: e.id, examTypeId: e.examTypeId, count: String(e.count) })) ?? []
+    report?.examCounts.map((e) => ({ id: e.id, serviceItemId: e.serviceItemId, count: String(e.count) })) ?? []
   );
 
   const selectedDoctor = doctors.find((d) => d.id === doctorId);
@@ -89,10 +89,10 @@ export function ReportFormDialog({ doctors, report }: Props) {
   }
 
   function addLine() {
-    setExamLines((prev) => [...prev, { id: newId(), examTypeId: "", count: "" }]);
+    setExamLines((prev) => [...prev, { id: newId(), serviceItemId: "", count: "" }]);
   }
 
-  function updateLine(id: string, field: "examTypeId" | "count", value: string) {
+  function updateLine(id: string, field: "serviceItemId" | "count", value: string) {
     setExamLines((prev) => prev.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
   }
 
@@ -105,7 +105,7 @@ export function ReportFormDialog({ doctors, report }: Props) {
   const examValue = useMemo(() => {
     if (!selectedDoctor || isHourly) return 0;
     return examLines.reduce((sum, l) => {
-      const rate = selectedDoctor.examRates.find((r) => r.examTypeId === l.examTypeId)?.rate ?? 0;
+      const rate = selectedDoctor.serviceRates.find((r) => r.serviceItemId === l.serviceItemId)?.rate ?? 0;
       return sum + (Number(l.count) || 0) * rate;
     }, 0);
   }, [examLines, selectedDoctor, isHourly]);
@@ -133,8 +133,8 @@ export function ReportFormDialog({ doctors, report }: Props) {
       hoursWorked: Number(hoursWorked) || 0,
       notes: notes || undefined,
       examCounts: examLines
-        .filter((l) => l.examTypeId || l.count)
-        .map((l) => ({ examTypeId: l.examTypeId, count: Number(l.count) || 0 })),
+        .filter((l) => l.serviceItemId || l.count)
+        .map((l) => ({ serviceItemId: l.serviceItemId, count: Number(l.count) || 0 })),
     };
 
     startTransition(async () => {
@@ -247,23 +247,23 @@ export function ReportFormDialog({ doctors, report }: Props) {
               <Label>Exames</Label>
               <div className="space-y-2">
                 {examLines.map((line) => {
-                const rate = selectedDoctor?.examRates.find((r) => r.examTypeId === line.examTypeId)?.rate;
+                const rate = selectedDoctor?.serviceRates.find((r) => r.serviceItemId === line.serviceItemId)?.rate;
                 return (
                   <div key={line.id} className="flex items-center gap-2">
                     <Select
                       items={Object.fromEntries(
-                        (selectedDoctor?.examRates ?? []).map((r) => [r.examTypeId, r.examTypeName])
+                        (selectedDoctor?.serviceRates ?? []).map((r) => [r.serviceItemId, r.serviceItemName])
                       )}
-                      value={line.examTypeId}
-                      onValueChange={(v) => updateLine(line.id, "examTypeId", v ?? "")}
+                      value={line.serviceItemId}
+                      onValueChange={(v) => updateLine(line.id, "serviceItemId", v ?? "")}
                     >
                       <SelectTrigger className="flex-1">
                         <SelectValue placeholder="Tipo de exame" />
                       </SelectTrigger>
                       <SelectContent>
-                        {(selectedDoctor?.examRates ?? []).map((r) => (
-                          <SelectItem key={r.examTypeId} value={r.examTypeId}>
-                            {r.examTypeName} — {formatCurrency(r.rate)}
+                        {(selectedDoctor?.serviceRates ?? []).map((r) => (
+                          <SelectItem key={r.serviceItemId} value={r.serviceItemId}>
+                            {r.serviceItemName} — {formatCurrency(r.rate)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -291,12 +291,12 @@ export function ReportFormDialog({ doctors, report }: Props) {
                 variant="outline"
                 size="sm"
                 onClick={addLine}
-                disabled={!selectedDoctor || selectedDoctor.examRates.length === 0}
+                disabled={!selectedDoctor || selectedDoctor.serviceRates.length === 0}
               >
                 <Plus className="size-4" />
                 Adicionar exame
               </Button>
-              {selectedDoctor && selectedDoctor.examRates.length === 0 && (
+              {selectedDoctor && selectedDoctor.serviceRates.length === 0 && (
                 <p className="text-xs text-muted-foreground">
                   Esse médico não tem taxas de exame cadastradas — edite o médico primeiro.
                 </p>

@@ -4,11 +4,11 @@ import { createDoctor, updateDoctor, deleteDoctor, type DoctorInput } from "./do
 
 beforeEach(resetDb);
 
-async function seedExamType(companyId: string, name = "Ultrassom") {
-  return testPrisma.examType.create({ data: { companyId, name } });
+async function seedServiceItem(companyId: string, name = "Ultrassom") {
+  return testPrisma.serviceItem.create({ data: { companyId, name } });
 }
 
-function baseInput(examTypeId: string, overrides: Partial<DoctorInput> = {}): DoctorInput {
+function baseInput(serviceItemId: string, overrides: Partial<DoctorInput> = {}): DoctorInput {
   return {
     name: "Dr. João Silva",
     specialty: "Clínico Geral",
@@ -17,7 +17,7 @@ function baseInput(examTypeId: string, overrides: Partial<DoctorInput> = {}): Do
     paymentModel: "CONSULTATION_AND_EXAM",
     consultationRate: 80,
     active: true,
-    examRates: [{ examTypeId, rate: 45 }],
+    serviceRates: [{ serviceItemId, rate: 45 }],
     ...overrides,
   };
 }
@@ -25,24 +25,24 @@ function baseInput(examTypeId: string, overrides: Partial<DoctorInput> = {}): Do
 describe("createDoctor", () => {
   it("cria o médico com as taxas de exame", async () => {
     const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const examType = await seedExamType(company.id);
+    const serviceItem = await seedServiceItem(company.id);
 
-    const result = await createDoctor(baseInput(examType.id));
+    const result = await createDoctor(baseInput(serviceItem.id));
 
     expect(result.error).toBeUndefined();
-    const doctors = await testPrisma.doctor.findMany({ include: { examRates: true } });
+    const doctors = await testPrisma.doctor.findMany({ include: { serviceRates: true } });
     expect(doctors).toHaveLength(1);
     expect(doctors[0]).toMatchObject({ name: "Dr. João Silva", document: "CRM 12345" });
     expect(Number(doctors[0].consultationRate)).toBe(80);
-    expect(doctors[0].examRates).toHaveLength(1);
-    expect(Number(doctors[0].examRates[0].rate)).toBe(45);
+    expect(doctors[0].serviceRates).toHaveLength(1);
+    expect(Number(doctors[0].serviceRates[0].rate)).toBe(45);
   });
 
   it("recusa sem nome", async () => {
     const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const examType = await seedExamType(company.id);
+    const serviceItem = await seedServiceItem(company.id);
 
-    const result = await createDoctor(baseInput(examType.id, { name: "" }));
+    const result = await createDoctor(baseInput(serviceItem.id, { name: "" }));
 
     expect(result.error).toBeTruthy();
     await expect(testPrisma.doctor.count()).resolves.toBe(0);
@@ -50,40 +50,40 @@ describe("createDoctor", () => {
 
   it("recusa sem especialização", async () => {
     const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const examType = await seedExamType(company.id);
+    const serviceItem = await seedServiceItem(company.id);
 
-    const result = await createDoctor(baseInput(examType.id, { specialty: "" }));
+    const result = await createDoctor(baseInput(serviceItem.id, { specialty: "" }));
 
     expect(result.error).toBeTruthy();
     await expect(testPrisma.doctor.count()).resolves.toBe(0);
   });
 
-  it("cria médico HOURLY (plantão) sem consultationRate nem examRates", async () => {
+  it("cria médico HOURLY (plantão) sem consultationRate nem serviceRates", async () => {
     const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const examType = await seedExamType(company.id);
+    const serviceItem = await seedServiceItem(company.id);
 
     const result = await createDoctor(
-      baseInput(examType.id, {
+      baseInput(serviceItem.id, {
         paymentModel: "HOURLY",
         consultationRate: undefined,
         hourlyRate: 150,
-        examRates: [{ examTypeId: examType.id, rate: 45 }], // deve ser ignorado
+        serviceRates: [{ serviceItemId: serviceItem.id, rate: 45 }], // deve ser ignorado
       })
     );
 
     expect(result.error).toBeUndefined();
-    const doctor = await testPrisma.doctor.findFirstOrThrow({ include: { examRates: true } });
+    const doctor = await testPrisma.doctor.findFirstOrThrow({ include: { serviceRates: true } });
     expect(doctor.consultationRate).toBeNull();
     expect(Number(doctor.hourlyRate)).toBe(150);
-    expect(doctor.examRates).toHaveLength(0);
+    expect(doctor.serviceRates).toHaveLength(0);
   });
 
   it("recusa médico HOURLY sem valor por hora", async () => {
     const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const examType = await seedExamType(company.id);
+    const serviceItem = await seedServiceItem(company.id);
 
     const result = await createDoctor(
-      baseInput(examType.id, { paymentModel: "HOURLY", consultationRate: undefined, hourlyRate: undefined })
+      baseInput(serviceItem.id, { paymentModel: "HOURLY", consultationRate: undefined, hourlyRate: undefined })
     );
 
     expect(result.error).toBeTruthy();
@@ -94,36 +94,36 @@ describe("createDoctor", () => {
 describe("updateDoctor", () => {
   it("substitui as taxas de exame (upsert completo)", async () => {
     const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const examType = await seedExamType(company.id, "Ultrassom");
-    const examType2 = await seedExamType(company.id, "Raio-X");
-    await createDoctor(baseInput(examType.id));
+    const serviceItem = await seedServiceItem(company.id, "Ultrassom");
+    const serviceItem2 = await seedServiceItem(company.id, "Raio-X");
+    await createDoctor(baseInput(serviceItem.id));
     const doctor = await testPrisma.doctor.findFirstOrThrow();
 
     const result = await updateDoctor(
       doctor.id,
-      baseInput(examType.id, { consultationRate: 100, examRates: [{ examTypeId: examType2.id, rate: 60 }] })
+      baseInput(serviceItem.id, { consultationRate: 100, serviceRates: [{ serviceItemId: serviceItem2.id, rate: 60 }] })
     );
 
     expect(result.error).toBeUndefined();
     const updated = await testPrisma.doctor.findUniqueOrThrow({
       where: { id: doctor.id },
-      include: { examRates: true },
+      include: { serviceRates: true },
     });
     expect(Number(updated.consultationRate)).toBe(100);
-    expect(updated.examRates).toHaveLength(1);
-    expect(updated.examRates[0].examTypeId).toBe(examType2.id);
+    expect(updated.serviceRates).toHaveLength(1);
+    expect(updated.serviceRates[0].serviceItemId).toBe(serviceItem2.id);
   });
 
   it("não afeta médico de outra empresa (escopo)", async () => {
     await testPrisma.company.create({ data: { name: "Empresa A" } });
     const empresaB = await testPrisma.company.create({ data: { name: "Empresa B" } });
-    const examTypeB = await seedExamType(empresaB.id);
+    const serviceItemB = await seedServiceItem(empresaB.id);
     const doctorB = await testPrisma.doctor.create({
       data: { companyId: empresaB.id, name: "Dr. de B", consultationRate: 50 },
     });
 
     // getActiveCompanyId() pega a empresa mais antiga — Empresa A nesse cenário.
-    const result = await updateDoctor(doctorB.id, baseInput(examTypeB.id, { name: "Tentativa de invasão" }));
+    const result = await updateDoctor(doctorB.id, baseInput(serviceItemB.id, { name: "Tentativa de invasão" }));
 
     expect(result.error).toBeTruthy();
     const unchanged = await testPrisma.doctor.findUniqueOrThrow({ where: { id: doctorB.id } });
@@ -134,14 +134,14 @@ describe("updateDoctor", () => {
 describe("deleteDoctor", () => {
   it("exclui o médico e suas taxas de exame", async () => {
     const company = await testPrisma.company.create({ data: { name: "Empresa" } });
-    const examType = await seedExamType(company.id);
-    await createDoctor(baseInput(examType.id));
+    const serviceItem = await seedServiceItem(company.id);
+    await createDoctor(baseInput(serviceItem.id));
     const doctor = await testPrisma.doctor.findFirstOrThrow();
 
     const result = await deleteDoctor(doctor.id);
 
     expect(result.error).toBeUndefined();
     await expect(testPrisma.doctor.count()).resolves.toBe(0);
-    await expect(testPrisma.doctorExamRate.count()).resolves.toBe(0);
+    await expect(testPrisma.doctorServiceRate.count()).resolves.toBe(0);
   });
 });
