@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { formatCurrency } from "@/lib/format";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { DeleteButton } from "@/components/delete-button";
@@ -10,10 +10,12 @@ import { DoctorFormDialog } from "./doctor-form-dialog";
 import { ExamTypeFormDialog } from "./exam-type-form-dialog";
 import { ReportFormDialog } from "./report-form-dialog";
 import { ReportsTable } from "./reports-table";
-import { MetricsTable } from "./metrics-table";
+import { MetricsTable, type MetricRow } from "./metrics-table";
 import { MonthRangeFilter } from "./month-range-filter";
+import { CostCompositionChart, ConversionByCompanyChart } from "./consolidated-charts";
 import { deleteDoctor, type DoctorPaymentModel } from "./doctors-actions";
 import { deleteExamType } from "./exam-types-actions";
+import { Stethoscope, Wallet, Activity, Percent } from "lucide-react";
 
 const PAYMENT_MODEL_LABELS: Record<DoctorPaymentModel, string> = {
   CONSULTATION: "Só consulta",
@@ -41,112 +43,235 @@ function monthPresets() {
   ];
 }
 
-function RankingBar({
+type DecimalLike = { toString(): string };
+
+/** Valores de um repasse a partir das taxas congeladas no lançamento —
+ * compartilhado pela visão de empresa (detalhe por médico) e pela
+ * consolidada (detalhe por unidade), pra as duas nunca divergirem no
+ * cálculo. */
+function reportValues(r: {
+  consultationCount: number | null;
+  consultationRate: DecimalLike | null;
+  hoursWorked: DecimalLike | null;
+  hourlyRate: DecimalLike | null;
+  examCounts: { count: number; rate: DecimalLike }[];
+}) {
+  const consultationCount = r.consultationCount ?? 0;
+  const consultationValue = consultationCount * Number(r.consultationRate ?? 0);
+  const examCount = r.examCounts.reduce((s, e) => s + e.count, 0);
+  const examValue = r.examCounts.reduce((s, e) => s + e.count * Number(e.rate), 0);
+  const hourlyValue = Number(r.hoursWorked ?? 0) * Number(r.hourlyRate ?? 0);
+  return {
+    consultationCount,
+    consultationValue,
+    examCount,
+    examValue,
+    hoursWorked: r.hoursWorked != null ? Number(r.hoursWorked) : null,
+    hourlyValue,
+    totalValue: consultationValue + examValue + hourlyValue,
+  };
+}
+
+function KpiCard({
   label,
   value,
-  percent,
-  formatValue,
-  colorClass,
+  icon: Icon,
+  iconClass,
 }: {
   label: string;
-  value: number;
-  percent: number;
-  formatValue: (v: number) => string;
-  colorClass: string;
+  value: string;
+  icon: typeof Wallet;
+  iconClass: string;
 }) {
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-medium">{label}</span>
-        <span className="tabular-nums text-muted-foreground">
-          {formatValue(value)} · {percent.toFixed(1)}%
-        </span>
-      </div>
-      <div className="h-1.5 w-full rounded-full bg-muted">
-        <div className={`h-1.5 rounded-full ${colorClass}`} style={{ width: `${Math.min(percent, 100)}%` }} />
-      </div>
-    </div>
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardDescription>{label}</CardDescription>
+        <Icon className={`size-4 ${iconClass}`} />
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-semibold tabular-nums">{value}</div>
+      </CardContent>
+    </Card>
   );
 }
 
-async function ConsolidatedSummary({ companyIds, scopeLabel }: { companyIds: string[]; scopeLabel: string }) {
-  const companies =
+async function ConsolidatedSummary({
+  companyIds,
+  scopeLabel,
+  range,
+}: {
+  companyIds: string[];
+  scopeLabel: string;
+  range: { from: string; to: string } | null;
+}) {
+  const competenciaFilter = range
+    ? { gte: new Date(`${range.from}-01T00:00:00`), lte: new Date(`${range.to}-01T00:00:00`) }
+    : undefined;
+
+  const [companies, activeDoctors, reports] = await Promise.all([
     companyIds.length === 0
       ? []
-      : await prisma.company.findMany({ where: { id: { in: companyIds } }, orderBy: { name: "asc" } });
+      : prisma.company.findMany({ where: { id: { in: companyIds } }, orderBy: { name: "asc" } }),
+    prisma.doctor.findMany({
+      where: { companyId: { in: companyIds }, active: true },
+      select: { companyId: true },
+    }),
+    prisma.doctorPeriodReport.findMany({
+      where: { companyId: { in: companyIds }, ...(competenciaFilter ? { competencia: competenciaFilter } : {}) },
+      include: { company: { select: { name: true } }, examCounts: true },
+      orderBy: [{ competencia: "desc" }, { company: { name: "asc" } }],
+    }),
+  ]);
 
-  const summaries = await Promise.all(
-    companies.map(async (company) => {
-      const [doctorCount, reports] = await Promise.all([
-        prisma.doctor.count({ where: { companyId: company.id, active: true } }),
-        prisma.doctorPeriodReport.findMany({
-          where: { companyId: company.id },
-          include: { examCounts: true },
-        }),
-      ]);
-      let totalValue = 0;
-      let consultationCount = 0;
-      let examCount = 0;
-      for (const r of reports) {
-        consultationCount += r.consultationCount ?? 0;
-        totalValue += (r.consultationCount ?? 0) * Number(r.consultationRate ?? 0);
-        totalValue += Number(r.hoursWorked ?? 0) * Number(r.hourlyRate ?? 0);
-        for (const e of r.examCounts) {
-          examCount += e.count;
-          totalValue += e.count * Number(e.rate);
-        }
-      }
-      return {
-        id: company.id,
-        name: company.name,
-        doctorCount,
-        reportCount: reports.length,
-        totalValue,
-        consultationCount,
-        examCount,
-      };
-    })
-  );
+  // Na visão consolidada a "entidade" comparada dentro de cada período é a
+  // unidade, não o médico — as métricas em si são exatamente as mesmas.
+  const metricRows: MetricRow[] = reports.map((r) => {
+    const v = reportValues(r);
+    return {
+      id: r.id,
+      competencia: r.competencia,
+      entityId: r.companyId,
+      entityName: r.company.name,
+      ...v,
+    };
+  });
 
-  const grandTotalValue = summaries.reduce((s, c) => s + c.totalValue, 0);
-  const grandTotalConsultas = summaries.reduce((s, c) => s + c.consultationCount, 0);
-  const grandTotalExames = summaries.reduce((s, c) => s + c.examCount, 0);
-  const hasData = grandTotalValue > 0 || grandTotalConsultas > 0 || grandTotalExames > 0;
+  const doctorCountByCompany = new Map<string, number>();
+  for (const d of activeDoctors) {
+    doctorCountByCompany.set(d.companyId, (doctorCountByCompany.get(d.companyId) ?? 0) + 1);
+  }
 
-  const byValue = [...summaries].sort((a, b) => b.totalValue - a.totalValue);
-  const byConsultas = [...summaries].sort((a, b) => b.consultationCount - a.consultationCount);
-  const byExames = [...summaries].sort((a, b) => b.examCount - a.examCount);
+  const byCompany = new Map<string, { id: string; name: string; consultas: number; exames: number; total: number }>();
+  for (const c of companies) {
+    byCompany.set(c.id, { id: c.id, name: c.name, consultas: 0, exames: 0, total: 0 });
+  }
+  for (const r of metricRows) {
+    const entry = byCompany.get(r.entityId);
+    if (!entry) continue;
+    entry.consultas += r.consultationCount;
+    entry.exames += r.examCount;
+    entry.total += r.totalValue;
+  }
+  const summaries = Array.from(byCompany.values());
+
+  const grandTotalValue = metricRows.reduce((s, r) => s + r.totalValue, 0);
+  const grandTotalConsultas = metricRows.reduce((s, r) => s + r.consultationCount, 0);
+  const grandTotalExames = metricRows.reduce((s, r) => s + r.examCount, 0);
+
+  // Composição do custo mês a mês (holding inteiro), últimos 12 meses com
+  // lançamento — 3 séries fixas em vez de uma por unidade, pra não virar um
+  // emaranhado conforme a holding cresce.
+  const monthMap = new Map<string, { date: Date; consultas: number; exames: number; plantao: number }>();
+  for (const r of metricRows) {
+    const key = r.competencia.toISOString().slice(0, 7);
+    const entry = monthMap.get(key) ?? { date: r.competencia, consultas: 0, exames: 0, plantao: 0 };
+    entry.consultas += r.consultationValue;
+    entry.exames += r.examValue;
+    entry.plantao += r.hourlyValue;
+    monthMap.set(key, entry);
+  }
+  const compositionData = Array.from(monthMap.values())
+    .sort((a, b) => a.date.getTime() - b.date.getTime())
+    .slice(-12)
+    .map((m) => ({
+      label: m.date.toLocaleDateString("pt-BR", { month: "short", year: "2-digit", timeZone: "UTC" }),
+      consultas: m.consultas,
+      exames: m.exames,
+      plantao: m.plantao,
+    }));
+
+  const conversionData = summaries
+    .filter((c) => c.consultas > 0)
+    .map((c) => ({ name: c.name, conversao: (c.exames / c.consultas) * 100 }))
+    .sort((a, b) => b.conversao - a.conversao);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Repasses Médicos</h1>
         <p className="text-muted-foreground text-sm">
-          Resumo por empresa — {scopeLabel}. Para gerenciar médicos, tipos de exame e repasses, use &quot;Ver
+          Custo de repasse consolidado — {scopeLabel}. Para gerenciar médicos, tipos de exame e repasses, use &quot;Ver
           detalhes&quot; ou o menu à esquerda.
         </p>
       </div>
 
+      <MonthRangeFilter presets={monthPresets()} range={range} />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard
+          label="Custo total de repasses"
+          value={formatCurrency(grandTotalValue)}
+          icon={Wallet}
+          iconClass="text-emerald-500"
+        />
+        <KpiCard
+          label="Consultas realizadas"
+          value={String(grandTotalConsultas)}
+          icon={Stethoscope}
+          iconClass="text-sky-500"
+        />
+        <KpiCard
+          label="Exames vendidos"
+          value={String(grandTotalExames)}
+          icon={Activity}
+          iconClass="text-amber-500"
+        />
+        <KpiCard
+          label="Conversão do grupo"
+          value={
+            grandTotalConsultas > 0 ? `${((grandTotalExames / grandTotalConsultas) * 100).toFixed(1)}%` : "—"
+          }
+          icon={Percent}
+          iconClass="text-violet-500"
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Composição do custo por mês</CardTitle>
+            <CardDescription>Consultas, exames e plantão somados de todas as unidades.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CostCompositionChart data={compositionData} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Conversão por unidade</CardTitle>
+            <CardDescription>
+              Percentual das consultas que viraram exame — compara desempenho, não tamanho.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ConversionByCompanyChart data={conversionData} />
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader>
-          <CardTitle>{summaries.length} empresa(s)</CardTitle>
+          <CardTitle>{summaries.length} unidade(s)</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Empresa</TableHead>
+                <TableHead>Unidade</TableHead>
                 <TableHead className="text-right">Médicos ativos</TableHead>
                 <TableHead className="text-right">Consultas</TableHead>
                 <TableHead className="text-right">Exames</TableHead>
-                <TableHead className="text-right">Valor total</TableHead>
+                <TableHead className="text-right">% conversão</TableHead>
+                <TableHead className="text-right">Custo total</TableHead>
+                <TableHead className="text-right">% do grupo</TableHead>
                 <TableHead className="w-32" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {summaries.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     Nenhuma empresa nesse escopo.
                   </TableCell>
                 </TableRow>
@@ -154,10 +279,16 @@ async function ConsolidatedSummary({ companyIds, scopeLabel }: { companyIds: str
               {summaries.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{s.name}</TableCell>
-                  <TableCell className="text-right tabular-nums">{s.doctorCount}</TableCell>
-                  <TableCell className="text-right tabular-nums">{s.consultationCount}</TableCell>
-                  <TableCell className="text-right tabular-nums">{s.examCount}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatCurrency(s.totalValue)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{doctorCountByCompany.get(s.id) ?? 0}</TableCell>
+                  <TableCell className="text-right tabular-nums">{s.consultas}</TableCell>
+                  <TableCell className="text-right tabular-nums">{s.exames}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {s.consultas > 0 ? `${((s.exames / s.consultas) * 100).toFixed(1)}%` : "—"}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCurrency(s.total)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                    {grandTotalValue > 0 ? `${((s.total / grandTotalValue) * 100).toFixed(1)}%` : "—"}
+                  </TableCell>
                   <TableCell>
                     <div className="flex justify-end">
                       <SwitchToCompanyButton companyId={s.id} label="Ver detalhes" />
@@ -172,71 +303,13 @@ async function ConsolidatedSummary({ companyIds, scopeLabel }: { companyIds: str
 
       <Card>
         <CardHeader>
-          <CardTitle>Métricas comparativas por empresa</CardTitle>
+          <CardTitle>Métricas de Custo</CardTitle>
+          <CardDescription>
+            Mesmas métricas da visão por unidade, consolidadas — expanda um período para ver cada unidade.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {!hasData && (
-            <p className="text-sm text-muted-foreground py-4 text-center">
-              Sem repasses lançados ainda nesse escopo para comparar.
-            </p>
-          )}
-          {hasData && (
-            <>
-              <div>
-                <p className="text-sm font-medium mb-3">Valor total de repasses</p>
-                <div className="space-y-3">
-                  {byValue
-                    .filter((c) => c.totalValue > 0)
-                    .map((c) => (
-                      <RankingBar
-                        key={c.id}
-                        label={c.name}
-                        value={c.totalValue}
-                        percent={grandTotalValue > 0 ? (c.totalValue / grandTotalValue) * 100 : 0}
-                        formatValue={formatCurrency}
-                        colorClass="bg-emerald-500"
-                      />
-                    ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-sm font-medium mb-3">Consultas realizadas</p>
-                <div className="space-y-3">
-                  {byConsultas
-                    .filter((c) => c.consultationCount > 0)
-                    .map((c) => (
-                      <RankingBar
-                        key={c.id}
-                        label={c.name}
-                        value={c.consultationCount}
-                        percent={grandTotalConsultas > 0 ? (c.consultationCount / grandTotalConsultas) * 100 : 0}
-                        formatValue={(v) => `${v} consulta(s)`}
-                        colorClass="bg-sky-500"
-                      />
-                    ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-sm font-medium mb-3">Exames vendidos</p>
-                <div className="space-y-3">
-                  {byExames
-                    .filter((c) => c.examCount > 0)
-                    .map((c) => (
-                      <RankingBar
-                        key={c.id}
-                        label={c.name}
-                        value={c.examCount}
-                        percent={grandTotalExames > 0 ? (c.examCount / grandTotalExames) * 100 : 0}
-                        formatValue={(v) => `${v} exame(s)`}
-                        colorClass="bg-amber-500"
-                      />
-                    ))}
-                </div>
-              </div>
-            </>
-          )}
+        <CardContent>
+          <MetricsTable rows={metricRows} entityLabel="Unidade" searchPlaceholder="Buscar por unidade..." />
         </CardContent>
       </Card>
     </div>
@@ -244,18 +317,20 @@ async function ConsolidatedSummary({ companyIds, scopeLabel }: { companyIds: str
 }
 
 export default async function RepassesMedicosPage({ searchParams }: Props) {
-  const scope = await getActiveScope();
-  if (scope.type !== "company") {
-    const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
-    return <ConsolidatedSummary companyIds={companyIds} scopeLabel={scopeLabel} />;
-  }
-
-  const companyId = scope.companyId;
   const params = await searchParams;
   // Filtro de período por competência (mês) — "De"/"Até" no formato
   // "YYYY-MM". Sem filtro por padrão (mostra tudo), compartilhado entre
-  // "Repasses por período" e "Métricas de Custo".
+  // "Repasses por período" e "Métricas de Custo" (e, no consolidado, entre
+  // os KPIs, os gráficos e a tabela).
   const range = params.from && params.to ? { from: params.from, to: params.to } : null;
+
+  const scope = await getActiveScope();
+  if (scope.type !== "company") {
+    const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
+    return <ConsolidatedSummary companyIds={companyIds} scopeLabel={scopeLabel} range={range} />;
+  }
+
+  const companyId = scope.companyId;
   const competenciaFilter = range
     ? { gte: new Date(`${range.from}-01T00:00:00`), lte: new Date(`${range.to}-01T00:00:00`) }
     : undefined;
@@ -287,16 +362,12 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
     })),
   }));
 
-  // Métricas: ranking por médico, split consultas vs. exames (por valor e
-  // por quantidade) e rendimento (consultas por exame vendido), somando
-  // todos os repasses já lançados (sem filtro de período na v1). Médicos
-  // HOURLY (plantão) não entram nesse cálculo de consultas/exames — o
-  // valor deles aparece à parte, em valorPlantao.
+  // Valores de cada repasse a partir das taxas congeladas no lançamento.
+  // Médicos HOURLY (plantão) não têm consultas/exames — o valor deles entra
+  // separado, em hourlyValue.
   const reportsWithValues = reports.map((r) => {
-    const consultationValue = (r.consultationCount ?? 0) * Number(r.consultationRate ?? 0);
-    const examValue = r.examCounts.reduce((s, e) => s + e.count * Number(e.rate), 0);
-    const examCount = r.examCounts.reduce((s, e) => s + e.count, 0);
-    const hourlyValue = Number(r.hoursWorked ?? 0) * Number(r.hourlyRate ?? 0);
+    const { consultationCount, consultationValue, examCount, examValue, hoursWorked, hourlyValue, totalValue } =
+      reportValues(r);
     return {
       id: r.id,
       competencia: r.competencia,
@@ -304,13 +375,13 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
       doctorName: r.doctor.name,
       paymentModel: r.doctor.paymentModel,
       notes: r.notes,
-      consultationCount: r.consultationCount ?? 0,
+      consultationCount,
       examCount,
       consultationValue,
       examValue,
-      hoursWorked: r.hoursWorked != null ? Number(r.hoursWorked) : null,
+      hoursWorked,
       hourlyValue,
-      totalValue: consultationValue + examValue + hourlyValue,
+      totalValue,
       examCounts: r.examCounts.map((e) => ({ id: e.id, examTypeId: e.examTypeId, count: e.count })),
     };
   });
@@ -465,7 +536,11 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
         </CardHeader>
         <CardContent className="space-y-4">
           <MonthRangeFilter presets={monthPresets()} range={range} />
-          <MetricsTable reports={reportsWithValues} />
+          <MetricsTable
+            rows={reportsWithValues.map((r) => ({ ...r, entityId: r.doctorId, entityName: r.doctorName }))}
+            entityLabel="Médico"
+            searchPlaceholder="Buscar por médico..."
+          />
         </CardContent>
       </Card>
     </div>

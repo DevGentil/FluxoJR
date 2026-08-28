@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/format";
-import type { DoctorPaymentModel } from "./doctors-actions";
 
 type Granularity = "month" | "quarter" | "semester" | "year";
 
@@ -55,12 +54,15 @@ function percentLabel(consultas: number, exames: number) {
   return consultas > 0 ? `${((exames / consultas) * 100).toFixed(1)}%` : "—";
 }
 
-interface ReportRow {
+/** Uma linha de repasse já com os valores calculados, atribuída a uma
+ * "entidade" — que é o médico na visão de uma empresa, e a própria empresa
+ * na visão consolidada/holding. As métricas são as mesmas nos dois casos,
+ * só muda o que está sendo comparado dentro do período. */
+export interface MetricRow {
   id: string;
   competencia: Date;
-  doctorId: string;
-  doctorName: string;
-  paymentModel: DoctorPaymentModel;
+  entityId: string;
+  entityName: string;
   consultationCount: number;
   examCount: number;
   consultationValue: number;
@@ -70,9 +72,9 @@ interface ReportRow {
   totalValue: number;
 }
 
-interface DoctorTotals {
-  doctorId: string;
-  doctorName: string;
+interface EntityTotals {
+  entityId: string;
+  entityName: string;
   consultationCount: number;
   examCount: number;
   hoursWorked: number;
@@ -82,10 +84,10 @@ interface DoctorTotals {
   totalValue: number;
 }
 
-function emptyDoctorTotals(doctorId: string, doctorName: string): DoctorTotals {
+function emptyTotals(entityId: string, entityName: string): EntityTotals {
   return {
-    doctorId,
-    doctorName,
+    entityId,
+    entityName,
     consultationCount: 0,
     examCount: 0,
     hoursWorked: 0,
@@ -96,41 +98,39 @@ function emptyDoctorTotals(doctorId: string, doctorName: string): DoctorTotals {
   };
 }
 
-function addReport(totals: DoctorTotals, r: ReportRow) {
-  totals.consultationCount += r.consultationCount;
-  totals.examCount += r.examCount;
-  totals.hoursWorked += r.hoursWorked ?? 0;
-  totals.consultationValue += r.consultationValue;
-  totals.examValue += r.examValue;
-  totals.hourlyValue += r.hourlyValue;
-  totals.totalValue += r.totalValue;
-}
-
-/** Agrega os repasses de um período (que pode juntar vários meses, no caso
- * de trimestre/semestre/ano) por médico, pra alimentar as linhas de
- * detalhe expandidas — mesmas colunas do agregado da unidade, só que por
- * médico dentro daquele período. */
-function aggregateByDoctor(reports: ReportRow[]): DoctorTotals[] {
-  const map = new Map<string, DoctorTotals>();
-  for (const r of reports) {
-    const entry = map.get(r.doctorId) ?? emptyDoctorTotals(r.doctorId, r.doctorName);
-    addReport(entry, r);
-    map.set(r.doctorId, entry);
+/** Agrega as linhas de um período (que pode juntar vários meses, no caso de
+ * trimestre/semestre/ano) por entidade, pra alimentar as linhas de detalhe
+ * expandidas — mesmas colunas do agregado, só que por médico/unidade. */
+function aggregateByEntity(rows: MetricRow[]): EntityTotals[] {
+  const map = new Map<string, EntityTotals>();
+  for (const r of rows) {
+    const entry = map.get(r.entityId) ?? emptyTotals(r.entityId, r.entityName);
+    entry.consultationCount += r.consultationCount;
+    entry.examCount += r.examCount;
+    entry.hoursWorked += r.hoursWorked ?? 0;
+    entry.consultationValue += r.consultationValue;
+    entry.examValue += r.examValue;
+    entry.hourlyValue += r.hourlyValue;
+    entry.totalValue += r.totalValue;
+    map.set(r.entityId, entry);
   }
-  return Array.from(map.values()).sort((a, b) => a.doctorName.localeCompare(b.doctorName));
+  return Array.from(map.values()).sort((a, b) => b.totalValue - a.totalValue);
 }
 
 interface Props {
-  reports: ReportRow[];
+  rows: MetricRow[];
+  /** Rótulo do que aparece ao expandir um período: "Médico" ou "Unidade". */
+  entityLabel: string;
+  searchPlaceholder: string;
 }
 
-/** Uma única tabela de métricas, agrupada por período (mensal, trimestral,
- * semestral ou anual — escolha do usuário) no mesmo padrão de colapsar/
- * expandir de ReportsTable. A linha do período traz o rendimento e o
- * valor consolidado da unidade naquele intervalo, e expandir mostra o
- * mesmo detalhamento por médico (agregado quando o período junta vários
- * meses). Evita espalhar a mesma informação em várias tabelas separadas. */
-export function MetricsTable({ reports }: Props) {
+/** Tabela de métricas agrupada por período (mensal, trimestral, semestral ou
+ * anual — escolha do usuário) no mesmo padrão de colapsar/expandir de
+ * ReportsTable. A linha do período traz o rendimento e o valor consolidado
+ * do conjunto, e expandir mostra o mesmo detalhamento por entidade (médico
+ * na visão de uma empresa, unidade na visão do holding), agregado quando o
+ * período junta vários meses. */
+export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
   const [search, setSearch] = useState("");
   const [granularity, setGranularity] = useState<Granularity>("month");
   const [expandedPeriods, setExpandedPeriods] = useState<Set<string>>(new Set());
@@ -144,33 +144,33 @@ export function MetricsTable({ reports }: Props) {
     });
   }
 
-  // A busca por médico ignora o agrupamento por período e mostra direto os
-  // períodos com pelo menos um médico batendo com o nome — mesmo padrão da
-  // busca em ReportsTable ("Repasses por período").
+  // A busca ignora o agrupamento por período e mostra direto os períodos com
+  // pelo menos uma entidade batendo com o nome — mesmo padrão da busca em
+  // ReportsTable ("Repasses por período").
   const isSearching = search.trim().length > 0;
-  const filteredReports = useMemo(() => {
-    if (!isSearching) return reports;
+  const filteredRows = useMemo(() => {
+    if (!isSearching) return rows;
     const q = search.trim().toLowerCase();
-    return reports.filter((r) => r.doctorName.toLowerCase().includes(q));
-  }, [reports, search, isSearching]);
+    return rows.filter((r) => r.entityName.toLowerCase().includes(q));
+  }, [rows, search, isSearching]);
 
-  // Agrupa por período (não assume blocos adjacentes — trimestre/semestre/
-  // ano pode juntar meses que hoje vêm em ordem desc mas não precisam ser
-  // contíguos se houver um mês sem repasse lançado no meio).
+  // Agrupa por período (não assume blocos adjacentes — trimestre/semestre/ano
+  // pode juntar meses que não são contíguos se houver um mês sem repasse
+  // lançado no meio).
   const groups = useMemo(() => {
-    const map = new Map<string, { key: string; anchor: Date; reports: ReportRow[] }>();
-    for (const r of filteredReports) {
+    const map = new Map<string, { key: string; anchor: Date; rows: MetricRow[] }>();
+    for (const r of filteredRows) {
       const key = periodKey(r.competencia, granularity);
       const entry = map.get(key);
       if (entry) {
-        entry.reports.push(r);
+        entry.rows.push(r);
         if (r.competencia > entry.anchor) entry.anchor = r.competencia;
       } else {
-        map.set(key, { key, anchor: r.competencia, reports: [r] });
+        map.set(key, { key, anchor: r.competencia, rows: [r] });
       }
     }
     return Array.from(map.values()).sort((a, b) => b.anchor.getTime() - a.anchor.getTime());
-  }, [filteredReports, granularity]);
+  }, [filteredRows, granularity]);
 
   return (
     <div className="space-y-3">
@@ -193,7 +193,7 @@ export function MetricsTable({ reports }: Props) {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por médico..."
+            placeholder={searchPlaceholder}
             className="pl-8"
           />
         </div>
@@ -201,7 +201,7 @@ export function MetricsTable({ reports }: Props) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Período / Médico</TableHead>
+            <TableHead>Período / {entityLabel}</TableHead>
             <TableHead className="text-right">Consultas</TableHead>
             <TableHead className="text-right">Exames</TableHead>
             <TableHead className="text-right">Horas</TableHead>
@@ -218,21 +218,21 @@ export function MetricsTable({ reports }: Props) {
             <TableRow>
               <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                 {isSearching
-                  ? "Nenhum médico encontrado para essa busca."
+                  ? "Nenhum resultado encontrado para essa busca."
                   : "Sem repasses lançados ainda para calcular métricas."}
               </TableCell>
             </TableRow>
           )}
           {groups.map((group) => {
             const isExpanded = isSearching || expandedPeriods.has(group.key);
-            const consultas = group.reports.reduce((s, r) => s + r.consultationCount, 0);
-            const exames = group.reports.reduce((s, r) => s + r.examCount, 0);
-            const horas = group.reports.reduce((s, r) => s + (r.hoursWorked ?? 0), 0);
-            const valorConsultas = group.reports.reduce((s, r) => s + r.consultationValue, 0);
-            const valorExames = group.reports.reduce((s, r) => s + r.examValue, 0);
-            const valorPlantao = group.reports.reduce((s, r) => s + r.hourlyValue, 0);
+            const consultas = group.rows.reduce((s, r) => s + r.consultationCount, 0);
+            const exames = group.rows.reduce((s, r) => s + r.examCount, 0);
+            const horas = group.rows.reduce((s, r) => s + (r.hoursWorked ?? 0), 0);
+            const valorConsultas = group.rows.reduce((s, r) => s + r.consultationValue, 0);
+            const valorExames = group.rows.reduce((s, r) => s + r.examValue, 0);
+            const valorPlantao = group.rows.reduce((s, r) => s + r.hourlyValue, 0);
             const valorTotal = valorConsultas + valorExames + valorPlantao;
-            const doctorTotals = aggregateByDoctor(group.reports);
+            const entityTotals = aggregateByEntity(group.rows);
             return (
               <Fragment key={group.key}>
                 <TableRow
@@ -273,23 +273,25 @@ export function MetricsTable({ reports }: Props) {
                   <TableCell className="text-right tabular-nums font-semibold">{formatCurrency(valorTotal)}</TableCell>
                 </TableRow>
                 {isExpanded &&
-                  doctorTotals.map((d) => (
-                    <TableRow key={d.doctorId}>
-                      <TableCell className="pl-6 text-muted-foreground">{d.doctorName}</TableCell>
-                      <TableCell className="text-right tabular-nums">{d.consultationCount}</TableCell>
-                      <TableCell className="text-right tabular-nums">{d.examCount}</TableCell>
-                      <TableCell className="text-right tabular-nums">{d.hoursWorked > 0 ? d.hoursWorked : "—"}</TableCell>
+                  entityTotals.map((e) => (
+                    <TableRow key={e.entityId}>
+                      <TableCell className="pl-6 text-muted-foreground">{e.entityName}</TableCell>
+                      <TableCell className="text-right tabular-nums">{e.consultationCount}</TableCell>
+                      <TableCell className="text-right tabular-nums">{e.examCount}</TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {ratioLabel(d.consultationCount, d.examCount)}
+                        {e.hoursWorked > 0 ? e.hoursWorked : "—"}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {percentLabel(d.consultationCount, d.examCount)}
+                        {ratioLabel(e.consultationCount, e.examCount)}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(d.consultationValue)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(d.examValue)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(d.hourlyValue)}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {percentLabel(e.consultationCount, e.examCount)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(e.consultationValue)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(e.examValue)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(e.hourlyValue)}</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">
-                        {formatCurrency(d.totalValue)}
+                        {formatCurrency(e.totalValue)}
                       </TableCell>
                     </TableRow>
                   ))}
