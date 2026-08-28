@@ -16,8 +16,9 @@ import { ReportsTable } from "./reports-table";
 import { MetricsTable, type MetricRow } from "./metrics-table";
 import { MonthRangeFilter } from "./month-range-filter";
 import { CostCompositionChart, ConversionChart } from "./metrics-charts";
+import { summarizePeriodLines } from "@/lib/doctor-period";
 import { deleteDoctor } from "./doctors-actions";
-import { Stethoscope, Wallet, Activity, Percent } from "lucide-react";
+import { Wallet, Activity, Percent, TrendingUp, TrendingDown } from "lucide-react";
 
 interface Props {
   searchParams: Promise<{ from?: string; to?: string }>;
@@ -37,65 +38,6 @@ function monthPresets() {
     { label: "Últimos 3 meses", from: threeMonthsAgo, to: thisMonth },
     { label: "Este ano", from: startOfYear, to: thisMonth },
   ];
-}
-
-type DecimalLike = { toString(): string };
-
-interface ReportLine {
-  quantity: DecimalLike;
-  rate: DecimalLike;
-  serviceItem: { category: string };
-}
-
-/** Consolida as linhas de um lançamento nas grandezas que as métricas usam.
- * O que separa consulta de exame de plantão agora é a categoria do item do
- * catálogo, não um campo fixo no lançamento — foi assim que deu para
- * suportar médico que combina os três.
- *
- * PROCEDIMENTO entra junto de EXAME: para a taxa de conversão o que importa
- * é "quantas consultas viraram um serviço vendido", e um procedimento conta
- * tanto quanto um exame. */
-function reportValues(lines: ReportLine[]) {
-  let consultationCount = 0;
-  let consultationValue = 0;
-  let examCount = 0;
-  let examValue = 0;
-  let plantaoQuantity = 0;
-  let hourlyValue = 0;
-  let otherValue = 0;
-
-  for (const l of lines) {
-    const quantity = Number(l.quantity);
-    const value = quantity * Number(l.rate);
-    switch (l.serviceItem.category) {
-      case "CONSULTA":
-        consultationCount += quantity;
-        consultationValue += value;
-        break;
-      case "EXAME":
-      case "PROCEDIMENTO":
-        examCount += quantity;
-        examValue += value;
-        break;
-      case "PLANTAO":
-        plantaoQuantity += quantity;
-        hourlyValue += value;
-        break;
-      default:
-        otherValue += value;
-    }
-  }
-
-  return {
-    consultationCount,
-    consultationValue,
-    examCount,
-    examValue,
-    hoursWorked: plantaoQuantity > 0 ? plantaoQuantity : null,
-    hourlyValue,
-    otherValue,
-    totalValue: consultationValue + examValue + hourlyValue + otherValue,
-  };
 }
 
 /** Composição do custo mês a mês (consultas/exames/plantão), últimos 12
@@ -154,6 +96,19 @@ function contractSummary(rates: { serviceItem: { category: string } }[]) {
   return `${rates.length} ${rates.length === 1 ? "item" : "itens"} · ${kinds.join(", ")}`;
 }
 
+/** Receita e lucro do conjunto, para os KPIs. Itens sem preco (plantao,
+ * auxilio) entram no repasse e nao na receita — por isso a margem cai
+ * quando ha muito plantao, o que e verdade. */
+function profitTotals(rows: MetricRow[]) {
+  const revenue = rows.reduce((s, r) => s + r.revenue, 0);
+  const profit = rows.reduce((s, r) => s + r.profit, 0);
+  return {
+    revenue,
+    profit,
+    marginLabel: revenue > 0 ? `${((profit / revenue) * 100).toFixed(1)}%` : "—",
+  };
+}
+
 function KpiCard({
   label,
   value,
@@ -191,7 +146,7 @@ async function ConsolidatedSummary({
     ? { gte: new Date(`${range.from}-01T00:00:00`), lte: new Date(`${range.to}-01T00:00:00`) }
     : undefined;
 
-  const [companies, activeDoctors, reports] = await Promise.all([
+  const [companies, activeDoctors, taxBrackets, reports] = await Promise.all([
     companyIds.length === 0
       ? []
       : prisma.company.findMany({ where: { id: { in: companyIds } }, orderBy: { name: "asc" } }),
@@ -199,17 +154,27 @@ async function ConsolidatedSummary({
       where: { companyId: { in: companyIds }, active: true },
       select: { companyId: true },
     }),
+    prisma.taxBracket.findMany({ where: { companyId: { in: companyIds } }, orderBy: { minValue: "asc" } }),
     prisma.doctorPeriodReport.findMany({
       where: { companyId: { in: companyIds }, ...(competenciaFilter ? { competencia: competenciaFilter } : {}) },
-      include: { company: { select: { name: true } }, lines: { include: { serviceItem: { select: { category: true } } } } },
+      include: { company: { select: { name: true } }, lines: { include: { serviceItem: { select: { category: true, price: true, operationalCost: true } } } } },
       orderBy: [{ competencia: "desc" }, { company: { name: "asc" } }],
     }),
   ]);
 
+  // Faixas de taxa para o calculo de margem. Numa holding com unidades que
+  // negociaram maquininhas diferentes isso e uma aproximacao — usa a
+  // primeira faixa encontrada por intervalo.
+  const brackets = taxBrackets.map((b) => ({
+    minValue: Number(b.minValue),
+    maxValue: b.maxValue != null ? Number(b.maxValue) : null,
+    percent: Number(b.percent),
+  }));
+
   // Na visão consolidada a "entidade" comparada dentro de cada período é a
   // unidade, não o médico — as métricas em si são exatamente as mesmas.
   const metricRows: MetricRow[] = reports.map((r) => {
-    const v = reportValues(r.lines);
+    const v = summarizePeriodLines(r.lines, brackets);
     return {
       id: r.id,
       competencia: r.competencia,
@@ -238,6 +203,7 @@ async function ConsolidatedSummary({
   const summaries = Array.from(byCompany.values());
 
   const grandTotalValue = metricRows.reduce((s, r) => s + r.totalValue, 0);
+  const grandProfit = profitTotals(metricRows);
   const grandTotalConsultas = metricRows.reduce((s, r) => s + r.consultationCount, 0);
   const grandTotalExames = metricRows.reduce((s, r) => s + r.examCount, 0);
 
@@ -256,31 +222,37 @@ async function ConsolidatedSummary({
 
       <MonthRangeFilter presets={monthPresets()} range={range} />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard
-          label="Custo total de repasses"
-          value={formatCurrency(grandTotalValue)}
-          icon={Wallet}
-          iconClass="text-emerald-500"
-        />
-        <KpiCard
-          label="Consultas realizadas"
-          value={String(grandTotalConsultas)}
-          icon={Stethoscope}
+          label="Receita apurada"
+          value={grandProfit.revenue > 0 ? formatCurrency(grandProfit.revenue) : "—"}
+          icon={TrendingUp}
           iconClass="text-sky-500"
         />
         <KpiCard
-          label="Exames vendidos"
-          value={String(grandTotalExames)}
-          icon={Activity}
+          label="Custo de repasses"
+          value={formatCurrency(grandTotalValue)}
+          icon={Wallet}
           iconClass="text-amber-500"
+        />
+        <KpiCard
+          label="Lucro previsto"
+          value={grandProfit.revenue > 0 ? formatCurrency(grandProfit.profit) : "—"}
+          icon={grandProfit.profit < 0 ? TrendingDown : TrendingUp}
+          iconClass={grandProfit.profit < 0 ? "text-destructive" : "text-emerald-500"}
+        />
+        <KpiCard
+          label="Margem"
+          value={grandProfit.marginLabel}
+          icon={Percent}
+          iconClass={grandProfit.profit < 0 ? "text-destructive" : "text-emerald-500"}
         />
         <KpiCard
           label="Conversão do grupo"
           value={
             grandTotalConsultas > 0 ? `${((grandTotalExames / grandTotalConsultas) * 100).toFixed(1)}%` : "—"
           }
-          icon={Percent}
+          icon={Activity}
           iconClass="text-violet-500"
         />
       </div>
@@ -406,7 +378,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
     prisma.taxBracket.findMany({ where: { companyId }, orderBy: { minValue: "asc" } }),
     prisma.doctorPeriodReport.findMany({
       where: { companyId, ...(competenciaFilter ? { competencia: competenciaFilter } : {}) },
-      include: { doctor: true, lines: { include: { serviceItem: { select: { id: true, name: true, category: true } } } } },
+      include: { doctor: true, lines: { include: { serviceItem: { select: { id: true, name: true, category: true, price: true, operationalCost: true } } } } },
       orderBy: [{ competencia: "desc" }, { doctor: { name: "asc" } }],
     }),
   ]);
@@ -458,21 +430,14 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
 
   // Valores de cada repasse, derivados das linhas com a taxa congelada.
   const reportsWithValues = reports.map((r) => {
-    const { consultationCount, consultationValue, examCount, examValue, hoursWorked, hourlyValue, totalValue } =
-      reportValues(r.lines);
+    const v = summarizePeriodLines(r.lines, brackets);
     return {
       id: r.id,
       competencia: r.competencia,
       doctorId: r.doctorId,
       doctorName: r.doctor.name,
       notes: r.notes,
-      consultationCount,
-      examCount,
-      consultationValue,
-      examValue,
-      hoursWorked,
-      hourlyValue,
-      totalValue,
+      ...v,
       lines: r.lines.map((l) => ({
         id: l.id,
         serviceItemId: l.serviceItemId,
@@ -490,6 +455,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
   }));
 
   const totalValue = metricRows.reduce((s, r) => s + r.totalValue, 0);
+  const unitProfit = profitTotals(metricRows);
   const totalConsultas = metricRows.reduce((s, r) => s + r.consultationCount, 0);
   const totalExames = metricRows.reduce((s, r) => s + r.examCount, 0);
   const activeDoctors = doctors.filter((d) => d.active).length;
@@ -507,24 +473,35 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
 
       <MonthRangeFilter presets={monthPresets()} range={range} />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard
-          label="Custo total de repasses"
-          value={formatCurrency(totalValue)}
-          icon={Wallet}
-          iconClass="text-emerald-500"
-        />
-        <KpiCard
-          label="Consultas realizadas"
-          value={String(totalConsultas)}
-          icon={Stethoscope}
+          label="Receita apurada"
+          value={unitProfit.revenue > 0 ? formatCurrency(unitProfit.revenue) : "—"}
+          icon={TrendingUp}
           iconClass="text-sky-500"
         />
-        <KpiCard label="Exames vendidos" value={String(totalExames)} icon={Activity} iconClass="text-amber-500" />
+        <KpiCard
+          label="Custo de repasses"
+          value={formatCurrency(totalValue)}
+          icon={Wallet}
+          iconClass="text-amber-500"
+        />
+        <KpiCard
+          label="Lucro previsto"
+          value={unitProfit.revenue > 0 ? formatCurrency(unitProfit.profit) : "—"}
+          icon={unitProfit.profit < 0 ? TrendingDown : TrendingUp}
+          iconClass={unitProfit.profit < 0 ? "text-destructive" : "text-emerald-500"}
+        />
+        <KpiCard
+          label="Margem"
+          value={unitProfit.marginLabel}
+          icon={Percent}
+          iconClass={unitProfit.profit < 0 ? "text-destructive" : "text-emerald-500"}
+        />
         <KpiCard
           label="Conversão da unidade"
           value={totalConsultas > 0 ? `${((totalExames / totalConsultas) * 100).toFixed(1)}%` : "—"}
-          icon={Percent}
+          icon={Activity}
           iconClass="text-violet-500"
         />
       </div>

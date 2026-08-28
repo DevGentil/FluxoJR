@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Info, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -54,6 +54,23 @@ function percentLabel(consultas: number, exames: number) {
   return consultas > 0 ? `${((exames / consultas) * 100).toFixed(1)}%` : "—";
 }
 
+/** Sem receita não há valor a mostrar — evita exibir "R$ 0,00" como se
+ * fosse um número apurado quando na verdade o item não tem preço. */
+function moneyOrDash(v: number) {
+  return v > 0 ? formatCurrency(v) : "—";
+}
+
+function marginLabel(revenue: number, profit: number) {
+  if (revenue <= 0) return "—";
+  return `${((profit / revenue) * 100).toFixed(1)}%`;
+}
+
+function profitClass(revenue: number, profit: number, strong: boolean) {
+  const base = `text-right tabular-nums ${strong ? "font-semibold" : ""}`;
+  if (revenue <= 0) return `${base} text-muted-foreground`;
+  return profit < 0 ? `${base} text-destructive` : base;
+}
+
 /** Uma linha de repasse já com os valores calculados, atribuída a uma
  * "entidade" — que é o médico na visão de uma empresa, e a própria empresa
  * na visão consolidada/holding. As métricas são as mesmas nos dois casos,
@@ -70,6 +87,11 @@ export interface MetricRow {
   hoursWorked: number | null;
   hourlyValue: number;
   totalValue: number;
+  revenue: number;
+  tax: number;
+  operationalCost: number;
+  unpricedCost: number;
+  profit: number;
 }
 
 interface EntityTotals {
@@ -82,6 +104,11 @@ interface EntityTotals {
   examValue: number;
   hourlyValue: number;
   totalValue: number;
+  revenue: number;
+  tax: number;
+  operationalCost: number;
+  unpricedCost: number;
+  profit: number;
 }
 
 function emptyTotals(entityId: string, entityName: string): EntityTotals {
@@ -95,6 +122,11 @@ function emptyTotals(entityId: string, entityName: string): EntityTotals {
     examValue: 0,
     hourlyValue: 0,
     totalValue: 0,
+    revenue: 0,
+    tax: 0,
+    operationalCost: 0,
+    unpricedCost: 0,
+    profit: 0,
   };
 }
 
@@ -112,6 +144,11 @@ function aggregateByEntity(rows: MetricRow[]): EntityTotals[] {
     entry.examValue += r.examValue;
     entry.hourlyValue += r.hourlyValue;
     entry.totalValue += r.totalValue;
+    entry.revenue += r.revenue;
+    entry.tax += r.tax;
+    entry.operationalCost += r.operationalCost;
+    entry.unpricedCost += r.unpricedCost;
+    entry.profit += r.profit;
     map.set(r.entityId, entry);
   }
   return Array.from(map.values()).sort((a, b) => b.totalValue - a.totalValue);
@@ -172,6 +209,8 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
     return Array.from(map.values()).sort((a, b) => b.anchor.getTime() - a.anchor.getTime());
   }, [filteredRows, granularity]);
 
+  const semPreco = filteredRows.reduce((acc, r) => acc + r.unpricedCost, 0);
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -198,6 +237,15 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
           />
         </div>
       </div>
+      {semPreco > 0 && (
+        <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+          <Info className="size-3.5 shrink-0 mt-0.5" />
+          {formatCurrency(semPreco)} de repasse em itens sem preço cadastrado (plantão, auxílio ou preço ainda
+          em branco). Entram no repasse, mas ficam de fora da receita e da margem — senão a conta compararia a
+          receita de alguns itens com o custo de todos.
+        </p>
+      )}
+
       <Table>
         <TableHeader>
           <TableRow>
@@ -207,16 +255,17 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
             <TableHead className="text-right">Horas</TableHead>
             <TableHead className="text-right">Consultas por exame</TableHead>
             <TableHead className="text-right">% conversão</TableHead>
-            <TableHead className="text-right">Valor consultas</TableHead>
-            <TableHead className="text-right">Valor exames</TableHead>
-            <TableHead className="text-right">Valor plantão</TableHead>
-            <TableHead className="text-right">Valor total</TableHead>
+            <TableHead className="text-right">Receita</TableHead>
+            <TableHead className="text-right">Repasse</TableHead>
+            <TableHead className="text-right">Taxas + custo</TableHead>
+            <TableHead className="text-right">Lucro</TableHead>
+            <TableHead className="text-right">Margem</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {groups.length === 0 && (
             <TableRow>
-              <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+              <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
                 {isSearching
                   ? "Nenhum resultado encontrado para essa busca."
                   : "Sem repasses lançados ainda para calcular métricas."}
@@ -228,10 +277,10 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
             const consultas = group.rows.reduce((s, r) => s + r.consultationCount, 0);
             const exames = group.rows.reduce((s, r) => s + r.examCount, 0);
             const horas = group.rows.reduce((s, r) => s + (r.hoursWorked ?? 0), 0);
-            const valorConsultas = group.rows.reduce((s, r) => s + r.consultationValue, 0);
-            const valorExames = group.rows.reduce((s, r) => s + r.examValue, 0);
-            const valorPlantao = group.rows.reduce((s, r) => s + r.hourlyValue, 0);
-            const valorTotal = valorConsultas + valorExames + valorPlantao;
+            const valorTotal = group.rows.reduce((s, r) => s + r.totalValue, 0);
+            const receita = group.rows.reduce((s, r) => s + r.revenue, 0);
+            const encargos = group.rows.reduce((s, r) => s + r.tax + r.operationalCost, 0);
+            const lucro = group.rows.reduce((s, r) => s + r.profit, 0);
             const entityTotals = aggregateByEntity(group.rows);
             return (
               <Fragment key={group.key}>
@@ -261,16 +310,11 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
                   <TableCell className="text-right tabular-nums font-semibold">
                     {percentLabel(consultas, exames)}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums font-semibold">
-                    {formatCurrency(valorConsultas)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums font-semibold">
-                    {formatCurrency(valorExames)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums font-semibold">
-                    {formatCurrency(valorPlantao)}
-                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-semibold">{moneyOrDash(receita)}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">{formatCurrency(valorTotal)}</TableCell>
+                  <TableCell className="text-right tabular-nums font-semibold">{moneyOrDash(encargos)}</TableCell>
+                  <TableCell className={profitClass(receita, lucro, true)}>{receita > 0 ? formatCurrency(lucro) : "—"}</TableCell>
+                  <TableCell className={profitClass(receita, lucro, true)}>{marginLabel(receita, lucro)}</TableCell>
                 </TableRow>
                 {isExpanded &&
                   entityTotals.map((e) => (
@@ -287,11 +331,16 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
                       <TableCell className="text-right tabular-nums">
                         {percentLabel(e.consultationCount, e.examCount)}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(e.consultationValue)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(e.examValue)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(e.hourlyValue)}</TableCell>
-                      <TableCell className="text-right tabular-nums font-medium">
-                        {formatCurrency(e.totalValue)}
+                      <TableCell className="text-right tabular-nums">{moneyOrDash(e.revenue)}</TableCell>
+                      <TableCell className="text-right tabular-nums font-medium">{formatCurrency(e.totalValue)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {moneyOrDash(e.tax + e.operationalCost)}
+                      </TableCell>
+                      <TableCell className={profitClass(e.revenue, e.profit, false)}>
+                        {e.revenue > 0 ? formatCurrency(e.profit) : "—"}
+                      </TableCell>
+                      <TableCell className={profitClass(e.revenue, e.profit, false)}>
+                        {marginLabel(e.revenue, e.profit)}
                       </TableCell>
                     </TableRow>
                   ))}
