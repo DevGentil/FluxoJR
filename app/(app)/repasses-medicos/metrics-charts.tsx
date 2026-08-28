@@ -26,9 +26,10 @@ interface CompositionPoint {
   plantao: number;
 }
 
-/** Composição do custo de repasse do holding mês a mês. Empilhado com 3
- * séries fixas (não uma por unidade) para continuar legível independente de
- * quantas unidades a holding tiver. */
+/** Composição do custo de repasse mês a mês — do holding inteiro na visão
+ * consolidada, da unidade na visão de empresa. Empilhado com 3 séries fixas
+ * (não uma por unidade/médico) para continuar legível conforme o número de
+ * unidades ou de médicos cresce. */
 export function CostCompositionChart({ data }: { data: CompositionPoint[] }) {
   if (data.length === 0) {
     return (
@@ -68,16 +69,21 @@ interface ConversionPoint {
   conversao: number;
 }
 
-/** Eficiência comercial por unidade: % das consultas que viraram exame.
- * Diferente do ranking por valor/volume, compara desempenho e não tamanho —
- * uma unidade pequena pode converter melhor que a maior da holding. */
-export function ConversionByCompanyChart({ data }: { data: ConversionPoint[] }) {
+/** Eficiência comercial: % das consultas que viraram exame, por unidade na
+ * visão consolidada e por médico na visão de empresa. Diferente do ranking
+ * por valor/volume, compara desempenho e não tamanho — uma unidade pequena
+ * (ou um médico com poucas consultas) pode converter melhor que o maior. */
+export function ConversionChart({
+  data,
+  emptyMessage,
+  labelWidth = 110,
+}: {
+  data: ConversionPoint[];
+  emptyMessage: string;
+  labelWidth?: number;
+}) {
   if (data.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground py-8 text-center">
-        Nenhuma unidade com consultas lançadas para comparar conversão.
-      </p>
-    );
+    return <p className="text-sm text-muted-foreground py-8 text-center">{emptyMessage}</p>;
   }
 
   return (
@@ -85,7 +91,7 @@ export function ConversionByCompanyChart({ data }: { data: ConversionPoint[] }) 
       <BarChart data={data} layout="vertical" margin={{ left: 12, right: 32 }}>
         <CartesianGrid horizontal={false} />
         <XAxis type="number" tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
-        <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} width={110} />
+        <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} width={labelWidth} />
         <ChartTooltip content={<ChartTooltipContent formatter={(v) => `${Number(v).toFixed(1)}%`} />} />
         <Bar dataKey="conversao" fill="var(--color-conversao)" radius={4} />
       </BarChart>

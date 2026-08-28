@@ -12,7 +12,7 @@ import { ReportFormDialog } from "./report-form-dialog";
 import { ReportsTable } from "./reports-table";
 import { MetricsTable, type MetricRow } from "./metrics-table";
 import { MonthRangeFilter } from "./month-range-filter";
-import { CostCompositionChart, ConversionByCompanyChart } from "./consolidated-charts";
+import { CostCompositionChart, ConversionChart } from "./metrics-charts";
 import { deleteDoctor, type DoctorPaymentModel } from "./doctors-actions";
 import { deleteExamType } from "./exam-types-actions";
 import { Stethoscope, Wallet, Activity, Percent } from "lucide-react";
@@ -70,6 +70,46 @@ function reportValues(r: {
     hourlyValue,
     totalValue: consultationValue + examValue + hourlyValue,
   };
+}
+
+/** Composição do custo mês a mês (consultas/exames/plantão), últimos 12
+ * meses com lançamento — alimenta o gráfico empilhado nas duas visões. */
+function monthlyComposition(rows: MetricRow[]) {
+  const monthMap = new Map<string, { date: Date; consultas: number; exames: number; plantao: number }>();
+  for (const r of rows) {
+    const key = r.competencia.toISOString().slice(0, 7);
+    const entry = monthMap.get(key) ?? { date: r.competencia, consultas: 0, exames: 0, plantao: 0 };
+    entry.consultas += r.consultationValue;
+    entry.exames += r.examValue;
+    entry.plantao += r.hourlyValue;
+    monthMap.set(key, entry);
+  }
+  return Array.from(monthMap.values())
+    .sort((a, b) => a.date.getTime() - b.date.getTime())
+    .slice(-12)
+    .map((m) => ({
+      label: m.date.toLocaleDateString("pt-BR", { month: "short", year: "2-digit", timeZone: "UTC" }),
+      consultas: m.consultas,
+      exames: m.exames,
+      plantao: m.plantao,
+    }));
+}
+
+/** % das consultas que viraram exame, por entidade (unidade ou médico),
+ * ordenado do melhor pro pior. Quem não tem consulta no período fica de
+ * fora — caso dos plantonistas. */
+function conversionByEntity(rows: MetricRow[]) {
+  const map = new Map<string, { name: string; consultas: number; exames: number }>();
+  for (const r of rows) {
+    const entry = map.get(r.entityId) ?? { name: r.entityName, consultas: 0, exames: 0 };
+    entry.consultas += r.consultationCount;
+    entry.exames += r.examCount;
+    map.set(r.entityId, entry);
+  }
+  return Array.from(map.values())
+    .filter((e) => e.consultas > 0)
+    .map((e) => ({ name: e.name, conversao: (e.exames / e.consultas) * 100 }))
+    .sort((a, b) => b.conversao - a.conversao);
 }
 
 function KpiCard({
@@ -159,32 +199,8 @@ async function ConsolidatedSummary({
   const grandTotalConsultas = metricRows.reduce((s, r) => s + r.consultationCount, 0);
   const grandTotalExames = metricRows.reduce((s, r) => s + r.examCount, 0);
 
-  // Composição do custo mês a mês (holding inteiro), últimos 12 meses com
-  // lançamento — 3 séries fixas em vez de uma por unidade, pra não virar um
-  // emaranhado conforme a holding cresce.
-  const monthMap = new Map<string, { date: Date; consultas: number; exames: number; plantao: number }>();
-  for (const r of metricRows) {
-    const key = r.competencia.toISOString().slice(0, 7);
-    const entry = monthMap.get(key) ?? { date: r.competencia, consultas: 0, exames: 0, plantao: 0 };
-    entry.consultas += r.consultationValue;
-    entry.exames += r.examValue;
-    entry.plantao += r.hourlyValue;
-    monthMap.set(key, entry);
-  }
-  const compositionData = Array.from(monthMap.values())
-    .sort((a, b) => a.date.getTime() - b.date.getTime())
-    .slice(-12)
-    .map((m) => ({
-      label: m.date.toLocaleDateString("pt-BR", { month: "short", year: "2-digit", timeZone: "UTC" }),
-      consultas: m.consultas,
-      exames: m.exames,
-      plantao: m.plantao,
-    }));
-
-  const conversionData = summaries
-    .filter((c) => c.consultas > 0)
-    .map((c) => ({ name: c.name, conversao: (c.exames / c.consultas) * 100 }))
-    .sort((a, b) => b.conversao - a.conversao);
+  const compositionData = monthlyComposition(metricRows);
+  const conversionData = conversionByEntity(metricRows);
 
   return (
     <div className="space-y-6">
@@ -245,7 +261,10 @@ async function ConsolidatedSummary({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ConversionByCompanyChart data={conversionData} />
+            <ConversionChart
+              data={conversionData}
+              emptyMessage="Nenhuma unidade com consultas lançadas para comparar conversão."
+            />
           </CardContent>
         </Card>
       </div>
@@ -386,6 +405,21 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
     };
   });
 
+  // Aqui a "entidade" comparada dentro de cada período é o médico (no
+  // consolidado é a unidade) — as métricas em si são as mesmas.
+  const metricRows: MetricRow[] = reportsWithValues.map((r) => ({
+    ...r,
+    entityId: r.doctorId,
+    entityName: r.doctorName,
+  }));
+
+  const totalValue = metricRows.reduce((s, r) => s + r.totalValue, 0);
+  const totalConsultas = metricRows.reduce((s, r) => s + r.consultationCount, 0);
+  const totalExames = metricRows.reduce((s, r) => s + r.examCount, 0);
+  const activeDoctors = doctors.filter((d) => d.active).length;
+  const compositionData = monthlyComposition(metricRows);
+  const conversionData = conversionByEntity(metricRows);
+
   return (
     <div className="space-y-6">
       <div>
@@ -395,9 +429,85 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
         </p>
       </div>
 
+      <MonthRangeFilter presets={monthPresets()} range={range} />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard
+          label="Custo total de repasses"
+          value={formatCurrency(totalValue)}
+          icon={Wallet}
+          iconClass="text-emerald-500"
+        />
+        <KpiCard
+          label="Consultas realizadas"
+          value={String(totalConsultas)}
+          icon={Stethoscope}
+          iconClass="text-sky-500"
+        />
+        <KpiCard label="Exames vendidos" value={String(totalExames)} icon={Activity} iconClass="text-amber-500" />
+        <KpiCard
+          label="Conversão da unidade"
+          value={totalConsultas > 0 ? `${((totalExames / totalConsultas) * 100).toFixed(1)}%` : "—"}
+          icon={Percent}
+          iconClass="text-violet-500"
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Composição do custo por mês</CardTitle>
+            <CardDescription>Consultas, exames e plantão da unidade.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CostCompositionChart data={compositionData} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Conversão por médico</CardTitle>
+            <CardDescription>
+              Percentual das consultas que viraram exame — plantonistas ficam de fora.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ConversionChart
+              data={conversionData}
+              emptyMessage="Nenhum médico com consultas lançadas para comparar conversão."
+              labelWidth={130}
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Métricas de Custo</CardTitle>
+          <CardDescription>Expanda um período para ver o detalhamento por médico.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <MetricsTable rows={metricRows} entityLabel="Médico" searchPlaceholder="Buscar por médico..." />
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>{doctors.length} médico(s)</CardTitle>
+          <CardTitle>{reports.length} repasse(s) lançado(s)</CardTitle>
+          <ReportFormDialog doctors={doctorOptions} />
+        </CardHeader>
+        <CardContent>
+          <ReportsTable reports={reportsWithValues} doctors={doctorOptions} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>
+            {doctors.length} médico(s)
+            {doctors.length > activeDoctors && (
+              <span className="text-muted-foreground font-normal text-sm"> · {activeDoctors} ativo(s)</span>
+            )}
+          </CardTitle>
           <DoctorFormDialog examTypes={examTypes} />
         </CardHeader>
         <CardContent>
@@ -519,30 +629,6 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>{reports.length} repasse(s) por período</CardTitle>
-          <ReportFormDialog doctors={doctorOptions} />
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <MonthRangeFilter presets={monthPresets()} range={range} />
-          <ReportsTable reports={reportsWithValues} doctors={doctorOptions} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Métricas de Custo</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <MonthRangeFilter presets={monthPresets()} range={range} />
-          <MetricsTable
-            rows={reportsWithValues.map((r) => ({ ...r, entityId: r.doctorId, entityName: r.doctorName }))}
-            entityLabel="Médico"
-            searchPlaceholder="Buscar por médico..."
-          />
-        </CardContent>
-      </Card>
     </div>
   );
 }
