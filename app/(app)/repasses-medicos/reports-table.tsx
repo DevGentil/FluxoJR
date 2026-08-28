@@ -102,9 +102,6 @@ export function ReportsTable({ reports, doctors }: Props) {
             <TableHead className="text-right">Consultas</TableHead>
             <TableHead className="text-right">Exames</TableHead>
             <TableHead className="text-right">Horas</TableHead>
-            <TableHead className="text-right">Valor consultas</TableHead>
-            <TableHead className="text-right">Valor exames</TableHead>
-            <TableHead className="text-right">Valor plantão</TableHead>
             <TableHead className="text-right">Valor total</TableHead>
             <TableHead className="w-24" />
           </TableRow>
@@ -112,7 +109,7 @@ export function ReportsTable({ reports, doctors }: Props) {
         <TableBody>
           {groups.length === 0 && (
             <TableRow>
-              <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+              <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                 {isSearching ? "Nenhum repasse encontrado para essa busca." : "Nenhum repasse lançado ainda."}
               </TableCell>
             </TableRow>
@@ -122,10 +119,7 @@ export function ReportsTable({ reports, doctors }: Props) {
             const consultationCount = group.reports.reduce((s, r) => s + r.consultationCount, 0);
             const examCount = group.reports.reduce((s, r) => s + r.examCount, 0);
             const hoursWorked = group.reports.reduce((s, r) => s + (r.hoursWorked ?? 0), 0);
-            const consultationValue = group.reports.reduce((s, r) => s + r.consultationValue, 0);
-            const examValue = group.reports.reduce((s, r) => s + r.examValue, 0);
-            const hourlyValue = group.reports.reduce((s, r) => s + r.hourlyValue, 0);
-            const totalValue = consultationValue + examValue + hourlyValue;
+            const totalValue = group.reports.reduce((s, r) => s + r.totalValue, 0);
             return (
               <Fragment key={group.key}>
                 <TableRow
@@ -149,11 +143,6 @@ export function ReportsTable({ reports, doctors }: Props) {
                   <TableCell className="text-right tabular-nums font-semibold">
                     {hoursWorked > 0 ? hoursWorked : "—"}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums font-semibold">
-                    {formatCurrency(consultationValue)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums font-semibold">{formatCurrency(examValue)}</TableCell>
-                  <TableCell className="text-right tabular-nums font-semibold">{formatCurrency(hourlyValue)}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">{formatCurrency(totalValue)}</TableCell>
                   <TableCell />
                 </TableRow>
@@ -165,9 +154,6 @@ export function ReportsTable({ reports, doctors }: Props) {
                       <TableCell className="text-right tabular-nums">{r.consultationCount}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.examCount}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.hoursWorked ?? "—"}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(r.consultationValue)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(r.examValue)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(r.hourlyValue)}</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">
                         {formatCurrency(r.totalValue)}
                       </TableCell>
