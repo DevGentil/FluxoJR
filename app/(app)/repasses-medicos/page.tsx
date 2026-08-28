@@ -8,13 +8,15 @@ import { DeleteButton } from "@/components/delete-button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { DoctorFormDialog } from "./doctor-form-dialog";
 import { ServiceItemFormDialog } from "./service-item-form-dialog";
+import { ServiceCatalogTable } from "./service-catalog-table";
+import { TaxBracketFormDialog } from "./tax-bracket-form-dialog";
+import { deleteTaxBracket } from "./tax-brackets-actions";
 import { ReportFormDialog } from "./report-form-dialog";
 import { ReportsTable } from "./reports-table";
 import { MetricsTable, type MetricRow } from "./metrics-table";
 import { MonthRangeFilter } from "./month-range-filter";
 import { CostCompositionChart, ConversionChart } from "./metrics-charts";
 import { deleteDoctor, type DoctorPaymentModel } from "./doctors-actions";
-import { deleteServiceItem } from "./service-items-actions";
 import { Stethoscope, Wallet, Activity, Percent } from "lucide-react";
 
 const PAYMENT_MODEL_LABELS: Record<DoctorPaymentModel, string> = {
@@ -354,13 +356,14 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
     ? { gte: new Date(`${range.from}-01T00:00:00`), lte: new Date(`${range.to}-01T00:00:00`) }
     : undefined;
 
-  const [doctors, serviceItems, reports] = await Promise.all([
+  const [doctors, serviceItems, taxBrackets, reports] = await Promise.all([
     prisma.doctor.findMany({
       where: { companyId },
       include: { serviceRates: { include: { serviceItem: true } } },
       orderBy: { name: "asc" },
     }),
     prisma.serviceItem.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
+    prisma.taxBracket.findMany({ where: { companyId }, orderBy: { minValue: "asc" } }),
     prisma.doctorPeriodReport.findMany({
       where: { companyId, ...(competenciaFilter ? { competencia: competenciaFilter } : {}) },
       include: { doctor: true, examCounts: { include: { serviceItem: true } } },
@@ -371,6 +374,37 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
   // Client Component so aceita objeto plano — o ServiceItem cru traz
   // Decimal (price/operationalCost), que nao serializa.
   const serviceItemOptions = serviceItems.map((s) => ({ id: s.id, name: s.name }));
+
+  const brackets = taxBrackets.map((b) => ({
+    minValue: Number(b.minValue),
+    maxValue: b.maxValue != null ? Number(b.maxValue) : null,
+    percent: Number(b.percent),
+  }));
+
+  // Repasses ja contratados, por item — e o que permite avisar quando o
+  // valor combinado com o medico passa do que sobra depois das taxas.
+  const ratesByItem = new Map<string, { doctorName: string; rate: number }[]>();
+  for (const d of doctors) {
+    for (const r of d.serviceRates) {
+      const list = ratesByItem.get(r.serviceItemId) ?? [];
+      list.push({ doctorName: d.name, rate: Number(r.rate) });
+      ratesByItem.set(r.serviceItemId, list);
+    }
+  }
+
+  const catalogRows = serviceItems.map((s) => ({
+    id: s.id,
+    name: s.name,
+    group: s.group,
+    category: s.category,
+    payer: s.payer,
+    price: s.price != null ? Number(s.price) : null,
+    operationalCost: Number(s.operationalCost),
+    active: s.active,
+    doctorRates: ratesByItem.get(s.id) ?? [],
+  }));
+
+  const catalogGroups = [...new Set(serviceItems.map((s) => s.group).filter((g): g is string => !!g))].sort();
 
   const doctorOptions = doctors.map((d) => ({
     id: d.id,
@@ -595,41 +629,72 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Tipos de exame</CardTitle>
-          <ServiceItemFormDialog />
+          <div>
+            <CardTitle>Catálogo de procedimentos</CardTitle>
+            <CardDescription>
+              Preço cobrado, taxa e custo operacional de cada item — e quanto sobra para pagar o médico.
+            </CardDescription>
+          </div>
+          <ServiceItemFormDialog groups={catalogGroups} />
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead className="w-24" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {serviceItems.length === 0 && (
+          <ServiceCatalogTable items={catalogRows} brackets={brackets} groups={catalogGroups} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Taxas da maquininha</CardTitle>
+            <CardDescription>
+              Percentual descontado conforme o valor do procedimento. Alimenta o cálculo de margem do catálogo.
+            </CardDescription>
+          </div>
+          <TaxBracketFormDialog />
+        </CardHeader>
+        <CardContent>
+          {taxBrackets.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">
+              Nenhuma faixa cadastrada — sem elas a margem do catálogo é calculada sem desconto de taxa.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={2} className="text-center text-muted-foreground py-8">
-                    Nenhum tipo de exame cadastrado ainda.
-                  </TableCell>
+                  <TableHead>Faixa de valor</TableHead>
+                  <TableHead className="text-right">Taxa</TableHead>
+                  <TableHead>Observação</TableHead>
+                  <TableHead className="w-24" />
                 </TableRow>
-              )}
-              {serviceItems.map((e) => (
-                <TableRow key={e.id}>
-                  <TableCell className="font-medium">{e.name}</TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-1">
-                      <ServiceItemFormDialog serviceItem={{ id: e.id, name: e.name }} />
-                      <DeleteButton
-                        action={deleteServiceItem.bind(null, e.id)}
-                        title={`Excluir "${e.name}"?`}
-                      />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {taxBrackets.map((b) => (
+                  <TableRow key={b.id}>
+                    <TableCell className="font-medium tabular-nums">
+                      {formatCurrency(Number(b.minValue))}
+                      {b.maxValue != null ? ` a ${formatCurrency(Number(b.maxValue))}` : " ou mais"}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{Number(b.percent)}%</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{b.notes || "—"}</TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <TaxBracketFormDialog
+                          bracket={{
+                            id: b.id,
+                            minValue: Number(b.minValue),
+                            maxValue: b.maxValue != null ? Number(b.maxValue) : null,
+                            percent: Number(b.percent),
+                            notes: b.notes,
+                          }}
+                        />
+                        <DeleteButton action={deleteTaxBracket.bind(null, b.id)} title="Excluir essa faixa?" />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
