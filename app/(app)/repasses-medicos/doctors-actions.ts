@@ -137,3 +137,27 @@ export async function deleteDoctor(id: string): Promise<{ error?: string }> {
     return { error: e instanceof Error ? e.message : "Não foi possível excluir o médico." };
   }
 }
+
+/** Marca o contrato inteiro do médico como conferido hoje, sem alterar
+ * valor nenhum. É o "conferi e continua certo" — a razão de existir da
+ * coluna "Última conferência" que a planilha criou e nunca preencheu,
+ * porque lá não havia como registrar isso sem editar a linha. */
+export async function markContractChecked(doctorId: string): Promise<{ error?: string }> {
+  try {
+    await requireUser();
+    const companyId = await getActiveCompanyId();
+
+    const doctor = await prisma.doctor.findFirst({ where: { id: doctorId, companyId } });
+    if (!doctor) return { error: "Médico não encontrado." };
+
+    await prisma.doctorServiceRate.updateMany({
+      where: { doctorId },
+      data: { lastCheckedAt: new Date() },
+    });
+
+    revalidatePath("/repasses-medicos");
+    return {};
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível registrar a conferência." };
+  }
+}

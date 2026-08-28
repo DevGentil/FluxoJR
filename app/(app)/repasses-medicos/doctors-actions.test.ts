@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetDb, testPrisma } from "@/tests/helpers/db";
-import { createDoctor, updateDoctor, deleteDoctor, type DoctorInput } from "./doctors-actions";
+import {
+  createDoctor,
+  updateDoctor,
+  deleteDoctor,
+  markContractChecked,
+  type DoctorInput,
+} from "./doctors-actions";
 
 beforeEach(resetDb);
 
@@ -194,5 +200,34 @@ describe("deleteDoctor", () => {
     expect(result.error).toBeUndefined();
     await expect(testPrisma.doctor.count()).resolves.toBe(0);
     await expect(testPrisma.doctorServiceRate.count()).resolves.toBe(0);
+  });
+});
+
+describe("markContractChecked", () => {
+  it("registra a conferência sem alterar os valores", async () => {
+    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
+    const item = await seedItem(company.id);
+    await createDoctor(baseInput(item.id));
+    const doctor = await testPrisma.doctor.findFirstOrThrow();
+
+    const antigo = new Date("2020-01-01T00:00:00Z");
+    await testPrisma.doctorServiceRate.updateMany({ data: { lastCheckedAt: antigo } });
+
+    const result = await markContractChecked(doctor.id);
+
+    expect(result.error).toBeUndefined();
+    const rate = await testPrisma.doctorServiceRate.findFirstOrThrow();
+    expect(rate.lastCheckedAt!.getTime()).toBeGreaterThan(antigo.getTime());
+    expect(Number(rate.rate)).toBe(45); // valor intacto
+  });
+
+  it("não confere contrato de médico de outra empresa", async () => {
+    await testPrisma.company.create({ data: { name: "Empresa A" } });
+    const empresaB = await testPrisma.company.create({ data: { name: "Empresa B" } });
+    const doctorB = await testPrisma.doctor.create({ data: { companyId: empresaB.id, name: "Dr. de B" } });
+
+    const result = await markContractChecked(doctorB.id);
+
+    expect(result.error).toBeTruthy();
   });
 });

@@ -18,6 +18,7 @@ import { MonthRangeFilter } from "./month-range-filter";
 import { CostCompositionChart, ConversionChart } from "./metrics-charts";
 import { summarizePeriodLines } from "@/lib/doctor-period";
 import { deleteDoctor } from "./doctors-actions";
+import { CheckContractButton } from "./check-contract-button";
 import { Wallet, Activity, Percent, TrendingUp, TrendingDown } from "lucide-react";
 
 interface Props {
@@ -87,6 +88,26 @@ const CATEGORY_SHORT: Record<string, string> = {
   PLANTAO: "plantão",
   OUTRO: "outro",
 };
+
+/** Há quanto tempo o contrato foi conferido pela última vez. Valor antigo
+ * é o risco real: a tabela CT foi reajustada de 32 para 34 na planilha e
+ * uma das abas ficou para trás, pagando errado por meses. */
+function lastCheckedLabel(rates: { lastCheckedAt: Date | null }[]) {
+  if (rates.length === 0) return null;
+  const dates = rates.map((r) => r.lastCheckedAt).filter((d): d is Date => d != null);
+  if (dates.length < rates.length) return { text: "nunca conferido", stale: true };
+
+  const oldest = dates.reduce((min, d) => (d < min ? d : min));
+  const days = Math.floor((Date.now() - oldest.getTime()) / 86400000);
+  if (days <= 0) return { text: "conferido hoje", stale: false };
+  if (days === 1) return { text: "conferido ontem", stale: false };
+  if (days < 30) return { text: `conferido há ${days} dias`, stale: false };
+  const months = Math.floor(days / 30);
+  return {
+    text: months === 1 ? "conferido há 1 mês" : `conferido há ${months} meses`,
+    stale: months >= 6,
+  };
+}
 
 /** Resumo do contrato do médico: quantos itens e de que naturezas. Substitui
  * o antigo "modelo de pagamento", que assumia que ele era só uma coisa. */
@@ -590,7 +611,20 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
                   <TableCell>{d.specialty}</TableCell>
                   <TableCell>{d.document || "—"}</TableCell>
                   <TableCell>{d.paymentMethod || "—"}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm">{contractSummary(d.serviceRates)}</TableCell>
+                  <TableCell className="text-sm">
+                    <span className="text-muted-foreground">{contractSummary(d.serviceRates)}</span>
+                    {(() => {
+                      const checked = lastCheckedLabel(d.serviceRates);
+                      if (!checked) return null;
+                      return (
+                        <span
+                          className={`block text-xs ${checked.stale ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}
+                        >
+                          {checked.text}
+                        </span>
+                      );
+                    })()}
+                  </TableCell>
                   <TableCell>
                     <Badge variant={d.active ? "secondary" : "outline"}>{d.active ? "Ativo" : "Inativo"}</Badge>
                   </TableCell>
@@ -613,6 +647,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
                           })),
                         }}
                       />
+                      <CheckContractButton doctorId={d.id} doctorName={d.name} />
                       <DeleteButton
                         action={deleteDoctor.bind(null, d.id)}
                         title={`Excluir "${d.name}"?`}

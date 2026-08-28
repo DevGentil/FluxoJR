@@ -252,7 +252,7 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
             <TableHead>Período / {entityLabel}</TableHead>
             <TableHead className="text-right">Consultas</TableHead>
             <TableHead className="text-right">Exames</TableHead>
-            <TableHead className="text-right">Horas</TableHead>
+            <TableHead className="text-right">Plantão</TableHead>
             <TableHead className="text-right">Consultas por exame</TableHead>
             <TableHead className="text-right">% conversão</TableHead>
             <TableHead className="text-right">Receita</TableHead>

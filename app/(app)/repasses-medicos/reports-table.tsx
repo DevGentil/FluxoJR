@@ -90,7 +90,7 @@ export function ReportsTable({ reports, doctors }: Props) {
             <TableHead>Médico</TableHead>
             <TableHead className="text-right">Consultas</TableHead>
             <TableHead className="text-right">Exames</TableHead>
-            <TableHead className="text-right">Horas</TableHead>
+            <TableHead className="text-right">Plantão</TableHead>
             <TableHead className="text-right">Valor total</TableHead>
             <TableHead className="w-24" />
           </TableRow>
