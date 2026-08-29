@@ -39,6 +39,19 @@ export function CostCompositionChart({ data }: { data: CompositionPoint[] }) {
     );
   }
 
+  // Há meses, mas todas as barras seriam zero: é o caso de quem lança só o
+  // valor do dia, sem dizer o que foi feito. Um eixo vazio parecia defeito;
+  // dizer o motivo aponta o caminho.
+  const temComposicao = data.some((m) => m.consultas > 0 || m.exames > 0 || m.plantao > 0);
+  if (!temComposicao) {
+    return (
+      <p className="text-sm text-muted-foreground py-8 text-center max-w-md mx-auto">
+        Os lançamentos do período vieram só como valor do dia, sem detalhe por item — não há como separar
+        consulta, exame e plantão. Detalhe os itens ao lançar para este gráfico aparecer.
+      </p>
+    );
+  }
+
   return (
     <ChartContainer config={compositionConfig} className="h-64 w-full">
       <BarChart data={data}>
