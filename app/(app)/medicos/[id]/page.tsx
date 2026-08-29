@@ -1,0 +1,290 @@
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { prisma } from "@/lib/prisma";
+import { getActiveScope, resolveCompanyIds } from "@/lib/scope";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { parseDateOnly, todayDateOnly, toMonthKey } from "@/lib/date-only";
+import { contractOn, previousVersions, scheduledVersions } from "@/lib/doctor-rates";
+import { entryAmount } from "@/lib/doctor-period";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { KpiCard } from "@/components/kpi-card";
+import { ArrowLeft, CalendarCheck, CircleCheck, CircleDashed, History, Wallet } from "lucide-react";
+
+const hoje = parseDateOnly(todayDateOnly());
+
+const CATEGORY_LABELS: Record<string, string> = {
+  CONSULTA: "Consulta",
+  EXAME: "Exame",
+  PROCEDIMENTO: "Procedimento",
+  PLANTAO: "Plantão",
+  OUTRO: "Outro",
+};
+
+const PAYER_LABELS: Record<string, string> = { CT: "Cartão de Todos", PARTICULAR: "Particular" };
+
+/** Ficha completa de um médico: quem é, o que foi combinado (com o histórico
+ * de reajustes) e tudo que já foi lançado para ele.
+ *
+ * Nasceu quando a base real trouxe 81 médicos: a lista única deixou de
+ * responder "quanto esse médico custou e desde quando o valor é esse". */
+export default async function MedicoPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+
+  // O escopo ativo continua mandando: uma unidade não abre a ficha de um
+  // médico de outra, nem pelo endereço direto.
+  const scope = await getActiveScope();
+  const companyIds = await resolveCompanyIds(scope);
+
+  const doctor = await prisma.doctor.findFirst({
+    where: { id, companyId: { in: companyIds } },
+    include: {
+      company: { select: { name: true } },
+      serviceRates: { include: { serviceItem: { select: { name: true, category: true, payer: true } } } },
+      dailyEntries: {
+        include: { lines: { include: { serviceItem: { select: { name: true } } } } },
+        orderBy: { date: "desc" },
+      },
+    },
+  });
+  if (!doctor) notFound();
+
+  const vigentes = contractOn(doctor.serviceRates, hoje).sort((a, b) =>
+    a.serviceItem.name.localeCompare(b.serviceItem.name)
+  );
+  const agendados = scheduledVersions(doctor.serviceRates, hoje);
+
+  const lancamentos = doctor.dailyEntries.map((e) => ({
+    id: e.id,
+    date: e.date,
+    paid: e.paid,
+    notes: e.notes,
+    valor: entryAmount(e),
+    detalhe: e.lines.map((l) => `${Number(l.quantity)}× ${l.serviceItem.name}`).join(", "),
+  }));
+
+  const total = lancamentos.reduce((s, l) => s + l.valor, 0);
+  const pago = lancamentos.filter((l) => l.paid).reduce((s, l) => s + l.valor, 0);
+
+  // Mês a mês, do mais recente para o mais antigo — é como o repasse é
+  // conferido e fechado.
+  const porMes = new Map<string, { dias: number; total: number }>();
+  for (const l of lancamentos) {
+    const k = toMonthKey(l.date);
+    const atual = porMes.get(k) ?? { dias: 0, total: 0 };
+    porMes.set(k, { dias: atual.dias + 1, total: atual.total + l.valor });
+  }
+  const meses = [...porMes.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+
+  return (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <Button size="sm" variant="ghost" nativeButton={false} render={<Link href="/medicos" />}>
+          <ArrowLeft className="size-4" />
+          Todos os médicos
+        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold">{doctor.name}</h1>
+          <Badge variant={doctor.active ? "secondary" : "outline"}>
+            {doctor.active ? "Ativo" : "Inativo"}
+          </Badge>
+        </div>
+        <p className="text-muted-foreground text-sm">
+          {doctor.specialty} · {doctor.company.name}
+          {doctor.document && ` · ${doctor.document}`}
+          {doctor.paymentMethod && ` · ${doctor.paymentMethod}`}
+        </p>
+        {doctor.notes && <p className="text-muted-foreground text-sm italic">{doctor.notes}</p>}
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard label="Total lançado" value={formatCurrency(total)} icon={Wallet} iconClass="text-amber-500" />
+        <KpiCard
+          label="Já pago"
+          value={formatCurrency(pago)}
+          hint={total > 0 ? `${((pago / total) * 100).toFixed(0)}% do total` : undefined}
+          icon={CircleCheck}
+          iconClass="text-emerald-500"
+        />
+        <KpiCard
+          label="A pagar"
+          value={formatCurrency(total - pago)}
+          icon={CircleDashed}
+          iconClass={total - pago > 0 ? "text-destructive" : "text-muted-foreground"}
+        />
+        <KpiCard
+          label="Dias lançados"
+          value={String(lancamentos.length)}
+          hint={meses.length > 0 ? `em ${meses.length} mês(es)` : undefined}
+          icon={CalendarCheck}
+          iconClass="text-sky-500"
+        />
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Contrato</CardTitle>
+          <CardDescription>
+            O valor combinado por item. Um reajuste cria uma versão nova — a anterior fica no histórico e
+            continua valendo para os dias já lançados.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Item</TableHead>
+                <TableHead>Categoria</TableHead>
+                <TableHead>Convênio</TableHead>
+                <TableHead className="text-right">Valor</TableHead>
+                <TableHead>Vigente desde</TableHead>
+                <TableHead>Histórico</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {vigentes.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    Nenhum valor combinado. Sem contrato, só dá para lançar o valor total do dia.
+                  </TableCell>
+                </TableRow>
+              )}
+              {vigentes.map((r) => {
+                const doItem = doctor.serviceRates.filter((v) => v.serviceItemId === r.serviceItemId);
+                const anteriores = previousVersions(doItem, hoje);
+                return (
+                  <TableRow key={r.id}>
+                    <TableCell className="font-medium">{r.serviceItem.name}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {CATEGORY_LABELS[r.serviceItem.category] ?? r.serviceItem.category}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {r.serviceItem.payer ? (
+                        <Badge variant="secondary">{PAYER_LABELS[r.serviceItem.payer]}</Badge>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums font-medium">
+                      {formatCurrency(Number(r.rate))}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm tabular-nums">
+                      {formatDate(r.validFrom)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-xs">
+                      {anteriores.length === 0
+                        ? "—"
+                        : anteriores
+                            .map((v) => `${formatCurrency(Number(v.rate))} até ${formatDate(r.validFrom)}`)
+                            .join(" · ")}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+
+          {agendados.length > 0 && (
+            <p className="flex items-center gap-1.5 text-sm text-amber-600 dark:text-amber-500 mt-3">
+              <History className="size-4 shrink-0" />
+              {agendados.length} reajuste(s) já cadastrado(s) para entrar em vigor mais para frente.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {meses.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Repasse por mês</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Mês</TableHead>
+                  <TableHead className="text-right">Dias</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Média por dia</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {meses.map(([mes, v]) => (
+                  <TableRow key={mes}>
+                    <TableCell className="font-medium capitalize">
+                      {new Date(`${mes}-01T00:00:00.000Z`).toLocaleDateString("pt-BR", {
+                        month: "long",
+                        year: "numeric",
+                        timeZone: "UTC",
+                      })}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{v.dias}</TableCell>
+                    <TableCell className="text-right tabular-nums font-medium">
+                      {formatCurrency(v.total)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      {formatCurrency(v.total / v.dias)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{lancamentos.length} lançamento(s)</CardTitle>
+          <CardDescription>Para lançar ou editar um dia, use a tela de Repasses Médicos.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Dia</TableHead>
+                <TableHead>Detalhe</TableHead>
+                <TableHead className="text-right">Valor</TableHead>
+                <TableHead>Pago</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {lancamentos.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                    Nenhum dia lançado para esse médico ainda.
+                  </TableCell>
+                </TableRow>
+              )}
+              {lancamentos.map((l) => (
+                <TableRow key={l.id}>
+                  <TableCell className="tabular-nums">{formatDate(l.date)}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs">
+                    {l.detalhe || (
+                      <Badge variant="outline" className="text-[10px] px-1 py-0">
+                        valor do dia
+                      </Badge>
+                    )}
+                    {l.notes && <span className="block text-[11px]">{l.notes}</span>}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-medium">
+                    {formatCurrency(l.valor)}
+                  </TableCell>
+                  <TableCell>
+                    {l.paid ? (
+                      <Badge variant="secondary">Pago</Badge>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">Em aberto</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

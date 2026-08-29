@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { Pagination } from "@/components/pagination";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,6 +18,10 @@ import { formatDate } from "@/lib/format";
 
 /** Data de referência das telas: o contrato vigente é o de hoje. */
 const hoje = parseDateOnly(todayDateOnly());
+
+interface Props {
+  searchParams: Promise<{ page?: string }>;
+}
 
 const CATEGORY_SHORT: Record<string, string> = {
   CONSULTA: "consulta",
@@ -173,7 +179,12 @@ async function ConsolidatedSummary({ companyIds, scopeLabel }: { companyIds: str
   );
 }
 
-export default async function MedicosPage() {
+/** Médicos por página. Com a base real são 81 na unidade de Contagem, e a
+ * lista inteira numa tela só deixou de ser navegável. */
+const PAGE_SIZE = 20;
+
+export default async function MedicosPage({ searchParams }: Props) {
+  const params = await searchParams;
   const scope = await getActiveScope();
   if (scope.type !== "company") {
     const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
@@ -181,11 +192,25 @@ export default async function MedicosPage() {
   }
 
   const companyId = scope.companyId;
-  const [doctors, serviceItems] = await Promise.all([
+  const page = Math.max(1, Number(params.page) || 1);
+
+  const [totalMedicos, resumoContratos, doctors, serviceItems] = await Promise.all([
+    prisma.doctor.count({ where: { companyId } }),
+    // Os KPIs falam do corpo clínico inteiro, não da página aberta — então
+    // saem de uma consulta leve, só com o que a conta precisa.
+    prisma.doctor.findMany({
+      where: { companyId },
+      select: {
+        active: true,
+        serviceRates: { select: { serviceItemId: true, validFrom: true, lastCheckedAt: true } },
+      },
+    }),
     prisma.doctor.findMany({
       where: { companyId },
       include: { serviceRates: { include: { serviceItem: true } } },
       orderBy: { name: "asc" },
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
     }),
     prisma.serviceItem.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
   ]);
@@ -194,9 +219,9 @@ export default async function MedicosPage() {
   // Decimal (price/operationalCost), que não serializa.
   const serviceItemOptions = serviceItems.map((s) => ({ id: s.id, name: s.name }));
 
-  const activeDoctors = doctors.filter((d) => d.active).length;
-  const totalItens = doctors.reduce((s, d) => s + contractOn(d.serviceRates, hoje).length, 0);
-  const aConferir = doctors.filter((d) => isStale(contractOn(d.serviceRates, hoje))).length;
+  const activeDoctors = resumoContratos.filter((d) => d.active).length;
+  const totalItens = resumoContratos.reduce((s, d) => s + contractOn(d.serviceRates, hoje).length, 0);
+  const aConferir = resumoContratos.filter((d) => isStale(contractOn(d.serviceRates, hoje))).length;
 
   return (
     <div className="space-y-6">
@@ -234,7 +259,7 @@ export default async function MedicosPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>{doctors.length} médico(s)</CardTitle>
+            <CardTitle>{totalMedicos} médico(s)</CardTitle>
             <CardDescription>
               Confira o contrato depois de cada renegociação — é o que evita pagar pelo valor velho.
             </CardDescription>
@@ -274,7 +299,11 @@ export default async function MedicosPage() {
                 );
                 return (
                   <TableRow key={d.id}>
-                    <TableCell className="font-medium">{d.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <Link href={`/medicos/${d.id}`} className="hover:underline underline-offset-2">
+                        {d.name}
+                      </Link>
+                    </TableCell>
                     <TableCell>{d.specialty}</TableCell>
                     <TableCell>{d.document || "—"}</TableCell>
                     <TableCell>{d.paymentMethod || "—"}</TableCell>
@@ -338,6 +367,13 @@ export default async function MedicosPage() {
               })}
             </TableBody>
           </Table>
+          <Pagination
+            total={totalMedicos}
+            page={page}
+            pageSize={PAGE_SIZE}
+            basePath="/medicos"
+            params={params}
+          />
         </CardContent>
       </Card>
     </div>
