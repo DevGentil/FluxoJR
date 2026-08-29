@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { startOfDay, endOfDay } from "@/lib/date-only";
 import { getActiveScope, getAllCompanies, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { Pagination } from "@/components/pagination";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
@@ -22,8 +23,18 @@ interface Props {
     type?: string;
     from?: string;
     to?: string;
+    page?: string;
   }>;
 }
+
+/** Quantas transações por página. Antes a tela trazia 500 de uma vez e
+ * dizia "500 transações" no título mesmo quando havia milhares — o número
+ * era o do corte, não o do filtro. */
+const PAGE_SIZE = 50;
+
+/** Teto do CSV: exportar é para levar embora, mas puxar a base inteira em
+ * memória para montar o arquivo não escala. */
+const EXPORT_LIMIT = 10_000;
 
 async function ConsolidatedTransactionsSummary({
   companyIds,
@@ -144,14 +155,42 @@ export default async function TransacoesPage({ searchParams }: Props) {
     };
   }
 
-  const transactions = await prisma.transaction.findMany({
-    where,
-    include: { account: true, category: true, supplier: true },
-    // Agrupado por conta (nome); dentro de cada conta, data mais recente
-    // primeiro e, no mesmo dia, entradas antes de saídas.
-    orderBy: [{ account: { name: "asc" } }, { date: "desc" }, { type: "asc" }],
-    take: 500,
-  });
+  // Agrupado por conta (nome); dentro de cada conta, data mais recente
+  // primeiro e, no mesmo dia, entradas antes de saídas.
+  const orderBy: Prisma.TransactionOrderByWithRelationInput[] = [
+    { account: { name: "asc" } },
+    { date: "desc" },
+    { type: "asc" },
+  ];
+
+  const page = Math.max(1, Number(params.page) || 1);
+
+  const [total, transactions, exportRows] = await Promise.all([
+    prisma.transaction.count({ where }),
+    prisma.transaction.findMany({
+      where,
+      include: { account: true, category: true, supplier: true },
+      orderBy,
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+    }),
+    // O CSV leva o filtro inteiro, não só a página aberta — exportar uma
+    // página de cada vez seria uma armadilha silenciosa.
+    prisma.transaction.findMany({
+      where,
+      orderBy,
+      take: EXPORT_LIMIT,
+      select: {
+        date: true,
+        description: true,
+        type: true,
+        amount: true,
+        account: { select: { name: true } },
+        category: { select: { name: true } },
+        supplier: { select: { name: true } },
+      },
+    }),
+  ]);
 
   const accountOptions = accounts.map((a) => ({ id: a.id, name: a.name }));
   const categoryOptions = categories.map((c) => ({
@@ -172,8 +211,8 @@ export default async function TransacoesPage({ searchParams }: Props) {
         <div className="flex gap-2">
           <ExportCsvButton
             headers={["Data", "Conta", "Descrição", "Categoria", "Fornecedor", "Tipo", "Valor"]}
-            rows={transactions.map((t) => [
-              t.date.toISOString().slice(0, 10).split("-").reverse().join("/"),
+            rows={exportRows.map((t) => [
+              formatDate(t.date),
               t.account.name,
               t.description,
               t.category?.name ?? "",
@@ -280,7 +319,7 @@ export default async function TransacoesPage({ searchParams }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle>{transactions.length} transações</CardTitle>
+          <CardTitle>{total} {total === 1 ? "transação" : "transações"}</CardTitle>
         </CardHeader>
         <CardContent>
           <TransactionsTable
@@ -303,6 +342,13 @@ export default async function TransacoesPage({ searchParams }: Props) {
               type: t.type as "INCOME" | "EXPENSE",
               amount: Number(t.amount),
             }))}
+          />
+          <Pagination
+            total={total}
+            page={page}
+            pageSize={PAGE_SIZE}
+            basePath="/transacoes"
+            params={params}
           />
         </CardContent>
       </Card>
