@@ -237,14 +237,24 @@ export default async function TransacoesPage({ searchParams }: Props) {
           <CardTitle className="text-base">Filtros</CardTitle>
         </CardHeader>
         <CardContent>
-          <form className="flex flex-wrap items-end gap-3" method="GET">
+          {/* A key remonta os campos quando o filtro muda. Sem ela, o mesmo
+              input recebe um `defaultValue` novo depois de montado, e o Base
+              UI avisa que o campo mudou de não-controlado para controlado —
+              mesma correção que period-filter e month-range-filter já tinham.
+              Os `?? ""` completam: sem eles o campo monta com `undefined`,
+              que é a outra metade da mesma transição. */}
+          <form
+            key={`${params.from ?? ""}|${params.to ?? ""}|${params.accountId ?? ""}|${params.categoryId ?? ""}|${params.supplierId ?? ""}|${params.type ?? ""}`}
+            className="flex flex-wrap items-end gap-3"
+            method="GET"
+          >
             <div className="space-y-1">
               <Label htmlFor="from">De</Label>
-              <Input id="from" name="from" type="date" defaultValue={params.from} className="w-40" />
+              <Input id="from" name="from" type="date" defaultValue={params.from ?? ""} className="w-40" />
             </div>
             <div className="space-y-1">
               <Label htmlFor="to">Até</Label>
-              <Input id="to" name="to" type="date" defaultValue={params.to} className="w-40" />
+              <Input id="to" name="to" type="date" defaultValue={params.to ?? ""} className="w-40" />
             </div>
             <div className="space-y-1">
               <Label htmlFor="accountId">Conta</Label>
