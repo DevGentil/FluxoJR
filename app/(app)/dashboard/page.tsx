@@ -52,6 +52,23 @@ async function getDueSummaryByCompany(companyIds: string[]): Promise<CompanyDueS
     .sort((a, b) => a.companyName.localeCompare(b.companyName));
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Os vencimentos dos próximos 30 dias, para o bloco "a vencer" da visão de
+ * uma empresa. Mora fora do componente porque lê o relógio: chamada de
+ * dentro do corpo, a leitura tornaria o render impuro. */
+function getUpcomingEntries(companyIds: string[]) {
+  return prisma.scheduledEntry.findMany({
+    where: {
+      companyId: { in: companyIds },
+      status: { in: ["PENDING", "OVERDUE"] },
+      dueDate: { lte: new Date(Date.now() + 30 * DAY_MS) },
+    },
+    orderBy: { dueDate: "asc" },
+    take: 8,
+  });
+}
+
 export default async function DashboardPage() {
   const scope = await getActiveScope();
   const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
@@ -61,17 +78,7 @@ export default async function DashboardPage() {
     getConsolidatedBalance(companyIds),
     getMonthlySummary(companyIds, 6),
     getBalanceProjection(companyIds, 90),
-    isConsolidated || companyIds.length === 0
-      ? []
-      : prisma.scheduledEntry.findMany({
-          where: {
-            companyId: { in: companyIds },
-            status: { in: ["PENDING", "OVERDUE"] },
-            dueDate: { lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
-          },
-          orderBy: { dueDate: "asc" },
-          take: 8,
-        }),
+    isConsolidated || companyIds.length === 0 ? [] : getUpcomingEntries(companyIds),
     isConsolidated ? getDueSummaryByCompany(companyIds) : Promise.resolve([]),
   ]);
 

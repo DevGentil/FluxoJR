@@ -60,7 +60,7 @@ export function CompanyFormDialog({ groups, company }: Props) {
           <DialogHeader>
             <DialogTitle>Nova empresa</DialogTitle>
             <DialogDescription>
-              Toda empresa precisa pertencer a um grupo/marca. Crie um grupo primeiro (botão "Novo grupo"
+              Toda empresa precisa pertencer a um grupo/marca. Crie um grupo primeiro (botão &quot;Novo grupo&quot;
               acima) e depois cadastre a empresa.
             </DialogDescription>
           </DialogHeader>

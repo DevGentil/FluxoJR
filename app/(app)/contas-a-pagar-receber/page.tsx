@@ -252,8 +252,8 @@ async function ConsolidatedEntries({ companyIds, scopeLabel }: { companyIds: str
         <h1 className="text-2xl font-semibold">Contas a Pagar e a Receber</h1>
         <p className="text-muted-foreground text-sm">
           Resumo por empresa dos lançamentos previstos — {scopeLabel}. Para ver o detalhe linha a linha,
-          cadastrar, editar, excluir ou dar baixa num lançamento, entre na empresa específica (use "Ver
-          detalhes" ou o menu à esquerda).
+          cadastrar, editar, excluir ou dar baixa num lançamento, entre na empresa específica (use &quot;Ver
+          detalhes&quot; ou o menu à esquerda).
         </p>
       </div>
 

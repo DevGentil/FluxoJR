@@ -44,7 +44,7 @@ export function GroupFormDialog({ group }: Props) {
         <DialogHeader>
           <DialogTitle>{group ? "Editar grupo" : "Novo grupo"}</DialogTitle>
           <DialogDescription>
-            Uma marca/franquia que agrupa várias empresas (ex: "AmorSaude").
+            Uma marca/franquia que agrupa várias empresas (ex: &quot;AmorSaude&quot;).
           </DialogDescription>
         </DialogHeader>
         <form action={formAction} className="space-y-4">
