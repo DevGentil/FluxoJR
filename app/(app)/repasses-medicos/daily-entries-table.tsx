@@ -87,13 +87,9 @@ function resumir<T>(key: string, rows: DailyEntryRow[], extra: T): Grupo<T> {
  * se abre mostra quem atendeu. */
 export function DailyEntriesTable({ entries, doctors }: Props) {
   const [search, setSearch] = useState("");
-  const [mesAberto, setMesAberto] = useState<string | null>(() => {
-    const maisRecente = entries.reduce(
-      (max, e) => (e.date.toISOString() > max ? e.date.toISOString() : max),
-      ""
-    );
-    return maisRecente ? maisRecente.slice(0, 7) : null;
-  });
+  // Todos os meses começam fechados. A linha de cada mês já traz médicos,
+  // lançamentos, total e quantos foram pagos — quem quer o detalhe abre.
+  const [mesAberto, setMesAberto] = useState<string | null>(null);
   const [diasAbertos, setDiasAbertos] = useState<Set<string>>(new Set());
   const [pagina, setPagina] = useState(1);
 
