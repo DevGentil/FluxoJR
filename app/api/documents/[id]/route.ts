@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveScope, resolveCompanyIds } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
+import { attachmentHeader } from "@/lib/content-disposition";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -26,7 +27,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   return new NextResponse(new Uint8Array(document.content), {
     headers: {
       "Content-Type": document.mimeType,
-      "Content-Disposition": `attachment; filename="${encodeURIComponent(document.fileName)}"`,
+      "Content-Disposition": attachmentHeader(document.fileName),
       "Content-Length": String(document.size),
     },
   });
