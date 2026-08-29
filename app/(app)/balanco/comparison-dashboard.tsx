@@ -14,14 +14,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/format";
-import { groupByPeriod, type Granularity, type MonthTotals } from "@/lib/period-comparison";
+import { GRANULARITY_OPTIONS, groupByPeriod, type Granularity, type MonthTotals } from "@/lib/periods";
 
-const OPCOES: { value: Granularity; label: string; janela: number }[] = [
-  { value: "month", label: "Mensal", janela: 12 },
-  { value: "quarter", label: "Trimestral", janela: 8 },
-  { value: "semester", label: "Semestral", janela: 6 },
-  { value: "year", label: "Anual", janela: 4 },
-];
+/** Quantos períodos de cada granularidade cabem no gráfico sem virar
+ * espaguete: um ano de meses, dois de trimestres, três de semestres. */
+const JANELA: Record<Granularity, number> = { month: 12, quarter: 8, semester: 6, year: 4 };
 
 const chartConfig = {
   income: { label: "Entradas", color: "var(--chart-1)" },
@@ -61,7 +58,7 @@ function Variacao({ atual, anterior }: { atual: number; anterior: number | null 
  * não volta ao banco. */
 export function ComparisonDashboard({ months }: { months: MonthTotals[] }) {
   const [granularity, setGranularity] = useState<Granularity>("month");
-  const janela = OPCOES.find((o) => o.value === granularity)!.janela;
+  const janela = JANELA[granularity];
 
   const periodos = useMemo(
     () => groupByPeriod(months, granularity).slice(-janela),
@@ -94,7 +91,7 @@ export function ComparisonDashboard({ months }: { months: MonthTotals[] }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        {OPCOES.map((o) => (
+        {GRANULARITY_OPTIONS.map((o) => (
           <Button
             key={o.value}
             type="button"

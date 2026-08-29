@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupByPeriod, mesesNecessarios, type MonthTotals } from "./period-comparison";
+import { groupByPeriod, mesesNecessarios, periodOf, type MonthTotals } from "./periods";
 
 const meses: MonthTotals[] = [
   { month: "2026-01", income: 100, expense: 40 },
@@ -71,5 +71,41 @@ describe("mesesNecessarios", () => {
     expect(mesesNecessarios("quarter", 4)).toBe(15);
     expect(mesesNecessarios("semester", 4)).toBe(30);
     expect(mesesNecessarios("year", 3)).toBe(48);
+  });
+});
+
+describe("periodOf", () => {
+  it("devolve a mesma chave que o agrupamento usa", () => {
+    expect(periodOf("2026-08", "month").key).toBe("2026-08");
+    expect(periodOf("2026-08", "quarter").key).toBe("2026-Q3");
+    expect(periodOf("2026-08", "semester").key).toBe("2026-S2");
+    expect(periodOf("2026-08", "year").key).toBe("2026");
+  });
+
+  it("tem rótulo curto para o eixo do gráfico", () => {
+    expect(periodOf("2026-08", "month").label).toBe("ago/26");
+    expect(periodOf("2026-08", "quarter").label).toBe("3º tri/26");
+    expect(periodOf("2026-08", "semester").label).toBe("2º sem/26");
+  });
+
+  it("tem rótulo longo para o cabeçalho de uma linha", () => {
+    expect(periodOf("2026-08", "month", "longo").label).toBe("agosto de 2026");
+    expect(periodOf("2026-08", "quarter", "longo").label).toBe("3º trimestre de 2026");
+    expect(periodOf("2026-08", "semester", "longo").label).toBe("2º semestre de 2026");
+    expect(periodOf("2026-08", "year", "longo").label).toBe("2026");
+  });
+
+  it("acerta as bordas do trimestre e do semestre", () => {
+    expect(periodOf("2026-03", "quarter").key).toBe("2026-Q1");
+    expect(periodOf("2026-04", "quarter").key).toBe("2026-Q2");
+    expect(periodOf("2026-06", "semester").key).toBe("2026-S1");
+    expect(periodOf("2026-07", "semester").key).toBe("2026-S2");
+  });
+
+  it("as chaves ordenam alfabeticamente na ordem do tempo", () => {
+    const chaves = ["2026-01", "2026-05", "2026-12", "2027-02"].map(
+      (m) => periodOf(m, "quarter").key
+    );
+    expect([...chaves].sort()).toEqual(chaves);
   });
 });

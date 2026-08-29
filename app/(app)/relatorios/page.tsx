@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, formatBytes } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -43,12 +43,6 @@ function defaultRange() {
 
 function formatCompetencia(value: Date) {
   return value.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function resultColor(value: number) {

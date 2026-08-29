@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getActiveScope, resolveCompanyIds } from "@/lib/scope";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatBytes, formatCurrency, formatDate, formatMonth, formatPercent } from "@/lib/format";
+import { categoryLabel, payerLabel } from "@/lib/service-catalog";
 import { parseDateOnly, todayDateOnly, toMonthKey } from "@/lib/date-only";
 import { contractOn, previousVersions, scheduledVersions } from "@/lib/doctor-rates";
 import { entryAmount } from "@/lib/doctor-period";
@@ -18,23 +19,8 @@ import { DoctorDocumentDialog } from "../doctor-document-dialog";
 import { DoctorEntriesFilter } from "../doctor-entries-filter";
 import { deleteDoctorDocument } from "../documents-actions";
 
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 const hoje = parseDateOnly(todayDateOnly());
-
-const CATEGORY_LABELS: Record<string, string> = {
-  CONSULTA: "Consulta",
-  EXAME: "Exame",
-  PROCEDIMENTO: "Procedimento",
-  PLANTAO: "Plantão",
-  OUTRO: "Outro",
-};
-
-const PAYER_LABELS: Record<string, string> = { CT: "Cartão de Todos", PARTICULAR: "Particular" };
 
 /** Ficha completa de um médico: quem é, o que foi combinado (com o histórico
  * de reajustes) e tudo que já foi lançado para ele.
@@ -139,7 +125,7 @@ export default async function MedicoPage({ params, searchParams }: Props) {
         <KpiCard
           label="Já pago"
           value={formatCurrency(pago)}
-          hint={total > 0 ? `${((pago / total) * 100).toFixed(0)}% do total` : undefined}
+          hint={total > 0 ? `${formatPercent(pago, total, 0)} do total` : undefined}
           icon={CircleCheck}
           iconClass="text-emerald-500"
         />
@@ -193,11 +179,11 @@ export default async function MedicoPage({ params, searchParams }: Props) {
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">{r.serviceItem.name}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">
-                      {CATEGORY_LABELS[r.serviceItem.category] ?? r.serviceItem.category}
+                      {categoryLabel(r.serviceItem.category)}
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">
                       {r.serviceItem.payer ? (
-                        <Badge variant="secondary">{PAYER_LABELS[r.serviceItem.payer]}</Badge>
+                        <Badge variant="secondary">{payerLabel(r.serviceItem.payer)}</Badge>
                       ) : (
                         "—"
                       )}
@@ -249,11 +235,7 @@ export default async function MedicoPage({ params, searchParams }: Props) {
                 {meses.map(([mes, v]) => (
                   <TableRow key={mes}>
                     <TableCell className="font-medium capitalize">
-                      {new Date(`${mes}-01T00:00:00.000Z`).toLocaleDateString("pt-BR", {
-                        month: "long",
-                        year: "numeric",
-                        timeZone: "UTC",
-                      })}
+                      {formatMonth(mes)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{v.dias}</TableCell>
                     <TableCell className="text-right tabular-nums font-medium">

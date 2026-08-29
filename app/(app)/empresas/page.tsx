@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getActiveScope, getScopeLabel, resolveCompanyIds } from "@/lib/scope";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatBytes } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -13,12 +13,6 @@ import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { deleteGroup, deleteCompany } from "./actions";
 import { deleteDocument } from "./documents-actions";
 import { Download } from "lucide-react";
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 async function DocumentsSection({ scope }: { scope: Awaited<ReturnType<typeof getActiveScope>> }) {
   if (scope.type === "company") {

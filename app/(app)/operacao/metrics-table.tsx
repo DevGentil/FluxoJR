@@ -5,53 +5,16 @@ import { ChevronDown, ChevronRight, Info, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatCurrency } from "@/lib/format";
-
-type Granularity = "month" | "quarter" | "semester" | "year";
-
-const GRANULARITY_OPTIONS: { value: Granularity; label: string }[] = [
-  { value: "month", label: "Mensal" },
-  { value: "quarter", label: "Trimestral" },
-  { value: "semester", label: "Semestral" },
-  { value: "year", label: "Anual" },
-];
-
-function periodKey(date: Date, granularity: Granularity) {
-  const y = date.getUTCFullYear();
-  const m = date.getUTCMonth(); // 0-11
-  switch (granularity) {
-    case "month":
-      return `${y}-${String(m + 1).padStart(2, "0")}`;
-    case "quarter":
-      return `${y}-Q${Math.floor(m / 3) + 1}`;
-    case "semester":
-      return `${y}-S${Math.floor(m / 6) + 1}`;
-    case "year":
-      return `${y}`;
-  }
-}
-
-function periodLabel(date: Date, granularity: Granularity) {
-  const y = date.getUTCFullYear();
-  const m = date.getUTCMonth();
-  switch (granularity) {
-    case "month":
-      return date.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
-    case "quarter":
-      return `${Math.floor(m / 3) + 1}º trimestre de ${y}`;
-    case "semester":
-      return `${Math.floor(m / 6) + 1}º semestre de ${y}`;
-    case "year":
-      return `${y}`;
-  }
-}
+import { formatCurrency, formatPercent } from "@/lib/format";
+import { GRANULARITY_OPTIONS, periodOf, type Granularity } from "@/lib/periods";
+import { toMonthKey } from "@/lib/date-only";
 
 function ratioLabel(consultas: number, exames: number) {
   return exames > 0 ? `${(consultas / exames).toFixed(1)} : 1` : "—";
 }
 
 function percentLabel(consultas: number, exames: number) {
-  return consultas > 0 ? `${((exames / consultas) * 100).toFixed(1)}%` : "—";
+  return formatPercent(exames, consultas);
 }
 
 /** Sem receita não há valor a mostrar — evita exibir "R$ 0,00" como se
@@ -61,8 +24,7 @@ function moneyOrDash(v: number) {
 }
 
 function marginLabel(revenue: number, profit: number) {
-  if (revenue <= 0) return "—";
-  return `${((profit / revenue) * 100).toFixed(1)}%`;
+  return revenue > 0 ? formatPercent(profit, revenue) : "—";
 }
 
 function profitClass(revenue: number, profit: number, strong: boolean) {
@@ -203,7 +165,7 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
   const groups = useMemo(() => {
     const map = new Map<string, { key: string; anchor: Date; rows: MetricRow[] }>();
     for (const r of filteredRows) {
-      const key = periodKey(r.competencia, granularity);
+      const key = periodOf(toMonthKey(r.competencia), granularity).key;
       const entry = map.get(key);
       if (entry) {
         entry.rows.push(r);
@@ -313,7 +275,7 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
                         ) : (
                           <ChevronRight className="size-4 text-muted-foreground shrink-0" />
                         ))}
-                      {periodLabel(group.anchor, granularity)}
+                      {periodOf(toMonthKey(group.anchor), granularity, "longo").label}
                     </span>
                   </TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">{consultas}</TableCell>

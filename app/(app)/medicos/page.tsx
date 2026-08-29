@@ -14,6 +14,7 @@ import { CheckContractButton } from "./check-contract-button";
 import { deleteDoctor } from "./doctors-actions";
 import { Users, FileSignature, TriangleAlert, History } from "lucide-react";
 import { contractOn } from "@/lib/doctor-rates";
+import { categoryLabelInline } from "@/lib/service-catalog";
 import { parseDateOnly, todayDateOnly, toDateOnly } from "@/lib/date-only";
 import { formatDate } from "@/lib/format";
 
@@ -29,14 +30,6 @@ interface Props {
     conferir?: string;
   }>;
 }
-
-const CATEGORY_SHORT: Record<string, string> = {
-  CONSULTA: "consulta",
-  EXAME: "exame",
-  PROCEDIMENTO: "procedimento",
-  PLANTAO: "plantão",
-  OUTRO: "outro",
-};
 
 /** Há quanto tempo o contrato foi conferido pela última vez. Valor antigo
  * é o risco real: nas planilhas, um reajuste de ECG de R$15 para R$10 só
@@ -62,7 +55,7 @@ function lastCheckedLabel(rates: { lastCheckedAt: Date | null }[]) {
  * o antigo "modelo de pagamento", que assumia que ele era só uma coisa. */
 function contractSummary(rates: { serviceItem: { category: string } }[]) {
   if (rates.length === 0) return "Sem itens";
-  const kinds = [...new Set(rates.map((r) => CATEGORY_SHORT[r.serviceItem.category] ?? "outro"))];
+  const kinds = [...new Set(rates.map((r) => categoryLabelInline(r.serviceItem.category)))];
   return `${rates.length} ${rates.length === 1 ? "item" : "itens"} · ${kinds.join(", ")}`;
 }
 

@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { parseForm, runMutation, type ActionState } from "@/lib/actions-utils";
-import { SERVICE_CATEGORIES, PAYERS, NO_PAYER, type Payer } from "./service-items";
+import { SERVICE_CATEGORIES, PAYERS, NO_PAYER, type Payer } from "@/lib/service-catalog";
 
 
 /** Campo de dinheiro vindo de <input type="number">: vazio vira null (o

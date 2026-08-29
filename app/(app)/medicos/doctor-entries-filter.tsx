@@ -3,15 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-
-function monthLabel(iso: string) {
-  const [ano, mes] = iso.split("-").map(Number);
-  return new Date(Date.UTC(ano, mes - 1, 1)).toLocaleDateString("pt-BR", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
+import { formatMonth } from "@/lib/format";
 
 /** Filtro dos lançamentos de um médico: mês e situação de pagamento.
  *
@@ -49,7 +41,7 @@ export function DoctorEntriesFilter({ doctorId, meses }: { doctorId: string; mes
           <option value="">Todos</option>
           {meses.map((m) => (
             <option key={m} value={m}>
-              {monthLabel(m)}
+              {formatMonth(m)}
             </option>
           ))}
         </select>

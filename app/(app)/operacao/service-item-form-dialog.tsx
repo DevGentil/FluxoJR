@@ -22,23 +22,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { createServiceItem, updateServiceItem } from "./service-items-actions";
-import { NO_PAYER, type ServiceCategory, type Payer } from "./service-items";
+import {
+  CATEGORY_LABELS,
+  NO_PAYER,
+  PAYER_LABELS,
+  type ServiceCategory,
+  type Payer,
+} from "@/lib/service-catalog";
 import type { ActionState } from "@/lib/actions-utils";
 import { Pencil, Plus } from "lucide-react";
 import { useCloseOnSuccess } from "@/hooks/use-close-on-success";
-
-export const CATEGORY_LABELS: Record<ServiceCategory, string> = {
-  CONSULTA: "Consulta",
-  EXAME: "Exame",
-  PROCEDIMENTO: "Procedimento",
-  PLANTAO: "Plantão",
-  OUTRO: "Outro",
-};
-
-export const PAYER_LABELS: Record<Payer, string> = {
-  CT: "Cartão de Todos",
-  PARTICULAR: "Particular",
-};
 
 const PAYER_SELECT_LABELS: Record<string, string> = {
   [NO_PAYER]: "Não se aplica",

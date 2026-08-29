@@ -8,12 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DeleteButton } from "@/components/delete-button";
 import { formatCurrency } from "@/lib/format";
 import { computeMargin, type TaxBracketInput } from "@/lib/service-margin";
-import {
-  ServiceItemFormDialog,
-  CATEGORY_LABELS,
-  PAYER_LABELS,
-  type ServiceItemFormValues,
-} from "./service-item-form-dialog";
+import { ServiceItemFormDialog, type ServiceItemFormValues } from "./service-item-form-dialog";
+import { categoryLabel, payerLabel } from "@/lib/service-catalog";
 import { deleteServiceItem } from "./service-items-actions";
 
 export interface CatalogRow extends ServiceItemFormValues {
@@ -185,10 +181,10 @@ export function ServiceCatalogTable({ items, brackets, groups }: Props) {
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
-                        {CATEGORY_LABELS[item.category]}
+                        {categoryLabel(item.category)}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
-                        {item.payer ? <Badge variant="secondary">{PAYER_LABELS[item.payer]}</Badge> : "—"}
+                        {item.payer ? <Badge variant="secondary">{payerLabel(item.payer)}</Badge> : "—"}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {item.price != null ? formatCurrency(item.price) : "—"}

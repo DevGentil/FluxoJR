@@ -18,7 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, formatMonth, formatWeekday } from "@/lib/format";
 import { DailyEntryFormDialog, type DoctorOption } from "./daily-entry-form-dialog";
 import { deleteDailyEntry } from "./daily-entries-actions";
 import { PaidToggle } from "./paid-toggle";
@@ -44,19 +44,6 @@ interface Props {
 /** Quantos dias por página dentro de um mês aberto. Um mês cheio da unidade
  * real passa de 30 dias com mais de 20 lançamentos cada. */
 const DIAS_POR_PAGINA = 15;
-
-function monthLabel(iso: string) {
-  const [ano, mes] = iso.split("-").map(Number);
-  return new Date(Date.UTC(ano, mes - 1, 1)).toLocaleDateString("pt-BR", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-function weekdayLabel(d: Date) {
-  return d.toLocaleDateString("pt-BR", { weekday: "short", timeZone: "UTC" }).replace(".", "");
-}
 
 interface Grupo<T> {
   key: string;
@@ -204,7 +191,7 @@ export function DailyEntriesTable({ entries, doctors }: Props) {
                       ) : (
                         <ChevronRight className="size-4 text-muted-foreground shrink-0" />
                       )}
-                      {monthLabel(mes.key)}
+                      {formatMonth(mes.key)}
                     </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">{mes.medicos} médico(s)</TableCell>
@@ -232,7 +219,7 @@ export function DailyEntriesTable({ entries, doctors }: Props) {
                                 <ChevronRight className="size-4 text-muted-foreground shrink-0" />
                               )}
                               {formatDate(dia.extra)}
-                              <span className="text-muted-foreground text-xs">{weekdayLabel(dia.extra)}</span>
+                              <span className="text-muted-foreground text-xs">{formatWeekday(dia.extra)}</span>
                             </span>
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatPercent } from "@/lib/format";
 
 export interface UnitRow {
   id: string;
@@ -15,10 +15,6 @@ export interface UnitRow {
   total: number;
   revenue: number;
   profit: number;
-}
-
-function percent(part: number, whole: number) {
-  return whole > 0 ? `${((part / whole) * 100).toFixed(1)}%` : "—";
 }
 
 function UnitCells({ u, grandTotal }: { u: UnitRow; grandTotal: number }) {
@@ -32,14 +28,14 @@ function UnitCells({ u, grandTotal }: { u: UnitRow; grandTotal: number }) {
       <TableCell className="text-right tabular-nums">{u.doctors}</TableCell>
       <TableCell className="text-right tabular-nums">{u.consultas}</TableCell>
       <TableCell className="text-right tabular-nums">{u.exames}</TableCell>
-      <TableCell className="text-right tabular-nums">{percent(u.exames, u.consultas)}</TableCell>
+      <TableCell className="text-right tabular-nums">{formatPercent(u.exames, u.consultas)}</TableCell>
       <TableCell className="text-right tabular-nums">{formatCurrency(u.total)}</TableCell>
       <TableCell className={marginClass}>
         {semReceita ? "—" : formatCurrency(u.profit)}
       </TableCell>
-      <TableCell className={marginClass}>{semReceita ? "—" : percent(u.profit, u.revenue)}</TableCell>
+      <TableCell className={marginClass}>{semReceita ? "—" : formatPercent(u.profit, u.revenue)}</TableCell>
       <TableCell className="text-right tabular-nums text-muted-foreground">
-        {percent(u.total, grandTotal)}
+        {formatPercent(u.total, grandTotal)}
       </TableCell>
     </>
   );
