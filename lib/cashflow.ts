@@ -18,31 +18,41 @@ export function signedAmount(type: "INCOME" | "EXPENSE", amount: Prisma.Decimal 
   return type === "INCOME" ? value : -value;
 }
 
-export async function getAccountBalance(accountId: string): Promise<number> {
-  const account = await prisma.account.findUniqueOrThrow({ where: { id: accountId } });
-  const transactions = await prisma.transaction.findMany({
-    where: { accountId },
-    select: { amount: true, type: true },
-  });
+/** Saldo é uma soma sobre todo o histórico da conta: agrupar por tipo no
+ * banco devolve duas linhas em vez de trazer cada transação já lançada para
+ * a memória do servidor só para somá-las de novo a cada request. */
+function sumSignedByType(groups: { type: string; _sum: { amount: Prisma.Decimal | null } }[]) {
+  return groups.reduce(
+    (sum, g) => sum + signedAmount(g.type as "INCOME" | "EXPENSE", g._sum.amount ?? 0),
+    0
+  );
+}
 
-  const delta = transactions.reduce((sum, t) => sum + signedAmount(t.type, t.amount), 0);
-  return Number(account.initialBalance) + delta;
+export async function getAccountBalance(accountId: string): Promise<number> {
+  const [account, byType] = await Promise.all([
+    prisma.account.findUniqueOrThrow({ where: { id: accountId }, select: { initialBalance: true } }),
+    prisma.transaction.groupBy({ by: ["type"], where: { accountId }, _sum: { amount: true } }),
+  ]);
+
+  return Number(account.initialBalance) + sumSignedByType(byType);
 }
 
 export async function getConsolidatedBalance(companyIds: string[]): Promise<number> {
   if (companyIds.length === 0) return 0;
-  const accounts = await prisma.account.findMany({
-    where: { companyId: { in: companyIds } },
-    select: { initialBalance: true },
-  });
-  const transactions = await prisma.transaction.findMany({
-    where: { companyId: { in: companyIds } },
-    select: { amount: true, type: true },
-  });
 
-  const initial = accounts.reduce((sum, a) => sum + Number(a.initialBalance), 0);
-  const delta = transactions.reduce((sum, t) => sum + signedAmount(t.type, t.amount), 0);
-  return initial + delta;
+  const [accounts, byType] = await Promise.all([
+    prisma.account.aggregate({
+      where: { companyId: { in: companyIds } },
+      _sum: { initialBalance: true },
+    }),
+    prisma.transaction.groupBy({
+      by: ["type"],
+      where: { companyId: { in: companyIds } },
+      _sum: { amount: true },
+    }),
+  ]);
+
+  return Number(accounts._sum.initialBalance ?? 0) + sumSignedByType(byType);
 }
 
 export interface ProjectionPoint {

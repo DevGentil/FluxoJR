@@ -77,7 +77,7 @@ export async function getPeriodBalanceReport(
 ): Promise<PeriodBalanceReport> {
   if (companyIds.length === 0) return emptyReport;
 
-  const [accounts, companies, transactions] = await Promise.all([
+  const [accounts, companies, priorTotals, transactions] = await Promise.all([
     prisma.account.findMany({
       where: { companyId: { in: companyIds } },
       select: { id: true, name: true, initialBalance: true, companyId: true },
@@ -86,13 +86,22 @@ export async function getPeriodBalanceReport(
       where: { id: { in: companyIds } },
       select: { id: true, name: true },
     }),
+    // Do que veio ANTES do período só interessa o acumulado por conta, que
+    // é o saldo inicial. Agrupado no banco: antes, abrir o Balanço trazia
+    // para a memória toda a história de transações da holding, a cada vez.
+    prisma.transaction.groupBy({
+      by: ["accountId", "type"],
+      where: { companyId: { in: companyIds }, date: { lt: from } },
+      _sum: { amount: true },
+    }),
+    // Dentro do período, aí sim linha a linha — é o que alimenta o ranking
+    // por categoria e a separação de transferências.
     prisma.transaction.findMany({
-      where: { companyId: { in: companyIds }, date: { lte: to } },
+      where: { companyId: { in: companyIds }, date: { gte: from, lte: to } },
       select: {
         accountId: true,
         amount: true,
         type: true,
-        date: true,
         transferCompanyId: true,
         category: { select: { name: true } },
       },
@@ -101,7 +110,11 @@ export async function getPeriodBalanceReport(
 
   const companyNameById = new Map(companies.map((c) => [c.id, c.name]));
   const openingByAccount = new Map(accounts.map((a) => [a.id, Number(a.initialBalance)]));
-  const closingByAccount = new Map(accounts.map((a) => [a.id, Number(a.initialBalance)]));
+  for (const g of priorTotals) {
+    const signed = signedAmount(g.type as "INCOME" | "EXPENSE", g._sum.amount ?? 0);
+    openingByAccount.set(g.accountId, (openingByAccount.get(g.accountId) ?? 0) + signed);
+  }
+  const closingByAccount = new Map(openingByAccount);
 
   let revenue = 0;
   let expense = 0;
@@ -115,12 +128,7 @@ export async function getPeriodBalanceReport(
     const signed = signedAmount(type, t.amount);
     const amount = Number(t.amount);
 
-    if (t.date < from) {
-      openingByAccount.set(t.accountId, (openingByAccount.get(t.accountId) ?? 0) + signed);
-    }
     closingByAccount.set(t.accountId, (closingByAccount.get(t.accountId) ?? 0) + signed);
-
-    if (t.date < from) continue;
 
     if (t.transferCompanyId) {
       if (type === "INCOME") transfersIn += amount;
