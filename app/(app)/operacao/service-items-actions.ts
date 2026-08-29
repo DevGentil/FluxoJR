@@ -72,6 +72,9 @@ export async function updateServiceItem(
   });
 }
 
+const ARQUIVAR_EM_VEZ_DE_EXCLUIR =
+  'Desmarque "ativo" para parar de usá-lo sem perder o histórico.';
+
 export async function deleteServiceItem(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
@@ -79,12 +82,33 @@ export async function deleteServiceItem(id: string): Promise<ActionState> {
     const existing = await prisma.serviceItem.findFirst({ where: { id, companyId } });
     if (!existing) throw new Error("Item não encontrado.");
 
+    // O contrato precisa ser checado À MÃO. A FK de DoctorServiceRate é
+    // `Cascade`, então o banco apagaria os valores combinados sem reclamar —
+    // era possível excluir um item e levar junto o contrato de vários
+    // médicos, em silêncio. Só a linha de lançamento é `Restrict`, e por
+    // isso só ela era barrada.
+    const contratos = await prisma.doctorServiceRate.count({ where: { serviceItemId: id } });
+    if (contratos > 0) {
+      const medicos = await prisma.doctorServiceRate.findMany({
+        where: { serviceItemId: id },
+        select: { doctor: { select: { name: true } } },
+        distinct: ["doctorId"],
+        take: 4,
+      });
+      const nomes = medicos.map((m) => m.doctor.name);
+      const resto = contratos - nomes.length;
+      throw new Error(
+        `Esse item está no contrato de ${nomes.join(", ")}${resto > 0 ? ` e mais ${resto}` : ""}. ` +
+          `Excluir apagaria o valor combinado com ${nomes.length > 1 ? "eles" : "ele"}. ` +
+          ARQUIVAR_EM_VEZ_DE_EXCLUIR
+      );
+    }
+
     try {
       await prisma.serviceItem.delete({ where: { id } });
     } catch {
-      throw new Error(
-        "Esse item já tem repasses lançados. Não é possível excluir — desmarque \"ativo\" para parar de usá-lo sem perder o histórico."
-      );
+      // Sobra o `Restrict` da linha de lançamento, que o banco barra.
+      throw new Error(`Esse item já tem repasses lançados. ${ARQUIVAR_EM_VEZ_DE_EXCLUIR}`);
     }
 
     revalidateRepassesModule();
