@@ -272,7 +272,7 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
             <TableHead className="text-right">% conversão</TableHead>
             <TableHead className="text-right">Receita</TableHead>
             <TableHead className="text-right">Repasse</TableHead>
-            <TableHead className="text-right">Taxas + custo</TableHead>
+            <TableHead className="text-right">Encargos + insumo</TableHead>
             <TableHead className="text-right">Lucro</TableHead>
             <TableHead className="text-right">Margem</TableHead>
           </TableRow>

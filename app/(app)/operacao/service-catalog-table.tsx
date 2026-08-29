@@ -33,8 +33,9 @@ const SEM_GRUPO = "Sem grupo";
  * operacional (o mesmo agrupamento da planilha de exames, que é o que
  * define o custo de insumo).
  *
- * A coluna que interessa é "sobra p/ repasse": quanto resta depois da taxa
- * da maquininha e do custo operacional. É o teto do que dá para pagar ao
+ * A coluna que interessa é "sobra p/ repasse": quanto resta depois dos encargos
+ * (maquininha, impostos, demais custos proporcionais) e do custo de
+ * insumo. É o teto do que dá para pagar ao
  * médico sem entrar no vermelho — e é exatamente a conta que faltava quando
  * os repasses foram negociados (na planilha, 24% dos procedimentos ficaram
  * com repasse acima desse teto). */
@@ -100,7 +101,7 @@ export function ServiceCatalogTable({ items, brackets, groups }: Props) {
             <p className="flex items-center gap-1.5 text-sm text-destructive">
               <TriangleAlert className="size-4 shrink-0" />
               {emAlerta} {emAlerta === 1 ? "item tem repasse" : "itens têm repasse"} acima do que sobra depois
-              das taxas — dá prejuízo a cada atendimento.
+              dos encargos — dá prejuízo a cada atendimento.
             </p>
           )}
           {semContrato > 0 && (
@@ -129,8 +130,8 @@ export function ServiceCatalogTable({ items, brackets, groups }: Props) {
             <TableHead>Categoria</TableHead>
             <TableHead>Convênio</TableHead>
             <TableHead className="text-right">Valor cobrado</TableHead>
-            <TableHead className="text-right">Taxa</TableHead>
-            <TableHead className="text-right">Custo oper.</TableHead>
+            <TableHead className="text-right">Encargos</TableHead>
+            <TableHead className="text-right">Custo insumo</TableHead>
             <TableHead className="text-right">Sobra p/ repasse</TableHead>
             <TableHead className="text-right">Maior repasse</TableHead>
             <TableHead className="w-24" />

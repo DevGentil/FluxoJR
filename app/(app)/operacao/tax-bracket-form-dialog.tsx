@@ -52,7 +52,8 @@ export function TaxBracketFormDialog({ bracket }: Props) {
         <DialogHeader>
           <DialogTitle>{bracket ? "Editar faixa de taxa" : "Nova faixa de taxa"}</DialogTitle>
           <DialogDescription>
-            Percentual cobrado pela maquininha conforme o valor do procedimento. Deixe o máximo vazio para a
+            Percentual que sai do valor cobrado — maquininha, impostos e demais custos proporcionais —
+            conforme a faixa. Deixe o máximo vazio para a
             última faixa (sem teto).
           </DialogDescription>
         </DialogHeader>

@@ -115,7 +115,7 @@ function OperationKpis({ rows }: { rows: MetricRow[] }) {
       <KpiCard
         label="Lucro previsto"
         value={revenue > 0 ? formatCurrency(profit) : "—"}
-        hint={revenue > 0 ? "Receita − repasse comparável − taxas − custo" : undefined}
+        hint={revenue > 0 ? "Receita − repasse comparável − encargos − insumo" : undefined}
         icon={profit < 0 ? TrendingDown : TrendingUp}
         iconClass={profit < 0 ? "text-destructive" : "text-emerald-500"}
       />
@@ -164,9 +164,9 @@ async function ConsolidatedSummary({
     }),
   ]);
 
-  // Faixas de taxa para o cálculo de margem. Numa holding com unidades que
-  // negociaram maquininhas diferentes isso é uma aproximação — usa a
-  // primeira faixa encontrada por intervalo.
+  // Faixas de encargo para o cálculo de margem. Numa holding com unidades
+  // que têm maquininha e tributação diferentes isso é uma aproximação — usa
+  // a primeira faixa encontrada por intervalo.
   const brackets = taxBrackets.map((b) => ({
     minValue: Number(b.minValue),
     maxValue: b.maxValue != null ? Number(b.maxValue) : null,
@@ -403,7 +403,7 @@ export default async function OperacaoPage({ searchParams }: Props) {
           <div>
             <CardTitle>Catálogo de procedimentos</CardTitle>
             <CardDescription>
-              Preço cobrado, taxa e custo operacional de cada item — e quanto sobra para pagar o médico.
+              Preço cobrado, encargos e custo de insumo de cada item — e quanto sobra para pagar o médico.
             </CardDescription>
           </div>
           <ServiceItemFormDialog groups={catalogGroups} />
@@ -416,9 +416,11 @@ export default async function OperacaoPage({ searchParams }: Props) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>Taxas da maquininha</CardTitle>
+            <CardTitle>Encargos sobre o valor cobrado</CardTitle>
             <CardDescription>
-              Percentual descontado conforme o valor do procedimento. Alimenta o cálculo de margem do catálogo.
+              Tudo que sai proporcionalmente de cada atendimento — taxa da maquininha, impostos e demais
+              custos sobre o faturamento — conforme a faixa de valor. Alimenta o cálculo de margem do
+              catálogo.
             </CardDescription>
           </div>
           <TaxBracketFormDialog />
@@ -426,14 +428,14 @@ export default async function OperacaoPage({ searchParams }: Props) {
         <CardContent>
           {taxBrackets.length === 0 ? (
             <p className="text-sm text-muted-foreground py-6 text-center">
-              Nenhuma faixa cadastrada — sem elas a margem do catálogo é calculada sem desconto de taxa.
+              Nenhuma faixa cadastrada — sem elas a margem do catálogo é calculada sem nenhum desconto.
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Faixa de valor</TableHead>
-                  <TableHead className="text-right">Taxa</TableHead>
+                  <TableHead className="text-right">Encargos</TableHead>
                   <TableHead>Observação</TableHead>
                   <TableHead className="w-24" />
                 </TableRow>

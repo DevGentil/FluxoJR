@@ -363,11 +363,17 @@ model ServiceItem {
   @@unique([companyId, name])
 }
 
-// Faixa de taxa (cartao/antecipacao) aplicada conforme o valor cobrado do
-// paciente — a planilha de exames usa um percentual diferente por faixa de
-// preco. Fica como dado editavel por empresa, e nao formula chumbada no
-// codigo, porque a negociacao com a maquininha muda e cada unidade pode ter
-// a sua.
+// Percentual que sai do valor cobrado do paciente conforme a faixa de preco
+// — a planilha de exames usa um percentual diferente por faixa.
+//
+// O nome do modelo diz "Tax", mas o percentual NAO e so a taxa da
+// maquininha: engloba tambem impostos e os demais custos proporcionais ao
+// faturamento. Nas telas ele aparece como "encargos", que e o termo honesto;
+// o identificador ficou como esta para nao arrastar uma migracao de nome
+// atras de uma correcao de rotulo.
+//
+// Fica como dado editavel por empresa, e nao formula chumbada no codigo,
+// porque a negociacao e a tributacao mudam e cada unidade pode ter a sua.
 model TaxBracket {
   id        String   @id @default(cuid())
   minValue  Decimal  @db.Decimal(14, 2)
