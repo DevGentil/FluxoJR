@@ -161,7 +161,7 @@ export function DailyEntriesTable({ entries, doctors }: Props) {
           <TableRow>
             <TableHead>Mês / Dia</TableHead>
             <TableHead>Médico</TableHead>
-            <TableHead>Detalhe</TableHead>
+            <TableHead className="hidden md:table-cell">Detalhe</TableHead>
             <TableHead className="text-right">Valor</TableHead>
             <TableHead className="w-20">Pago</TableHead>
             <TableHead className="w-24" />
@@ -195,7 +195,9 @@ export function DailyEntriesTable({ entries, doctors }: Props) {
                     </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">{mes.medicos} médico(s)</TableCell>
-                  <TableCell className="text-muted-foreground text-sm">{mes.rows.length} lançamento(s)</TableCell>
+                  <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
+                    {mes.rows.length} lançamento(s)
+                  </TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">
                     {formatCurrency(mes.total)}
                   </TableCell>
@@ -225,7 +227,7 @@ export function DailyEntriesTable({ entries, doctors }: Props) {
                           <TableCell className="text-muted-foreground text-sm">
                             {dia.medicos} médico(s)
                           </TableCell>
-                          <TableCell className="text-muted-foreground text-sm">
+                          <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
                             {dia.rows.length} lançamento(s)
                           </TableCell>
                           <TableCell className="text-right tabular-nums font-medium">
@@ -249,7 +251,7 @@ export function DailyEntriesTable({ entries, doctors }: Props) {
                                   {r.doctorName}
                                 </Link>
                               </TableCell>
-                              <TableCell className="text-muted-foreground text-xs">
+                              <TableCell className="hidden md:table-cell text-muted-foreground text-xs">
                                 {r.lines.length > 0 ? (
                                   r.lines.map((l) => `${l.quantity}× ${l.serviceItemName}`).join(", ")
                                 ) : (

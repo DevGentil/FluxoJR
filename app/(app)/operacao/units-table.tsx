@@ -25,7 +25,7 @@ function UnitCells({ u, grandTotal }: { u: UnitRow; grandTotal: number }) {
 
   return (
     <>
-      <TableCell className="text-right tabular-nums">{u.doctors}</TableCell>
+      <TableCell className="hidden lg:table-cell text-right tabular-nums">{u.doctors}</TableCell>
       <TableCell className="text-right tabular-nums">{u.consultas}</TableCell>
       <TableCell className="text-right tabular-nums">{u.exames}</TableCell>
       <TableCell className="text-right tabular-nums">{formatPercent(u.exames, u.consultas)}</TableCell>
@@ -34,7 +34,7 @@ function UnitCells({ u, grandTotal }: { u: UnitRow; grandTotal: number }) {
         {semReceita ? "—" : formatCurrency(u.profit)}
       </TableCell>
       <TableCell className={marginClass}>{semReceita ? "—" : formatPercent(u.profit, u.revenue)}</TableCell>
-      <TableCell className="text-right tabular-nums text-muted-foreground">
+      <TableCell className="hidden lg:table-cell text-right tabular-nums text-muted-foreground">
         {formatPercent(u.total, grandTotal)}
       </TableCell>
     </>
@@ -66,14 +66,14 @@ export function UnitsTable({ units }: { units: UnitRow[] }) {
       <TableHeader>
         <TableRow>
           <TableHead>Unidade</TableHead>
-          <TableHead className="text-right">Médicos ativos</TableHead>
+          <TableHead className="hidden lg:table-cell text-right">Médicos ativos</TableHead>
           <TableHead className="text-right">Consultas</TableHead>
           <TableHead className="text-right">Exames</TableHead>
           <TableHead className="text-right">% conversão</TableHead>
           <TableHead className="text-right">Custo total</TableHead>
           <TableHead className="text-right">Lucro</TableHead>
           <TableHead className="text-right">Margem</TableHead>
-          <TableHead className="text-right">% do grupo</TableHead>
+          <TableHead className="hidden lg:table-cell text-right">% do grupo</TableHead>
           <TableHead className="w-32" />
         </TableRow>
       </TableHeader>

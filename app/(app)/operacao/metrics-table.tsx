@@ -230,11 +230,11 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
             <TableHead className="text-right">Consultas</TableHead>
             <TableHead className="text-right">Exames</TableHead>
             <TableHead className="text-right">Plantão</TableHead>
-            <TableHead className="text-right">Consultas por exame</TableHead>
+            <TableHead className="hidden xl:table-cell text-right">Consultas por exame</TableHead>
             <TableHead className="text-right">% conversão</TableHead>
             <TableHead className="text-right">Receita</TableHead>
             <TableHead className="text-right">Repasse</TableHead>
-            <TableHead className="text-right">Encargos + insumo</TableHead>
+            <TableHead className="hidden lg:table-cell text-right">Encargos + insumo</TableHead>
             <TableHead className="text-right">Lucro</TableHead>
             <TableHead className="text-right">Margem</TableHead>
           </TableRow>
@@ -281,7 +281,7 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
                   <TableCell className="text-right tabular-nums font-semibold">{consultas}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">{exames}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">{horas > 0 ? horas : "—"}</TableCell>
-                  <TableCell className="text-right tabular-nums font-semibold">
+                  <TableCell className="hidden xl:table-cell text-right tabular-nums font-semibold">
                     {ratioLabel(consultas, exames)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">
@@ -289,7 +289,9 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
                   </TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">{moneyOrDash(receita)}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">{formatCurrency(valorTotal)}</TableCell>
-                  <TableCell className="text-right tabular-nums font-semibold">{moneyOrDash(encargos)}</TableCell>
+                  <TableCell className="hidden lg:table-cell text-right tabular-nums font-semibold">
+                    {moneyOrDash(encargos)}
+                  </TableCell>
                   <TableCell className={profitClass(receita, lucro, true)}>{receita > 0 ? formatCurrency(lucro) : "—"}</TableCell>
                   <TableCell className={profitClass(receita, lucro, true)}>{marginLabel(receita, lucro)}</TableCell>
                 </TableRow>
@@ -302,7 +304,7 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
                       <TableCell className="text-right tabular-nums">
                         {e.hoursWorked > 0 ? e.hoursWorked : "—"}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      <TableCell className="hidden xl:table-cell text-right tabular-nums">
                         {ratioLabel(e.consultationCount, e.examCount)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
@@ -310,7 +312,7 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{moneyOrDash(e.revenue)}</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">{formatCurrency(e.totalValue)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                      <TableCell className="hidden lg:table-cell text-right tabular-nums text-muted-foreground">
                         {moneyOrDash(e.tax + e.operationalCost)}
                       </TableCell>
                       <TableCell className={profitClass(e.revenue, e.profit, false)}>
