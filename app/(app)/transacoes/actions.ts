@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { parseForm, runMutation, type ActionState } from "@/lib/actions-utils";
+import { parseDateOnly } from "@/lib/date-only";
 
 const NONE = "__none__";
 const optionalSelect = z
@@ -35,7 +36,7 @@ export async function createTransaction(_prev: ActionState, formData: FormData):
     await prisma.transaction.create({
       data: {
         ...data,
-        date: new Date(data.date),
+        date: parseDateOnly(data.date),
         companyId,
         categoryId: categoryId || null,
         supplierId: supplierId || null,
@@ -67,7 +68,7 @@ export async function updateTransaction(
       where: { id, companyId },
       data: {
         ...data,
-        date: new Date(data.date),
+        date: parseDateOnly(data.date),
         categoryId: categoryId || null,
         supplierId: supplierId || null,
         transferCompanyId: transferCompanyId || null,
@@ -148,7 +149,7 @@ export async function importTransactions(input: {
 
     await tx.transaction.createMany({
       data: parsedRows.map((row) => ({
-        date: new Date(row.date),
+        date: parseDateOnly(row.date),
         amount: Math.abs(row.amount),
         type: row.type,
         description: row.description,

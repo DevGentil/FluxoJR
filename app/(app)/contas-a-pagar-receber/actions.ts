@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
+import { parseDateOnly, todayDateOnly } from "@/lib/date-only";
 import { runMutation, type ActionState } from "@/lib/actions-utils";
 
 const scheduledSchema = z.object({
@@ -36,7 +37,7 @@ export async function createScheduledEntry(_prev: ActionState, formData: FormDat
     await prisma.scheduledEntry.create({
       data: {
         ...rest,
-        dueDate: new Date(dueDate),
+        dueDate: parseDateOnly(dueDate),
         companyId,
         accountId: accountId || null,
         categoryId: categoryId || null,
@@ -65,7 +66,7 @@ export async function updateScheduledEntry(
       where: { id, companyId },
       data: {
         ...rest,
-        dueDate: new Date(dueDate),
+        dueDate: parseDateOnly(dueDate),
         accountId: accountId || null,
         categoryId: categoryId || null,
         supplierId: supplierId || null,
@@ -126,7 +127,7 @@ export async function importScheduledEntries(input: {
       type: row.type,
       description: row.description,
       amount: Math.abs(row.amount),
-      dueDate: new Date(row.dueDate),
+      dueDate: parseDateOnly(row.dueDate),
       companyId,
       accountId: input.accountId || null,
       categoryId: input.categoryId || null,
@@ -156,7 +157,7 @@ export async function markAsPaid(id: string, accountId: string): Promise<ActionS
     await prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.create({
         data: {
-          date: new Date(),
+          date: parseDateOnly(todayDateOnly()),
           amount: entry.amount,
           type: entry.type === "RECEIVABLE" ? "INCOME" : "EXPENSE",
           description: entry.description,
@@ -170,7 +171,12 @@ export async function markAsPaid(id: string, accountId: string): Promise<ActionS
 
       await tx.scheduledEntry.update({
         where: { id },
-        data: { status: "PAID", paidDate: new Date(), transactionId: transaction.id, accountId },
+        data: {
+          status: "PAID",
+          paidDate: parseDateOnly(todayDateOnly()),
+          transactionId: transaction.id,
+          accountId,
+        },
       });
     });
 

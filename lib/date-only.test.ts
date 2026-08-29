@@ -1,0 +1,106 @@
+import { describe, expect, it } from "vitest";
+import {
+  addDays,
+  addMonths,
+  currentMonthKey,
+  endOfDay,
+  firstDayOfMonth,
+  parseDateOnly,
+  startOfMonth,
+  startOfNextMonth,
+  startOfWeek,
+  toDateOnly,
+  toMonthKey,
+  todayDateOnly,
+} from "./date-only";
+
+describe("parseDateOnly", () => {
+  it("grava na meia-noite UTC, não na local", () => {
+    expect(parseDateOnly("2026-08-01").toISOString()).toBe("2026-08-01T00:00:00.000Z");
+  });
+
+  it("sobrevive à ida e volta, inclusive em 29 de fevereiro", () => {
+    expect(toDateOnly(parseDateOnly("2028-02-29"))).toBe("2028-02-29");
+  });
+});
+
+describe("toMonthKey", () => {
+  it("põe o dia 1º no mês certo", () => {
+    // O bug que isso evita: em UTC-3, getMonth() de 2026-08-01T00:00Z
+    // devolve julho, porque no relógio local ainda são 21h do dia 31.
+    expect(toMonthKey(parseDateOnly("2026-08-01"))).toBe("2026-08");
+  });
+
+  it("põe o último dia do mês no mês certo", () => {
+    expect(toMonthKey(parseDateOnly("2026-08-31"))).toBe("2026-08");
+  });
+});
+
+describe("limites de filtro", () => {
+  it("o começo do dia inclui o próprio dia", () => {
+    const dia = parseDateOnly("2026-08-01");
+    expect(dia >= startOfMonth("2026-08")).toBe(true);
+  });
+
+  it("o fim do dia inclui tudo do último dia e nada do seguinte", () => {
+    const fim = endOfDay("2026-08-31");
+    expect(parseDateOnly("2026-08-31") <= fim).toBe(true);
+    expect(parseDateOnly("2026-09-01") <= fim).toBe(false);
+  });
+
+  it("o mês seguinte é o lado aberto do intervalo", () => {
+    const limite = startOfNextMonth("2026-08");
+    expect(parseDateOnly("2026-08-31") < limite).toBe(true);
+    expect(parseDateOnly("2026-09-01") < limite).toBe(false);
+  });
+
+  it("vira o ano corretamente", () => {
+    expect(startOfNextMonth("2026-12").toISOString()).toBe("2027-01-01T00:00:00.000Z");
+  });
+});
+
+describe("todayDateOnly", () => {
+  it("usa o calendário local, não o UTC", () => {
+    // 28/08 às 22h em Brasília já é 29/08 em UTC — toISOString() aqui
+    // devolveria amanhã, e os presets de período pulariam um dia.
+    const noite = new Date(2026, 7, 28, 22, 30);
+    expect(todayDateOnly(noite)).toBe("2026-08-28");
+  });
+
+  it("currentMonthKey segue o mesmo calendário", () => {
+    expect(currentMonthKey(new Date(2026, 7, 31, 23, 0))).toBe("2026-08");
+  });
+});
+
+describe("aritmética de calendário", () => {
+  it("soma dias atravessando o mês", () => {
+    expect(addDays("2026-08-31", 1)).toBe("2026-09-01");
+  });
+
+  it("subtrai dias atravessando o ano", () => {
+    expect(addDays("2026-01-01", -1)).toBe("2025-12-31");
+  });
+
+  it("não escorrega em mês curto ao somar meses", () => {
+    expect(addMonths("2026-01", 1)).toBe("2026-02");
+    expect(addMonths("2026-01", -2)).toBe("2025-11");
+  });
+
+  it("acha a segunda-feira da semana", () => {
+    // 2026-08-28 é uma sexta-feira.
+    expect(startOfWeek("2026-08-28")).toBe("2026-08-24");
+  });
+
+  it("no domingo, volta para a segunda anterior", () => {
+    // 2026-08-30 é um domingo.
+    expect(startOfWeek("2026-08-30")).toBe("2026-08-24");
+  });
+
+  it("na própria segunda, fica onde está", () => {
+    expect(startOfWeek("2026-08-24")).toBe("2026-08-24");
+  });
+
+  it("acha o primeiro dia do mês", () => {
+    expect(firstDayOfMonth("2026-08-28")).toBe("2026-08-01");
+  });
+});

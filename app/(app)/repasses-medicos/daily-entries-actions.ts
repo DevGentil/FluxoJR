@@ -4,6 +4,7 @@ import { revalidateRepassesModule } from "@/lib/revalidate-repasses";
 import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
+import { parseDateOnly } from "@/lib/date-only";
 
 export interface DailyLineInput {
   serviceItemId: string;
@@ -87,7 +88,7 @@ export async function createDailyEntry(input: DailyEntryInput): Promise<{ error?
       data: {
         doctorId: input.doctorId,
         companyId,
-        date: new Date(`${input.date}T00:00:00`),
+        date: parseDateOnly(input.date),
         // Detalhou por item? O valor passa a ser derivado das linhas.
         amount: linesData.length > 0 ? null : input.amount,
         paid: input.paid,
@@ -125,7 +126,7 @@ export async function updateDailyEntry(id: string, input: DailyEntryInput): Prom
         where: { id },
         data: {
           doctorId: input.doctorId,
-          date: new Date(`${input.date}T00:00:00`),
+          date: parseDateOnly(input.date),
           amount: linesData.length > 0 ? null : input.amount,
           paid: input.paid,
           notes: input.notes?.trim() || null,

@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, Table
 import { Button } from "@/components/ui/button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { PeriodFilter } from "@/components/period-filter";
+import { startOfDay, endOfDay, todayDateOnly, startOfWeek, firstDayOfMonth } from "@/lib/date-only";
 import { DeleteButton } from "@/components/delete-button";
 import { DreReportFormDialog } from "./dre-report-form-dialog";
 import { deleteDreReport } from "./dre-reports-actions";
@@ -26,26 +27,18 @@ interface ReportRow {
   total: number;
 }
 
-function toISODate(d: Date) {
-  return d.toISOString().slice(0, 10);
+/** Os atalhos de período trabalham em datas de calendário. Passar por
+ * `toISOString()` sobre o relógio local devolvia o dia seguinte depois das
+ * 21h no horário de Brasília, e "hoje" virava amanhã toda noite. */
+function presetRange(kind: "today" | "week" | "month") {
+  const to = todayDateOnly();
+  if (kind === "week") return { from: startOfWeek(to), to };
+  if (kind === "month") return { from: firstDayOfMonth(to), to };
+  return { from: to, to };
 }
 
 function defaultRange() {
-  const to = new Date();
-  const from = new Date(to.getFullYear(), to.getMonth(), 1);
-  return { from: toISODate(from), to: toISODate(to) };
-}
-
-function presetRange(kind: "today" | "week" | "month") {
-  const to = new Date();
-  const from = new Date(to);
-  if (kind === "week") {
-    const day = from.getDay();
-    from.setDate(from.getDate() - (day === 0 ? 6 : day - 1));
-  } else if (kind === "month") {
-    from.setDate(1);
-  }
-  return { from: toISODate(from), to: toISODate(to) };
+  return presetRange("month");
 }
 
 function formatCompetencia(value: Date) {
@@ -381,7 +374,7 @@ export default async function RelatoriosPage({ searchParams }: Props) {
       : await prisma.transaction.findMany({
           where: {
             companyId: { in: companyIds },
-            date: { gte: new Date(range.from), lte: new Date(`${range.to}T23:59:59`) },
+            date: { gte: startOfDay(range.from), lte: endOfDay(range.to) },
             transferCompanyId: null,
           },
           include: { category: true, company: true, supplier: true },

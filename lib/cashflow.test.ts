@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetDb, testPrisma } from "@/tests/helpers/db";
-import { getAccountBalance, getBalanceProjection, getConsolidatedBalance } from "./cashflow";
+import {
+  getAccountBalance,
+  getBalanceProjection,
+  getConsolidatedBalance,
+  getMonthlySummary,
+} from "./cashflow";
+import { addMonths, currentMonthKey, parseDateOnly } from "./date-only";
 
 beforeEach(resetDb);
 
@@ -94,5 +100,74 @@ describe("getBalanceProjection", () => {
 
     expect(result.currentBalance).toBe(1000);
     expect(result.projectedBalance).toBe(1200); // 1000 + 300 - 100
+  });
+});
+
+describe("getMonthlySummary", () => {
+  it("põe o lançamento do dia 1º no mês certo", async () => {
+    // A regressão que isso trava: a data é gravada na meia-noite UTC, e ler
+    // o mês dela com getMonth() (relógio local, UTC-3) devolvia o mês
+    // ANTERIOR — todo dia 1º caía no balde errado do gráfico do dashboard.
+    const { company, account } = await seedCompanyWithAccount(0);
+    const mesAtual = currentMonthKey();
+
+    await testPrisma.transaction.create({
+      data: {
+        companyId: company.id,
+        accountId: account.id,
+        type: "INCOME",
+        amount: 1000,
+        description: "Venda do dia 1º",
+        date: parseDateOnly(`${mesAtual}-01`),
+      },
+    });
+
+    const meses = await getMonthlySummary([company.id], 6);
+    const atual = meses.find((m) => m.key === mesAtual);
+    const anterior = meses.find((m) => m.key === addMonths(mesAtual, -1));
+
+    expect(atual?.income).toBe(1000);
+    expect(anterior?.income).toBe(0);
+  });
+
+  it("inclui o dia 1º do mês mais antigo da janela", async () => {
+    // O limite `gte` também era montado em hora local, o que empurrava a
+    // borda para as 03h UTC e excluía o próprio dia 1º.
+    const { company, account } = await seedCompanyWithAccount(0);
+    const primeiroMes = addMonths(currentMonthKey(), -5);
+
+    await testPrisma.transaction.create({
+      data: {
+        companyId: company.id,
+        accountId: account.id,
+        type: "EXPENSE",
+        amount: 250,
+        description: "Aluguel",
+        date: parseDateOnly(`${primeiroMes}-01`),
+      },
+    });
+
+    const meses = await getMonthlySummary([company.id], 6);
+    expect(meses.find((m) => m.key === primeiroMes)?.expense).toBe(250);
+  });
+
+  it("ignora transferência entre empresas do grupo", async () => {
+    const { company, account } = await seedCompanyWithAccount(0);
+    const outra = await testPrisma.company.create({ data: { name: "Outra" } });
+
+    await testPrisma.transaction.create({
+      data: {
+        companyId: company.id,
+        accountId: account.id,
+        type: "INCOME",
+        amount: 700,
+        description: "Aporte da matriz",
+        date: parseDateOnly(`${currentMonthKey()}-15`),
+        transferCompanyId: outra.id,
+      },
+    });
+
+    const meses = await getMonthlySummary([company.id], 6);
+    expect(meses.find((m) => m.key === currentMonthKey())?.income).toBe(0);
   });
 });

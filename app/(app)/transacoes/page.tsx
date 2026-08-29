@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { startOfDay, endOfDay } from "@/lib/date-only";
 import { getActiveScope, getAllCompanies, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { formatCurrency } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,7 +66,7 @@ async function ConsolidatedTransactionsSummary({
         <h1 className="text-2xl font-semibold">Transações</h1>
         <p className="text-muted-foreground text-sm">
           Resumo por empresa — {scopeLabel}. Selecione uma empresa específica no menu à esquerda (ou clique
-          em "Ver transações" abaixo) para lançar ou consultar o detalhe de cada transação.
+          em &quot;Ver transações&quot; abaixo) para lançar ou consultar o detalhe de cada transação.
         </p>
       </div>
 
@@ -138,8 +139,8 @@ export default async function TransacoesPage({ searchParams }: Props) {
   if (params.type === "INCOME" || params.type === "EXPENSE") where.type = params.type;
   if (params.from || params.to) {
     where.date = {
-      ...(params.from ? { gte: new Date(params.from) } : {}),
-      ...(params.to ? { lte: new Date(params.to) } : {}),
+      ...(params.from ? { gte: startOfDay(params.from) } : {}),
+      ...(params.to ? { lte: endOfDay(params.to) } : {}),
     };
   }
 

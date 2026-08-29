@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
+import { parseDateOnly } from "@/lib/date-only";
 
 const SANGRIA_CATEGORY_NAME = "Sangria Caixa";
 
@@ -64,13 +65,13 @@ export async function createCashClosing(input: CashClosingInput): Promise<{ erro
     if (!account) return { error: "Conta inválida." };
 
     const existing = await prisma.cashClosing.findUnique({
-      where: { companyId_date: { companyId, date: new Date(input.date) } },
+      where: { companyId_date: { companyId, date: parseDateOnly(input.date) } },
     });
     if (existing) return { error: "Já existe um fechamento cadastrado para esse dia. Edite o existente." };
 
     const totalSangrias = input.sangrias.reduce((s, l) => s + l.amount, 0);
     const category = await getOrCreateSangriaCategory(companyId);
-    const dateObj = new Date(input.date);
+    const dateObj = parseDateOnly(input.date);
 
     await prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.create({
@@ -125,7 +126,7 @@ export async function updateCashClosing(id: string, input: CashClosingInput): Pr
     const account = await prisma.account.findFirst({ where: { id: input.accountId, companyId } });
     if (!account) return { error: "Conta inválida." };
 
-    const dateObj = new Date(input.date);
+    const dateObj = parseDateOnly(input.date);
     const duplicate = await prisma.cashClosing.findUnique({
       where: { companyId_date: { companyId, date: dateObj } },
     });

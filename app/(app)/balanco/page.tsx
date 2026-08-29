@@ -6,36 +6,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { PeriodFilter } from "@/components/period-filter";
+import { startOfDay, endOfDay, todayDateOnly, startOfWeek, firstDayOfMonth } from "@/lib/date-only";
 
 interface Props {
   searchParams: Promise<{ from?: string; to?: string }>;
 }
 
-function toISODate(d: Date) {
-  return d.toISOString().slice(0, 10);
+/** Os atalhos de período trabalham em datas de calendário. Passar por
+ * `toISOString()` sobre o relógio local devolvia o dia seguinte depois das
+ * 21h no horário de Brasília, e "hoje" virava amanhã toda noite. */
+function presetRange(kind: "today" | "week" | "month") {
+  const to = todayDateOnly();
+  if (kind === "today") return { from: to, to };
+  if (kind === "week") return { from: startOfWeek(to), to };
+  return { from: firstDayOfMonth(to), to };
 }
 
 function defaultRange() {
-  const to = new Date();
-  const from = new Date(to);
-  const day = from.getDay();
-  const diffToMonday = day === 0 ? 6 : day - 1;
-  from.setDate(from.getDate() - diffToMonday);
-  return { from: toISODate(from), to: toISODate(to) };
-}
-
-function presetRange(kind: "today" | "week" | "month") {
-  const to = new Date();
-  const from = new Date(to);
-  if (kind === "today") {
-    // from === to
-  } else if (kind === "week") {
-    const day = from.getDay();
-    from.setDate(from.getDate() - (day === 0 ? 6 : day - 1));
-  } else {
-    from.setDate(1);
-  }
-  return { from: toISODate(from), to: toISODate(to) };
+  return presetRange("week");
 }
 
 function netFlowColor(value: number) {
@@ -145,8 +133,8 @@ export default async function BalancoPage({ searchParams }: Props) {
 
   const report = await getPeriodBalanceReport(
     companyIds,
-    new Date(`${range.from}T00:00:00`),
-    new Date(`${range.to}T23:59:59.999`)
+    startOfDay(range.from),
+    endOfDay(range.to)
   );
 
   const presets = [

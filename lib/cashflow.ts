@@ -1,5 +1,17 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
+import {
+  addDays,
+  addMonths,
+  currentMonthKey,
+  endOfDay,
+  parseDateOnly,
+  startOfMonth,
+  toDateOnly,
+  toMonthKey,
+  todayDateOnly,
+} from "@/lib/date-only";
+import { formatDate } from "@/lib/format";
 
 export function signedAmount(type: "INCOME" | "EXPENSE", amount: Prisma.Decimal | number) {
   const value = Number(amount);
@@ -46,10 +58,8 @@ export interface ProjectionPoint {
 export async function getBalanceProjection(companyIds: string[], days: 30 | 60 | 90) {
   const currentBalance = await getConsolidatedBalance(companyIds);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const horizon = new Date(today);
-  horizon.setDate(horizon.getDate() + days);
+  const today = todayDateOnly();
+  const horizon = addDays(today, days);
 
   const pending =
     companyIds.length === 0
@@ -58,20 +68,32 @@ export async function getBalanceProjection(companyIds: string[], days: 30 | 60 |
           where: {
             companyId: { in: companyIds },
             status: { in: ["PENDING", "OVERDUE"] },
-            dueDate: { lte: horizon },
+            dueDate: { lte: endOfDay(horizon) },
           },
-          orderBy: { dueDate: "asc" },
           select: { dueDate: true, amount: true, type: true },
         });
 
-  const points: ProjectionPoint[] = [{ label: "Hoje", date: today, balance: currentBalance }];
+  // Um ponto por DIA, não por lançamento: cinco boletos vencendo na mesma
+  // data são um degrau só na linha, e não cinco rótulos repetidos.
+  const deltaByDay = new Map<string, number>();
+  for (const entry of pending) {
+    const day = toDateOnly(entry.dueDate);
+    const delta = signedAmount(entry.type === "RECEIVABLE" ? "INCOME" : "EXPENSE", entry.amount);
+    deltaByDay.set(day, (deltaByDay.get(day) ?? 0) + delta);
+  }
+
+  const points: ProjectionPoint[] = [
+    { label: "Hoje", date: parseDateOnly(today), balance: currentBalance },
+  ];
   let running = currentBalance;
 
-  for (const entry of pending) {
-    running += signedAmount(entry.type === "RECEIVABLE" ? "INCOME" : "EXPENSE", entry.amount);
+  for (const day of [...deltaByDay.keys()].sort()) {
+    running += deltaByDay.get(day)!;
     points.push({
-      label: entry.dueDate.toLocaleDateString("pt-BR"),
-      date: entry.dueDate,
+      // Formatado em UTC como o resto do sistema: sem isso, a meia-noite
+      // UTC do vencimento aparecia como o dia anterior no rótulo.
+      label: formatDate(parseDateOnly(day)),
+      date: parseDateOnly(day),
       balance: running,
     });
   }
@@ -80,30 +102,30 @@ export async function getBalanceProjection(companyIds: string[], days: 30 | 60 |
 }
 
 export async function getMonthlySummary(companyIds: string[], months = 6) {
-  const start = new Date();
-  start.setDate(1);
-  start.setHours(0, 0, 0, 0);
-  start.setMonth(start.getMonth() - (months - 1));
+  // Tudo em UTC: a data da transação é uma data de calendário, e ler o mês
+  // dela pelo relógio local jogava todo lançamento do dia 1º no mês
+  // anterior (em UTC-3, meia-noite UTC do dia 1º é 21h do dia 31).
+  const firstMonth = addMonths(currentMonthKey(), -(months - 1));
 
   const transactions =
     companyIds.length === 0
       ? []
       : await prisma.transaction.findMany({
-          where: { companyId: { in: companyIds }, date: { gte: start }, transferCompanyId: null },
+          where: {
+            companyId: { in: companyIds },
+            date: { gte: startOfMonth(firstMonth) },
+            transferCompanyId: null,
+          },
           select: { date: true, amount: true, type: true },
         });
 
   const buckets = new Map<string, { income: number; expense: number }>();
   for (let i = 0; i < months; i++) {
-    const d = new Date(start);
-    d.setMonth(d.getMonth() + i);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    buckets.set(key, { income: 0, expense: 0 });
+    buckets.set(addMonths(firstMonth, i), { income: 0, expense: 0 });
   }
 
   for (const t of transactions) {
-    const key = `${t.date.getFullYear()}-${String(t.date.getMonth() + 1).padStart(2, "0")}`;
-    const bucket = buckets.get(key);
+    const bucket = buckets.get(toMonthKey(t.date));
     if (!bucket) continue;
     if (t.type === "INCOME") bucket.income += Number(t.amount);
     else bucket.expense += Number(t.amount);

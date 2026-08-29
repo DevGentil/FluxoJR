@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
+import { startOfMonth } from "@/lib/date-only";
 import { runMutation, type ActionState } from "@/lib/actions-utils";
 
 const MAX_SIZE_BYTES = 10 * 1024 * 1024;
@@ -28,7 +29,7 @@ export async function uploadDreReport(_prev: ActionState, formData: FormData): P
     const companyId = await getActiveCompanyId();
 
     const existing = await prisma.dreReport.findUnique({
-      where: { companyId_competencia: { companyId, competencia: new Date(`${competencia}-01T00:00:00`) } },
+      where: { companyId_competencia: { companyId, competencia: startOfMonth(competencia) } },
     });
     if (existing) {
       throw new Error("Já existe um DRE realizado cadastrado para esse mês. Exclua o existente para substituir.");
@@ -39,7 +40,7 @@ export async function uploadDreReport(_prev: ActionState, formData: FormData): P
     await prisma.dreReport.create({
       data: {
         companyId,
-        competencia: new Date(`${competencia}-01T00:00:00`),
+        competencia: startOfMonth(competencia),
         fileName: file.name,
         mimeType: file.type || "application/octet-stream",
         size: file.size,

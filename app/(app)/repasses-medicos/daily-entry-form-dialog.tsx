@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { formatCurrency, toDateInputValue } from "@/lib/format";
+import { todayDateOnly } from "@/lib/date-only";
 import { createDailyEntry, updateDailyEntry, type DailyEntryInput } from "./daily-entries-actions";
 
 export interface DoctorOption {
@@ -49,7 +50,7 @@ interface Props {
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return todayDateOnly();
 }
 
 export function DailyEntryFormDialog({ doctors, entry }: Props) {
