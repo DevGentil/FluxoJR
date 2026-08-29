@@ -6,6 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { OpenCompanyButton } from "@/components/open-company-button";
+import { KpiCard } from "@/components/kpi-card";
+import { currentMonthKey, startOfMonth, startOfNextMonth } from "@/lib/date-only";
 import { MonthlyChart } from "./monthly-chart";
 import { ProjectionChart } from "./projection-chart";
 import { TrendingUp, TrendingDown, Wallet, AlertTriangle } from "lucide-react";
@@ -54,6 +56,46 @@ async function getDueSummaryByCompany(companyIds: string[]): Promise<CompanyDueS
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+export interface TopExpense {
+  categoryName: string;
+  total: number;
+}
+
+/** As maiores despesas do mês, por categoria. Saber que saíram R$ 68 mil não
+ * diz o que fazer; saber que R$ 40 mil foram folha, sim. Transferência entre
+ * empresas do grupo fica de fora — não é despesa, é dinheiro mudando de
+ * bolso dentro da mesma holding. */
+async function getTopExpenses(companyIds: string[], month: string): Promise<TopExpense[]> {
+  if (companyIds.length === 0) return [];
+
+  const grouped = await prisma.transaction.groupBy({
+    by: ["categoryId"],
+    where: {
+      companyId: { in: companyIds },
+      type: "EXPENSE",
+      transferCompanyId: null,
+      date: { gte: startOfMonth(month), lt: startOfNextMonth(month) },
+    },
+    _sum: { amount: true },
+  });
+  if (grouped.length === 0) return [];
+
+  const categories = await prisma.category.findMany({
+    where: { id: { in: grouped.map((g) => g.categoryId).filter((id): id is string => id != null) } },
+    select: { id: true, name: true },
+  });
+  const nameById = new Map(categories.map((c) => [c.id, c.name]));
+
+  return grouped
+    .map((g) => ({
+      categoryName: g.categoryId ? (nameById.get(g.categoryId) ?? "Sem categoria") : "Sem categoria",
+      total: Number(g._sum.amount ?? 0),
+    }))
+    .filter((r) => r.total > 0)
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 6);
+}
+
 /** Os vencimentos dos próximos 30 dias, para o bloco "a vencer" da visão de
  * uma empresa. Mora fora do componente porque lê o relógio: chamada de
  * dentro do corpo, a leitura tornaria o render impuro. */
@@ -74,16 +116,24 @@ export default async function DashboardPage() {
   const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
   const isConsolidated = scope.type !== "company";
 
-  const [balance, monthly, projection90, upcoming, dueSummary] = await Promise.all([
+  const [balance, monthly, projection90, upcoming, dueSummary, topExpenses] = await Promise.all([
     getConsolidatedBalance(companyIds),
     getMonthlySummary(companyIds, 6),
     getBalanceProjection(companyIds, 90),
     isConsolidated || companyIds.length === 0 ? [] : getUpcomingEntries(companyIds),
     isConsolidated ? getDueSummaryByCompany(companyIds) : Promise.resolve([]),
+    getTopExpenses(companyIds, currentMonthKey()),
   ]);
 
   const currentMonth = monthly[monthly.length - 1];
+  const previousMonth = monthly[monthly.length - 2];
   const projectionPoints = projection90.points.map((p) => ({ label: p.label, balance: p.balance }));
+
+  const income = currentMonth?.income ?? 0;
+  const expense = currentMonth?.expense ?? 0;
+  const net = income - expense;
+  const previousNet = (previousMonth?.income ?? 0) - (previousMonth?.expense ?? 0);
+  const totalExpenses = topExpenses.reduce((s, e) => s + e.total, 0);
 
   return (
     <div className="space-y-6">
@@ -92,49 +142,45 @@ export default async function DashboardPage() {
         <p className="text-muted-foreground text-sm">Visão geral do fluxo de caixa — {scopeLabel}.</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription>Saldo atual</CardDescription>
-            <Wallet className="size-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tabular-nums">{formatCurrency(balance)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription>Entradas no mês</CardDescription>
-            <TrendingUp className="size-4 text-emerald-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tabular-nums">
-              {formatCurrency(currentMonth?.income ?? 0)}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription>Saídas no mês</CardDescription>
-            <TrendingDown className="size-4 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tabular-nums">
-              {formatCurrency(currentMonth?.expense ?? 0)}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription>Projeção 90 dias</CardDescription>
-            <AlertTriangle className="size-4 text-amber-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tabular-nums">
-              {formatCurrency(projection90.projectedBalance)}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <KpiCard label="Saldo atual" value={formatCurrency(balance)} icon={Wallet} iconClass="text-muted-foreground" />
+        <KpiCard
+          label="Entradas no mês"
+          value={formatCurrency(income)}
+          delta={{ previous: previousMonth?.income ?? 0, current: income, label: "vs. mês anterior" }}
+          icon={TrendingUp}
+          iconClass="text-emerald-500"
+        />
+        <KpiCard
+          label="Saídas no mês"
+          value={formatCurrency(expense)}
+          delta={{
+            previous: previousMonth?.expense ?? 0,
+            current: expense,
+            label: "vs. mês anterior",
+            goodWhenUp: false,
+          }}
+          icon={TrendingDown}
+          iconClass="text-red-500"
+        />
+        <KpiCard
+          label="Resultado do mês"
+          value={formatCurrency(net)}
+          delta={{ previous: previousNet, current: net, label: "vs. mês anterior" }}
+          icon={net < 0 ? TrendingDown : TrendingUp}
+          iconClass={net < 0 ? "text-destructive" : "text-emerald-500"}
+        />
+        <KpiCard
+          label="Projeção 90 dias"
+          value={formatCurrency(projection90.projectedBalance)}
+          hint={
+            projection90.overdue !== 0
+              ? `Inclui ${formatCurrency(Math.abs(projection90.overdue))} já vencido`
+              : undefined
+          }
+          icon={AlertTriangle}
+          iconClass="text-amber-500"
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -149,13 +195,54 @@ export default async function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Projeção de saldo (90 dias)</CardTitle>
-            <CardDescription>Saldo atual + contas a pagar/receber pendentes.</CardDescription>
+            <CardDescription>
+              Saldo atual + contas a pagar/receber pendentes. O que já venceu entra logo depois de
+              &quot;Hoje&quot;.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <ProjectionChart data={projectionPoints} />
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Para onde foi o dinheiro este mês</CardTitle>
+          <CardDescription>
+            Maiores despesas por categoria. Transferência entre empresas do grupo fica de fora.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {topExpenses.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">Nenhuma despesa lançada neste mês.</p>
+          ) : (
+            <div className="space-y-3">
+              {topExpenses.map((e) => (
+                <div key={e.categoryName} className="space-y-1">
+                  <div className="flex items-baseline justify-between gap-4 text-sm">
+                    <span className="truncate">{e.categoryName}</span>
+                    <span className="tabular-nums shrink-0">
+                      {formatCurrency(e.total)}
+                      <span className="text-muted-foreground ml-2">
+                        {totalExpenses > 0 ? `${((e.total / totalExpenses) * 100).toFixed(0)}%` : ""}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-red-500/70"
+                      style={{
+                        width: `${totalExpenses > 0 ? (e.total / totalExpenses) * 100 : 0}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {isConsolidated ? (
         <Card>
