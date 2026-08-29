@@ -6,7 +6,8 @@ import {
   getConsolidatedBalance,
   getMonthlySummary,
 } from "./cashflow";
-import { addMonths, currentMonthKey, parseDateOnly } from "./date-only";
+import { addDays, addMonths, currentMonthKey, parseDateOnly, todayDateOnly } from "./date-only";
+import { formatDate } from "./format";
 
 beforeEach(resetDb);
 
@@ -169,5 +170,93 @@ describe("getMonthlySummary", () => {
 
     const meses = await getMonthlySummary([company.id], 6);
     expect(meses.find((m) => m.key === currentMonthKey())?.income).toBe(0);
+  });
+});
+
+describe("getBalanceProjection — o que já venceu", () => {
+  async function seedVencidoEFuturo() {
+    const { company } = await seedCompanyWithAccount(1000);
+    const hoje = todayDateOnly();
+    await testPrisma.scheduledEntry.createMany({
+      data: [
+        // Venceu e não foi pago: continua devido.
+        {
+          companyId: company.id,
+          type: "PAYABLE",
+          description: "Boleto atrasado",
+          amount: 200,
+          dueDate: parseDateOnly(addDays(hoje, -40)),
+          status: "OVERDUE",
+        },
+        {
+          companyId: company.id,
+          type: "RECEIVABLE",
+          description: "A receber daqui a 10 dias",
+          amount: 300,
+          dueDate: parseDateOnly(addDays(hoje, 10)),
+          status: "PENDING",
+        },
+      ],
+    });
+    return company;
+  }
+
+  it("mantém a linha do tempo andando só para frente", async () => {
+    // Antes, o vencido virava um ponto na data passada em que venceu, e o
+    // eixo do gráfico ia de "Hoje" para trás antes de ir para frente.
+    const company = await seedVencidoEFuturo();
+    const { points } = await getBalanceProjection([company.id], 30);
+
+    expect(points.map((p) => p.label)).toEqual(["Hoje", "Vencido", formatDate(parseDateOnly(addDays(todayDateOnly(), 10)))]);
+    for (let i = 1; i < points.length; i++) {
+      expect(points[i].date >= points[i - 1].date).toBe(true);
+    }
+  });
+
+  it("não mexe no saldo de hoje, mas soma o vencido no total projetado", async () => {
+    const company = await seedVencidoEFuturo();
+    const result = await getBalanceProjection([company.id], 30);
+
+    expect(result.currentBalance).toBe(1000); // saldo real em conta
+    expect(result.overdue).toBe(-200);
+    expect(result.points[1].balance).toBe(800); // degrau do vencido
+    expect(result.projectedBalance).toBe(1100); // 1000 - 200 + 300
+  });
+
+  it("sem nada vencido, não inventa o degrau", async () => {
+    const { company } = await seedCompanyWithAccount(500);
+    await testPrisma.scheduledEntry.create({
+      data: {
+        companyId: company.id,
+        type: "RECEIVABLE",
+        description: "A receber",
+        amount: 100,
+        dueDate: parseDateOnly(addDays(todayDateOnly(), 5)),
+        status: "PENDING",
+      },
+    });
+
+    const { points, overdue } = await getBalanceProjection([company.id], 30);
+    expect(overdue).toBe(0);
+    expect(points.map((p) => p.label)).not.toContain("Vencido");
+  });
+
+  it("junta num degrau só vários vencimentos no mesmo dia", async () => {
+    const { company } = await seedCompanyWithAccount(0);
+    const dia = parseDateOnly(addDays(todayDateOnly(), 7));
+    await testPrisma.scheduledEntry.createMany({
+      data: [1, 2, 3].map((n) => ({
+        companyId: company.id,
+        type: "PAYABLE" as const,
+        description: `Boleto ${n}`,
+        amount: 100,
+        dueDate: dia,
+        status: "PENDING" as const,
+      })),
+    });
+
+    const { points } = await getBalanceProjection([company.id], 30);
+    expect(points).toHaveLength(2); // "Hoje" + um único degrau
+    expect(points[1].balance).toBe(-300);
   });
 });

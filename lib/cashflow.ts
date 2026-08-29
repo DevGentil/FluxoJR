@@ -85,17 +85,30 @@ export async function getBalanceProjection(companyIds: string[], days: 30 | 60 |
 
   // Um ponto por DIA, não por lançamento: cinco boletos vencendo na mesma
   // data são um degrau só na linha, e não cinco rótulos repetidos.
+  //
+  // O que já venceu não fica na data passada em que venceu — isso fazia a
+  // linha do tempo andar para trás antes de andar para frente. Vira um
+  // degrau próprio logo depois de "Hoje", porque é dinheiro que sai (ou
+  // entra) assim que for acertado. "Hoje" continua sendo o saldo real em
+  // conta; o degrau seguinte mostra quanto dele já está comprometido.
+  let overdue = 0;
   const deltaByDay = new Map<string, number>();
   for (const entry of pending) {
     const day = toDateOnly(entry.dueDate);
     const delta = signedAmount(entry.type === "RECEIVABLE" ? "INCOME" : "EXPENSE", entry.amount);
-    deltaByDay.set(day, (deltaByDay.get(day) ?? 0) + delta);
+    if (day <= today) overdue += delta;
+    else deltaByDay.set(day, (deltaByDay.get(day) ?? 0) + delta);
   }
 
   const points: ProjectionPoint[] = [
     { label: "Hoje", date: parseDateOnly(today), balance: currentBalance },
   ];
   let running = currentBalance;
+
+  if (overdue !== 0) {
+    running += overdue;
+    points.push({ label: "Vencido", date: parseDateOnly(today), balance: running });
+  }
 
   for (const day of [...deltaByDay.keys()].sort()) {
     running += deltaByDay.get(day)!;
@@ -108,7 +121,7 @@ export async function getBalanceProjection(companyIds: string[], days: 30 | 60 |
     });
   }
 
-  return { currentBalance, projectedBalance: running, points };
+  return { currentBalance, projectedBalance: running, overdue, points };
 }
 
 export async function getMonthlySummary(companyIds: string[], months = 6) {
