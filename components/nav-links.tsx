@@ -14,6 +14,8 @@ import {
   ScrollText,
   Wallet,
   Stethoscope,
+  Users,
+  ClipboardList,
 } from "lucide-react";
 import {
   SidebarMenu,
@@ -29,6 +31,8 @@ const links = [
   { href: "/categorias", label: "Categorias", icon: Tags },
   { href: "/fornecedores", label: "Fornecedores", icon: Truck },
   { href: "/repasses-medicos", label: "Repasses Médicos", icon: Stethoscope },
+  { href: "/medicos", label: "Médicos", icon: Users },
+  { href: "/operacao", label: "Operação", icon: ClipboardList },
   { href: "/contas-bancarias", label: "Contas Bancárias", icon: Landmark },
   { href: "/relatorios", label: "Relatórios", icon: FileBarChart },
   { href: "/balanco", label: "Balanço", icon: ScrollText },

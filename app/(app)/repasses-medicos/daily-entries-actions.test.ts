@@ -6,7 +6,7 @@ import {
   deleteDailyEntry,
   toggleDailyEntryPaid,
 } from "./daily-entries-actions";
-import { deleteServiceItem } from "./service-items-actions";
+import { deleteServiceItem } from "@/app/(app)/operacao/service-items-actions";
 
 beforeEach(resetDb);
 

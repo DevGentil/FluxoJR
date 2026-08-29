@@ -136,9 +136,16 @@ export function summarizeDailyEntries(entries: DailyEntry[], brackets: TaxBracke
   return t;
 }
 
+/** Só o que é preciso para chegar ao valor do dia — quem quer apenas o
+ * total não precisa carregar o item do catálogo de cada linha. */
+export interface EntryValue {
+  amount: DecimalLike | null;
+  lines: { quantity: DecimalLike; rate: DecimalLike }[];
+}
+
 /** Valor de um único lançamento: o digitado ou a soma das linhas. É a
  * mesma conta que a planilha faz na coluna "Valor". */
-export function entryAmount(entry: DailyEntry): number {
+export function entryAmount(entry: EntryValue): number {
   if (entry.lines.length === 0) return Number(entry.amount ?? 0);
   return entry.lines.reduce((s, l) => s + Number(l.quantity) * Number(l.rate), 0);
 }

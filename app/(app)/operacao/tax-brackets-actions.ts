@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { revalidatePath } from "next/cache";
+import { revalidateRepassesModule } from "@/lib/revalidate-repasses";
 import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
@@ -43,7 +43,7 @@ export async function createTaxBracket(_prev: ActionState, formData: FormData): 
     const companyId = await getActiveCompanyId();
     await prisma.taxBracket.create({ data: { ...result.data, companyId } });
 
-    revalidatePath("/repasses-medicos");
+    revalidateRepassesModule();
   });
 }
 
@@ -64,7 +64,7 @@ export async function updateTaxBracket(
     });
     if (count === 0) throw new Error("Faixa não encontrada.");
 
-    revalidatePath("/repasses-medicos");
+    revalidateRepassesModule();
   });
 }
 
@@ -75,6 +75,6 @@ export async function deleteTaxBracket(id: string): Promise<ActionState> {
     const { count } = await prisma.taxBracket.deleteMany({ where: { id, companyId } });
     if (count === 0) throw new Error("Faixa não encontrada.");
 
-    revalidatePath("/repasses-medicos");
+    revalidateRepassesModule();
   });
 }

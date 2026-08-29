@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { revalidatePath } from "next/cache";
+import { revalidateRepassesModule } from "@/lib/revalidate-repasses";
 import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
@@ -47,7 +47,7 @@ export async function createServiceItem(_prev: ActionState, formData: FormData):
     const companyId = await getActiveCompanyId();
     await prisma.serviceItem.create({ data: { ...result.data, companyId } });
 
-    revalidatePath("/repasses-medicos");
+    revalidateRepassesModule();
   });
 }
 
@@ -68,7 +68,7 @@ export async function updateServiceItem(
     });
     if (count === 0) throw new Error("Item não encontrado.");
 
-    revalidatePath("/repasses-medicos");
+    revalidateRepassesModule();
   });
 }
 
@@ -87,6 +87,6 @@ export async function deleteServiceItem(id: string): Promise<ActionState> {
       );
     }
 
-    revalidatePath("/repasses-medicos");
+    revalidateRepassesModule();
   });
 }

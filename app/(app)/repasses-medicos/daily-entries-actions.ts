@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateRepassesModule } from "@/lib/revalidate-repasses";
 import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
@@ -96,7 +96,7 @@ export async function createDailyEntry(input: DailyEntryInput): Promise<{ error?
       },
     });
 
-    revalidatePath("/repasses-medicos");
+    revalidateRepassesModule();
     return {};
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível salvar o lançamento." };
@@ -134,7 +134,7 @@ export async function updateDailyEntry(id: string, input: DailyEntryInput): Prom
       });
     });
 
-    revalidatePath("/repasses-medicos");
+    revalidateRepassesModule();
     return {};
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível salvar o lançamento." };
@@ -148,7 +148,7 @@ export async function deleteDailyEntry(id: string): Promise<{ error?: string }> 
     const { count } = await prisma.doctorDailyEntry.deleteMany({ where: { id, companyId } });
     if (count === 0) return { error: "Lançamento não encontrado." };
 
-    revalidatePath("/repasses-medicos");
+    revalidateRepassesModule();
     return {};
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível excluir o lançamento." };
@@ -164,7 +164,7 @@ export async function toggleDailyEntryPaid(id: string, paid: boolean): Promise<{
     const { count } = await prisma.doctorDailyEntry.updateMany({ where: { id, companyId }, data: { paid } });
     if (count === 0) return { error: "Lançamento não encontrado." };
 
-    revalidatePath("/repasses-medicos");
+    revalidateRepassesModule();
     return {};
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível atualizar o lançamento." };

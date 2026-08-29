@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateRepassesModule } from "@/lib/revalidate-repasses";
 import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
@@ -66,7 +66,7 @@ export async function createDoctor(input: DoctorInput): Promise<{ error?: string
       },
     });
 
-    revalidatePath("/repasses-medicos");
+    revalidateRepassesModule();
     return {};
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível salvar o médico." };
@@ -117,7 +117,7 @@ export async function updateDoctor(id: string, input: DoctorInput): Promise<{ er
       });
     });
 
-    revalidatePath("/repasses-medicos");
+    revalidateRepassesModule();
     return {};
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível salvar o médico." };
@@ -131,7 +131,7 @@ export async function deleteDoctor(id: string): Promise<{ error?: string }> {
     const { count } = await prisma.doctor.deleteMany({ where: { id, companyId } });
     if (count === 0) return { error: "Médico não encontrado." };
 
-    revalidatePath("/repasses-medicos");
+    revalidateRepassesModule();
     return {};
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível excluir o médico." };
@@ -155,7 +155,7 @@ export async function markContractChecked(doctorId: string): Promise<{ error?: s
       data: { lastCheckedAt: new Date() },
     });
 
-    revalidatePath("/repasses-medicos");
+    revalidateRepassesModule();
     return {};
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível registrar a conferência." };
