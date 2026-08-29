@@ -93,7 +93,14 @@ model Document {
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  // Quando preenchido, o arquivo é do MÉDICO e aparece na ficha dele — o
+  // contrato assinado, um aditivo, o diploma. Nulo é documento da empresa,
+  // que é como todos nasceram.
+  doctorId String?
+  doctor   Doctor? @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
   @@index([companyId])
+  @@index([doctorId])
 }
 
 // DRE realizado (fechado pelo contador/financeiro, ex: em Excel ou PDF) de
@@ -311,6 +318,7 @@ model Doctor {
 
   serviceRates DoctorServiceRate[]
   dailyEntries DoctorDailyEntry[]
+  documents    Document[]
 }
 
 // Categoria semantica do item, usada pelas metricas (conversao = exames
