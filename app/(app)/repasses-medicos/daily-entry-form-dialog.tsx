@@ -57,14 +57,23 @@ interface Props {
     notes: string | null;
     lines: { id: string; serviceItemId: string; quantity: number }[];
   };
+  /** Quando vem de fora, o diálogo é controlado e não desenha o próprio
+   * gatilho — é assim que a tabela usa UM diálogo para todas as linhas em
+   * vez de montar um por linha (com a base real seriam centenas, cada um
+   * segurando a lista inteira de médicos e contratos). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 function today() {
   return todayDateOnly();
 }
 
-export function DailyEntryFormDialog({ doctors, entry }: Props) {
-  const [open, setOpen] = useState(false);
+export function DailyEntryFormDialog({ doctors, entry, open: openProp, onOpenChange }: Props) {
+  const controlado = openProp !== undefined;
+  const [openInterno, setOpenInterno] = useState(false);
+  const open = controlado ? openProp : openInterno;
+  const setOpen = (v: boolean) => (controlado ? onOpenChange?.(v) : setOpenInterno(v));
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const nextId = useRef(0);
@@ -172,16 +181,17 @@ export function DailyEntryFormDialog({ doctors, entry }: Props) {
         if (!v) reset();
       }}
     >
-      {entry ? (
-        <DialogTrigger render={<Button variant="ghost" size="icon" />}>
-          <Pencil className="size-4" />
-        </DialogTrigger>
-      ) : (
-        <DialogTrigger render={<Button />}>
-          <Plus />
-          Lançar dia
-        </DialogTrigger>
-      )}
+      {!controlado &&
+        (entry ? (
+          <DialogTrigger render={<Button variant="ghost" size="icon" />}>
+            <Pencil className="size-4" />
+          </DialogTrigger>
+        ) : (
+          <DialogTrigger render={<Button />}>
+            <Plus />
+            Lançar dia
+          </DialogTrigger>
+        ))}
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{entry ? "Editar lançamento" : "Lançar dia de atendimento"}</DialogTitle>

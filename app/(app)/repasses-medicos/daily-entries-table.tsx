@@ -1,11 +1,22 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Search } from "lucide-react";
+import { Fragment, useMemo, useState, useTransition } from "react";
+import { ChevronDown, ChevronRight, Pencil, Search, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DeleteButton } from "@/components/delete-button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { DailyEntryFormDialog, type DoctorOption } from "./daily-entry-form-dialog";
 import { deleteDailyEntry } from "./daily-entries-actions";
@@ -37,10 +48,28 @@ function monthLabel(d: Date) {
  * planilhas por médico, onde cada aba é um mês com uma linha por dia. */
 export function DailyEntriesTable({ entries, doctors }: Props) {
   const [search, setSearch] = useState("");
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  // Só o mês mais recente abre sozinho. Com a base real são 2.483 dias, e
+  // abrir tudo põe milhares de linhas na tela de uma vez — a página levava
+  // dezenas de segundos para ficar utilizável. O resumo de cada mês fica na
+  // linha do cabeçalho, que é o que se olha primeiro de qualquer forma.
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    const maisRecente = entries.reduce(
+      (max, e) => (e.date.toISOString() > max ? e.date.toISOString() : max),
+      ""
+    );
+    return new Set(maisRecente ? [maisRecente.slice(0, 7)] : []);
+  });
+
+  // Um diálogo de edição e um de exclusão para a tabela inteira, abertos
+  // com a linha escolhida. Montar um par por linha punha centenas de
+  // componentes na árvore, cada um segurando a lista de médicos.
+  const [editando, setEditando] = useState<DailyEntryRow | null>(null);
+  const [excluindo, setExcluindo] = useState<DailyEntryRow | null>(null);
+  const [isDeleting, startDelete] = useTransition();
 
   function toggle(key: string) {
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -98,7 +127,7 @@ export function DailyEntriesTable({ entries, doctors }: Props) {
             </TableRow>
           )}
           {groups.map((group) => {
-            const isOpen = isSearching || !collapsed.has(group.key);
+            const isOpen = isSearching || expanded.has(group.key);
             const total = group.rows.reduce((s, r) => s + r.value, 0);
             const pagos = group.rows.filter((r) => r.paid).length;
             return (
@@ -153,22 +182,22 @@ export function DailyEntriesTable({ entries, doctors }: Props) {
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-1">
-                          <DailyEntryFormDialog
-                            doctors={doctors}
-                            entry={{
-                              id: r.id,
-                              doctorId: r.doctorId,
-                              date: r.date,
-                              amount: r.amount,
-                              paid: r.paid,
-                              notes: r.notes,
-                              lines: r.lines,
-                            }}
-                          />
-                          <DeleteButton
-                            action={deleteDailyEntry.bind(null, r.id)}
-                            title={`Excluir o lançamento de ${r.doctorName} em ${formatDate(r.date)}?`}
-                          />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setEditando(r)}
+                            aria-label={`Editar o lançamento de ${r.doctorName} em ${formatDate(r.date)}`}
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setExcluindo(r)}
+                            aria-label={`Excluir o lançamento de ${r.doctorName} em ${formatDate(r.date)}`}
+                          >
+                            <Trash2 className="size-4 text-destructive" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -178,6 +207,49 @@ export function DailyEntriesTable({ entries, doctors }: Props) {
           })}
         </TableBody>
       </Table>
+
+      {/* A `key` força o formulário a remontar ao trocar de linha — sem ela
+          o diálogo reaproveitado ficaria com os valores do lançamento
+          anterior, porque o estado inicial só é lido na montagem. */}
+      {editando && (
+        <DailyEntryFormDialog
+          key={editando.id}
+          doctors={doctors}
+          entry={editando}
+          open
+          onOpenChange={(v) => !v && setEditando(null)}
+        />
+      )}
+
+      <AlertDialog open={excluindo != null} onOpenChange={(v) => !v && setExcluindo(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {excluindo
+                ? `Excluir o lançamento de ${excluindo.doctorName} em ${formatDate(excluindo.date)}?`
+                : ""}
+            </AlertDialogTitle>
+            <AlertDialogDescription>Essa ação não pode ser desfeita.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isDeleting}
+              onClick={() => {
+                const alvo = excluindo;
+                if (!alvo) return;
+                startDelete(async () => {
+                  const result = await deleteDailyEntry(alvo.id);
+                  if (result.error) toast.error(result.error);
+                  setExcluindo(null);
+                });
+              }}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
