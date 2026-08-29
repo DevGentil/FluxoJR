@@ -87,6 +87,9 @@ export interface MetricRow {
   hoursWorked: number | null;
   hourlyValue: number;
   totalValue: number;
+  /** Parte do repasse lançada só como valor do dia, sem detalhe por item —
+   * entra no custo mas não tem como virar contagem nem margem. */
+  undetailedValue: number;
   revenue: number;
   tax: number;
   operationalCost: number;
@@ -104,6 +107,7 @@ interface EntityTotals {
   examValue: number;
   hourlyValue: number;
   totalValue: number;
+  undetailedValue: number;
   revenue: number;
   tax: number;
   operationalCost: number;
@@ -122,6 +126,7 @@ function emptyTotals(entityId: string, entityName: string): EntityTotals {
     examValue: 0,
     hourlyValue: 0,
     totalValue: 0,
+    undetailedValue: 0,
     revenue: 0,
     tax: 0,
     operationalCost: 0,
@@ -144,6 +149,7 @@ function aggregateByEntity(rows: MetricRow[]): EntityTotals[] {
     entry.examValue += r.examValue;
     entry.hourlyValue += r.hourlyValue;
     entry.totalValue += r.totalValue;
+    entry.undetailedValue += r.undetailedValue;
     entry.revenue += r.revenue;
     entry.tax += r.tax;
     entry.operationalCost += r.operationalCost;
@@ -210,6 +216,7 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
   }, [filteredRows, granularity]);
 
   const semPreco = filteredRows.reduce((acc, r) => acc + r.unpricedCost, 0);
+  const semDetalhe = filteredRows.reduce((acc, r) => acc + r.undetailedValue, 0);
 
   return (
     <div className="space-y-3">
@@ -243,6 +250,14 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
           {formatCurrency(semPreco)} de repasse em itens sem preço cadastrado (plantão, auxílio ou preço ainda
           em branco). Entram no repasse, mas ficam de fora da receita e da margem — senão a conta compararia a
           receita de alguns itens com o custo de todos.
+        </p>
+      )}
+      {semDetalhe > 0 && (
+        <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+          <Info className="size-3.5 shrink-0 mt-0.5" />
+          {formatCurrency(semDetalhe)} lançados só como valor do dia, sem detalhe por item. Contam no repasse,
+          mas não em consultas, exames nem margem — para o dia aparecer nessas colunas, detalhe os itens no
+          lançamento.
         </p>
       )}
 

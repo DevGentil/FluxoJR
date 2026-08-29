@@ -61,19 +61,19 @@ model Company {
   groupId String?
   group   Group?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
 
-  accounts            Account[]
-  categories          Category[]
-  suppliers           Supplier[]
-  transactions        Transaction[]
-  scheduledEntries    ScheduledEntry[]
-  importBatches       ImportBatch[]
-  documents           Document[]
-  cashClosings        CashClosing[]
-  dreReports          DreReport[]
-  doctors             Doctor[]
-  serviceItems        ServiceItem[]
-  taxBrackets         TaxBracket[]
-  doctorPeriodReports DoctorPeriodReport[]
+  accounts           Account[]
+  categories         Category[]
+  suppliers          Supplier[]
+  transactions       Transaction[]
+  scheduledEntries   ScheduledEntry[]
+  importBatches      ImportBatch[]
+  documents          Document[]
+  cashClosings       CashClosing[]
+  dreReports         DreReport[]
+  doctors            Doctor[]
+  serviceItems       ServiceItem[]
+  taxBrackets        TaxBracket[]
+  doctorDailyEntries DoctorDailyEntry[]
 
   incomingTransfers Transaction[] @relation("TransactionTransfer")
 }
@@ -309,8 +309,8 @@ model Doctor {
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  serviceRates  DoctorServiceRate[]
-  periodReports DoctorPeriodReport[]
+  serviceRates DoctorServiceRate[]
+  dailyEntries DoctorDailyEntry[]
 }
 
 // Categoria semantica do item, usada pelas metricas (conversao = exames
@@ -358,7 +358,7 @@ model ServiceItem {
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   doctorRates DoctorServiceRate[]
-  reportLines DoctorPeriodLine[]
+  dailyLines  DoctorDailyLine[]
 
   @@unique([companyId, name])
 }
@@ -408,14 +408,28 @@ model DoctorServiceRate {
 // congelada) + linhas de contagem por tipo de exame, OU (médico HOURLY)
 // horas trabalhadas com a taxa/hora congelada. Os campos usados dependem
 // do paymentModel do médico no momento do lançamento.
-// Lançamento mensal de um médico. Tudo que ele fez no mês vira linha em
-// DoctorPeriodLine — não há mais campo fixo de consulta ou de hora.
-model DoctorPeriodReport {
-  id          String   @id @default(cuid())
-  competencia DateTime // primeiro dia do mês de referência
-  notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+// Lançamento de um dia de trabalho do médico — é assim que a operação
+// registra na prática: as 83 planilhas por médico têm uma linha por dia
+// ("07/10  R$332"), agrupadas em uma aba por mês.
+//
+// O valor do dia vem de um de dois jeitos, e os dois convivem:
+//  - `amount` preenchido: valor digitado direto, como na planilha. Serve
+//    para importar o histórico e para quem não quer detalhar.
+//  - `lines` preenchidas: o detalhe por item, e o valor é calculado pelo
+//    contrato. Além de evitar erro de soma, é o que devolve a QUANTIDADE
+//    de consultas e exames — sem ela não há taxa de conversão.
+//
+// Não há chave única por (médico, dia): nos dados reais existem 7 casos
+// de dois lançamentos no mesmo dia (blocos diferentes da planilha).
+model DoctorDailyEntry {
+  id        String   @id @default(cuid())
+  date      DateTime // dia do atendimento
+  amount    Decimal? @db.Decimal(14, 2)
+  // O "PG"/"PAGO" que a planilha anota na coluna de observação.
+  paid      Boolean  @default(false)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   doctorId String
   doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
@@ -423,24 +437,26 @@ model DoctorPeriodReport {
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  lines DoctorPeriodLine[]
+  lines DoctorDailyLine[]
 
-  @@unique([doctorId, competencia])
+  @@index([companyId, date])
+  @@index([doctorId, date])
 }
 
-// Uma linha do lançamento: quantos de um item o médico fez no mês, com a
-// taxa congelada no momento do lançamento. Quantidade é decimal porque
-// cobre tanto "42 consultas" quanto "40,5 horas de plantão".
-model DoctorPeriodLine {
+// Detalhe opcional de um lançamento diário: quantos de um item foram
+// feitos, com a taxa congelada no momento do lançamento — se o contrato
+// mudar depois (e muda: são 13 reajustes reais nas planilhas), o
+// histórico não se mexe.
+model DoctorDailyLine {
   id       String  @id @default(cuid())
   quantity Decimal @db.Decimal(10, 2)
-  rate     Decimal @db.Decimal(14, 2) // congelada no lançamento
+  rate     Decimal @db.Decimal(14, 2)
 
-  reportId String
-  report   DoctorPeriodReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  entryId String
+  entry   DoctorDailyEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
 
   serviceItemId String
   serviceItem   ServiceItem @relation(fields: [serviceItemId], references: [id], onDelete: Restrict)
 
-  @@unique([reportId, serviceItemId])
+  @@unique([entryId, serviceItemId])
 }

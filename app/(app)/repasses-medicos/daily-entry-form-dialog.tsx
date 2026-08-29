@@ -6,13 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -24,14 +20,13 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { formatCurrency, toDateInputValue } from "@/lib/format";
-import { createPeriodReport, updatePeriodReport, type PeriodReportInput } from "./reports-actions";
+import { createDailyEntry, updateDailyEntry, type DailyEntryInput } from "./daily-entries-actions";
 
 export interface DoctorOption {
   id: string;
   name: string;
-  /** Só os itens que esse médico tem contratados — não dá para lançar um
-   * item sem valor combinado com ele. */
-  serviceRates: { serviceItemId: string; serviceItemName: string; rate: number }[];
+  /** O contrato: só os itens que esse médico tem valor combinado. */
+  serviceRates: { serviceItemId: string; serviceItemName: string; rate: number; payer: string | null }[];
 }
 
 interface LineState {
@@ -42,36 +37,38 @@ interface LineState {
 
 interface Props {
   doctors: DoctorOption[];
-  report?: {
+  entry?: {
     id: string;
     doctorId: string;
-    competencia: Date;
+    date: Date;
+    amount: number | null;
+    paid: boolean;
     notes: string | null;
     lines: { id: string; serviceItemId: string; quantity: number }[];
   };
 }
 
-function currentMonth() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+function today() {
+  return new Date().toISOString().slice(0, 10);
 }
 
-export function ReportFormDialog({ doctors, report }: Props) {
+export function DailyEntryFormDialog({ doctors, entry }: Props) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const nextId = useRef(0);
 
-  const [doctorId, setDoctorId] = useState(report?.doctorId ?? doctors[0]?.id ?? "");
-  const [competencia, setCompetencia] = useState(
-    report ? toDateInputValue(report.competencia).slice(0, 7) : currentMonth()
-  );
-  const [notes, setNotes] = useState(report?.notes ?? "");
+  const [doctorId, setDoctorId] = useState(entry?.doctorId ?? doctors[0]?.id ?? "");
+  const [date, setDate] = useState(entry ? toDateInputValue(entry.date) : today());
+  const [amount, setAmount] = useState(entry?.amount != null ? String(entry.amount) : "");
+  const [paid, setPaid] = useState(entry?.paid ?? false);
+  const [notes, setNotes] = useState(entry?.notes ?? "");
   const [lines, setLines] = useState<LineState[]>(
-    report?.lines.map((l) => ({ id: l.id, serviceItemId: l.serviceItemId, quantity: String(l.quantity) })) ?? []
+    entry?.lines.map((l) => ({ id: l.id, serviceItemId: l.serviceItemId, quantity: String(l.quantity) })) ?? []
   );
 
   const selectedDoctor = doctors.find((d) => d.id === doctorId);
+  const detalhando = lines.length > 0;
 
   function newId() {
     nextId.current += 1;
@@ -90,7 +87,8 @@ export function ReportFormDialog({ doctors, report }: Props) {
     setLines((prev) => prev.filter((l) => l.id !== id));
   }
 
-  const total = useMemo(() => {
+  // Mesma conta da coluna "Valor" da planilha, só que somada pelo sistema.
+  const totalDetalhado = useMemo(() => {
     if (!selectedDoctor) return 0;
     return lines.reduce((sum, l) => {
       const rate = selectedDoctor.serviceRates.find((r) => r.serviceItemId === l.serviceItemId)?.rate ?? 0;
@@ -98,11 +96,15 @@ export function ReportFormDialog({ doctors, report }: Props) {
     }, 0);
   }, [lines, selectedDoctor]);
 
+  const valorDoDia = detalhando ? totalDetalhado : Number(amount) || 0;
+
   function reset() {
     setError(null);
-    if (!report) {
+    if (!entry) {
       setDoctorId(doctors[0]?.id ?? "");
-      setCompetencia(currentMonth());
+      setDate(today());
+      setAmount("");
+      setPaid(false);
       setNotes("");
       setLines([]);
     }
@@ -110,9 +112,11 @@ export function ReportFormDialog({ doctors, report }: Props) {
 
   function handleSubmit() {
     setError(null);
-    const payload: PeriodReportInput = {
+    const payload: DailyEntryInput = {
       doctorId,
-      competencia,
+      date,
+      amount: detalhando ? undefined : Number(amount) || 0,
+      paid,
       notes: notes || undefined,
       lines: lines
         .filter((l) => l.serviceItemId || l.quantity)
@@ -120,18 +124,18 @@ export function ReportFormDialog({ doctors, report }: Props) {
     };
 
     startTransition(async () => {
-      const result = report ? await updatePeriodReport(report.id, payload) : await createPeriodReport(payload);
+      const result = entry ? await updateDailyEntry(entry.id, payload) : await createDailyEntry(payload);
       if (result.error) {
         setError(result.error);
         return;
       }
-      toast.success(report ? "Repasse atualizado." : "Repasse salvo.");
+      toast.success(entry ? "Lançamento atualizado." : "Lançamento salvo.");
       setOpen(false);
       reset();
     });
   }
 
-  const contractLabels = Object.fromEntries(
+  const contratoLabels = Object.fromEntries(
     (selectedDoctor?.serviceRates ?? []).map((r) => [r.serviceItemId, r.serviceItemName])
   );
 
@@ -143,20 +147,23 @@ export function ReportFormDialog({ doctors, report }: Props) {
         if (!v) reset();
       }}
     >
-      {report ? (
+      {entry ? (
         <DialogTrigger render={<Button variant="ghost" size="icon" />}>
           <Pencil className="size-4" />
         </DialogTrigger>
       ) : (
         <DialogTrigger render={<Button />}>
           <Plus />
-          Novo repasse
+          Lançar dia
         </DialogTrigger>
       )}
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{report ? "Editar repasse" : "Novo repasse"}</DialogTitle>
-          <DialogDescription>O que o médico fez no mês, item a item.</DialogDescription>
+          <DialogTitle>{entry ? "Editar lançamento" : "Lançar dia de atendimento"}</DialogTitle>
+          <DialogDescription>
+            Informe o valor do dia, ou detalhe por item para o sistema somar pelo contrato — detalhando, as
+            métricas de conversão passam a funcionar.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
@@ -185,19 +192,56 @@ export function ReportFormDialog({ doctors, report }: Props) {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="competencia">Mês</Label>
-              <Input
-                id="competencia"
-                type="month"
-                value={competencia}
-                onChange={(e) => setCompetencia(e.target.value)}
-                required
-              />
+              <Label htmlFor="date">Data</Label>
+              <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
             </div>
           </div>
 
+          {/* O contrato do médico, do mesmo jeito que a planilha mostra ao
+              lado dos lançamentos — serve de consulta na hora de somar. */}
+          {selectedDoctor && selectedDoctor.serviceRates.length > 0 && (
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs font-medium mb-2 text-muted-foreground">
+                Contrato de {selectedDoctor.name}
+              </p>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                {selectedDoctor.serviceRates.map((r) => (
+                  <div key={r.serviceItemId} className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 truncate">
+                      {r.serviceItemName}
+                      {r.payer && (
+                        <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                          {r.payer === "CT" ? "CT" : "Part"}
+                        </Badge>
+                      )}
+                    </span>
+                    <span className="tabular-nums shrink-0">{formatCurrency(r.rate)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!detalhando && (
+            <div className="space-y-2">
+              <Label htmlFor="amount">Valor do dia (R$)</Label>
+              <Input
+                id="amount"
+                type="number"
+                step="0.01"
+                min="0"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="Ex: 332,00"
+              />
+              <p className="text-xs text-muted-foreground">
+                É o total do dia, como na planilha. Se preferir detalhar, adicione os itens abaixo.
+              </p>
+            </div>
+          )}
+
           <div className="space-y-2">
-            <Label>Itens do mês</Label>
+            <Label>Detalhe por item (opcional)</Label>
             <div className="space-y-2">
               {lines.map((line) => {
                 const rate = selectedDoctor?.serviceRates.find(
@@ -206,12 +250,12 @@ export function ReportFormDialog({ doctors, report }: Props) {
                 return (
                   <div key={line.id} className="flex items-center gap-2">
                     <Select
-                      items={contractLabels}
+                      items={contratoLabels}
                       value={line.serviceItemId}
                       onValueChange={(v) => updateLine(line.id, "serviceItemId", v ?? "")}
                     >
                       <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Item" />
+                        <SelectValue placeholder="Item do contrato" />
                       </SelectTrigger>
                       <SelectContent>
                         {(selectedDoctor?.serviceRates ?? []).map((r) => (
@@ -230,7 +274,7 @@ export function ReportFormDialog({ doctors, report }: Props) {
                       placeholder="Qtd"
                       className="w-24"
                     />
-                    <span className="w-24 text-right text-sm text-muted-foreground tabular-nums">
+                    <span className="w-28 text-right text-sm text-muted-foreground tabular-nums">
                       {rate !== undefined ? formatCurrency((Number(line.quantity) || 0) * rate) : "—"}
                     </span>
                     <Button type="button" variant="ghost" size="icon" onClick={() => removeLine(line.id)}>
@@ -251,7 +295,7 @@ export function ReportFormDialog({ doctors, report }: Props) {
               </Button>
               {selectedDoctor && selectedDoctor.serviceRates.length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Esse médico não tem nenhum item contratado — edite o médico primeiro.
+                  Esse médico não tem contrato cadastrado — edite o médico primeiro.
                 </p>
               )}
             </div>
@@ -259,12 +303,17 @@ export function ReportFormDialog({ doctors, report }: Props) {
 
           <div className="space-y-2">
             <Label htmlFor="notes">Observações (opcional)</Label>
-            <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
           </div>
 
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={paid} onCheckedChange={(c) => setPaid(Boolean(c))} />
+            Já pago
+          </label>
+
           <div className="rounded-lg border p-3 flex justify-between text-sm font-medium">
-            <span>Valor total do repasse</span>
-            <span className="tabular-nums">{formatCurrency(total)}</span>
+            <span>{detalhando ? "Valor do dia (somado pelo contrato)" : "Valor do dia"}</span>
+            <span className="tabular-nums">{formatCurrency(valorDoDia)}</span>
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}

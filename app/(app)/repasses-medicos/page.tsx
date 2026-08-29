@@ -11,12 +11,12 @@ import { ServiceItemFormDialog } from "./service-item-form-dialog";
 import { ServiceCatalogTable } from "./service-catalog-table";
 import { TaxBracketFormDialog } from "./tax-bracket-form-dialog";
 import { deleteTaxBracket } from "./tax-brackets-actions";
-import { ReportFormDialog } from "./report-form-dialog";
-import { ReportsTable } from "./reports-table";
+import { DailyEntryFormDialog } from "./daily-entry-form-dialog";
+import { DailyEntriesTable, type DailyEntryRow } from "./daily-entries-table";
 import { MetricsTable, type MetricRow } from "./metrics-table";
 import { MonthRangeFilter } from "./month-range-filter";
 import { CostCompositionChart, ConversionChart } from "./metrics-charts";
-import { summarizePeriodLines } from "@/lib/doctor-period";
+import { summarizeDailyEntries, entryAmount } from "@/lib/doctor-period";
 import { deleteDoctor } from "./doctors-actions";
 import { CheckContractButton } from "./check-contract-button";
 import { Wallet, Activity, Percent, TrendingUp, TrendingDown } from "lucide-react";
@@ -27,6 +27,16 @@ interface Props {
 
 function monthKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** O filtro continua sendo por mês ("De"/"Até" no formato "YYYY-MM"), mas os
+ * lançamentos são diários — então vira um intervalo fechado no primeiro dia
+ * de "de" e aberto no primeiro dia do mês seguinte a "até". */
+function dateFilter(range: { from: string; to: string } | null) {
+  if (!range) return undefined;
+  const [toYear, toMonth] = range.to.split("-").map(Number);
+  if (!toYear || !toMonth) return undefined;
+  return { gte: new Date(`${range.from}-01T00:00:00`), lt: new Date(toYear, toMonth, 1) };
 }
 
 function monthPresets() {
@@ -163,11 +173,9 @@ async function ConsolidatedSummary({
   scopeLabel: string;
   range: { from: string; to: string } | null;
 }) {
-  const competenciaFilter = range
-    ? { gte: new Date(`${range.from}-01T00:00:00`), lte: new Date(`${range.to}-01T00:00:00`) }
-    : undefined;
+  const dateWhere = dateFilter(range);
 
-  const [companies, activeDoctors, taxBrackets, reports] = await Promise.all([
+  const [companies, activeDoctors, taxBrackets, entries] = await Promise.all([
     companyIds.length === 0
       ? []
       : prisma.company.findMany({ where: { id: { in: companyIds } }, orderBy: { name: "asc" } }),
@@ -176,10 +184,10 @@ async function ConsolidatedSummary({
       select: { companyId: true },
     }),
     prisma.taxBracket.findMany({ where: { companyId: { in: companyIds } }, orderBy: { minValue: "asc" } }),
-    prisma.doctorPeriodReport.findMany({
-      where: { companyId: { in: companyIds }, ...(competenciaFilter ? { competencia: competenciaFilter } : {}) },
+    prisma.doctorDailyEntry.findMany({
+      where: { companyId: { in: companyIds }, ...(dateWhere ? { date: dateWhere } : {}) },
       include: { company: { select: { name: true } }, lines: { include: { serviceItem: { select: { category: true, price: true, operationalCost: true } } } } },
-      orderBy: [{ competencia: "desc" }, { company: { name: "asc" } }],
+      orderBy: [{ date: "desc" }, { company: { name: "asc" } }],
     }),
   ]);
 
@@ -193,14 +201,15 @@ async function ConsolidatedSummary({
   }));
 
   // Na visão consolidada a "entidade" comparada dentro de cada período é a
-  // unidade, não o médico — as métricas em si são exatamente as mesmas.
-  const metricRows: MetricRow[] = reports.map((r) => {
-    const v = summarizePeriodLines(r.lines, brackets);
+  // unidade, não o médico — as métricas em si são exatamente as mesmas. Cada
+  // dia lançado vira uma linha; a MetricsTable agrupa por mês/trimestre/etc.
+  const metricRows: MetricRow[] = entries.map((e) => {
+    const v = summarizeDailyEntries([e], brackets);
     return {
-      id: r.id,
-      competencia: r.competencia,
-      entityId: r.companyId,
-      entityName: r.company.name,
+      id: e.id,
+      competencia: e.date,
+      entityId: e.companyId,
+      entityName: e.company.name,
       ...v,
     };
   });
@@ -385,11 +394,9 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
   }
 
   const companyId = scope.companyId;
-  const competenciaFilter = range
-    ? { gte: new Date(`${range.from}-01T00:00:00`), lte: new Date(`${range.to}-01T00:00:00`) }
-    : undefined;
+  const dateWhere = dateFilter(range);
 
-  const [doctors, serviceItems, taxBrackets, reports] = await Promise.all([
+  const [doctors, serviceItems, taxBrackets, entries] = await Promise.all([
     prisma.doctor.findMany({
       where: { companyId },
       include: { serviceRates: { include: { serviceItem: true } } },
@@ -397,10 +404,10 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
     }),
     prisma.serviceItem.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
     prisma.taxBracket.findMany({ where: { companyId }, orderBy: { minValue: "asc" } }),
-    prisma.doctorPeriodReport.findMany({
-      where: { companyId, ...(competenciaFilter ? { competencia: competenciaFilter } : {}) },
+    prisma.doctorDailyEntry.findMany({
+      where: { companyId, ...(dateWhere ? { date: dateWhere } : {}) },
       include: { doctor: true, lines: { include: { serviceItem: { select: { id: true, name: true, category: true, price: true, operationalCost: true } } } } },
-      orderBy: [{ competencia: "desc" }, { doctor: { name: "asc" } }],
+      orderBy: [{ date: "desc" }, { doctor: { name: "asc" } }],
     }),
   ]);
 
@@ -446,33 +453,38 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
       serviceItemId: r.serviceItemId,
       serviceItemName: r.serviceItem.name,
       rate: Number(r.rate),
+      payer: r.serviceItem.payer,
     })),
   }));
 
-  // Valores de cada repasse, derivados das linhas com a taxa congelada.
-  const reportsWithValues = reports.map((r) => {
-    const v = summarizePeriodLines(r.lines, brackets);
-    return {
-      id: r.id,
-      competencia: r.competencia,
-      doctorId: r.doctorId,
-      doctorName: r.doctor.name,
-      notes: r.notes,
-      ...v,
-      lines: r.lines.map((l) => ({
-        id: l.id,
-        serviceItemId: l.serviceItemId,
-        quantity: Number(l.quantity),
-      })),
-    };
-  });
+  // Cada dia lançado, com o valor que a planilha traz na coluna "Valor":
+  // o digitado direto ou a soma das linhas pela taxa congelada.
+  const entryRows: DailyEntryRow[] = entries.map((e) => ({
+    id: e.id,
+    date: e.date,
+    doctorId: e.doctorId,
+    doctorName: e.doctor.name,
+    amount: e.amount != null ? Number(e.amount) : null,
+    paid: e.paid,
+    notes: e.notes,
+    value: entryAmount(e),
+    lines: e.lines.map((l) => ({
+      id: l.id,
+      serviceItemId: l.serviceItemId,
+      serviceItemName: l.serviceItem.name,
+      quantity: Number(l.quantity),
+      rate: Number(l.rate),
+    })),
+  }));
 
   // Aqui a "entidade" comparada dentro de cada período é o médico (no
   // consolidado é a unidade) — as métricas em si são as mesmas.
-  const metricRows: MetricRow[] = reportsWithValues.map((r) => ({
-    ...r,
-    entityId: r.doctorId,
-    entityName: r.doctorName,
+  const metricRows: MetricRow[] = entries.map((e) => ({
+    id: e.id,
+    competencia: e.date,
+    entityId: e.doctorId,
+    entityName: e.doctor.name,
+    ...summarizeDailyEntries([e], brackets),
   }));
 
   const totalValue = metricRows.reduce((s, r) => s + r.totalValue, 0);
@@ -566,11 +578,16 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>{reports.length} repasse(s) lançado(s)</CardTitle>
-          <ReportFormDialog doctors={doctorOptions} />
+          <div>
+            <CardTitle>{entries.length} dia(s) lançado(s)</CardTitle>
+            <CardDescription>
+              Um lançamento por dia de atendimento, como nas planilhas — expanda o mês para ver os dias.
+            </CardDescription>
+          </div>
+          <DailyEntryFormDialog doctors={doctorOptions} />
         </CardHeader>
         <CardContent>
-          <ReportsTable reports={reportsWithValues} doctors={doctorOptions} />
+          <DailyEntriesTable entries={entryRows} doctors={doctorOptions} />
         </CardContent>
       </Card>
 
