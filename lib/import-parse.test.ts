@@ -19,7 +19,11 @@ describe("normalizeDate", () => {
   });
 
   it("converte um objeto Date", () => {
-    expect(normalizeDate(new Date(Date.UTC(2026, 7, 24)))).toBe("2026-08-24");
+    // É assim que a célula de data chega: o SheetJS (cellDates) devolve a
+    // meia-noite do fuso local, não do UTC. Ler os componentes locais é o
+    // que mantém o dia certo em qualquer fuso — passar por toISOString()
+    // devolveria o dia anterior a leste de Greenwich.
+    expect(normalizeDate(new Date(2026, 7, 24))).toBe("2026-08-24");
   });
 
   it("converte um número de série do Excel", () => {
@@ -76,5 +80,33 @@ describe("normalizeAmount", () => {
     expect(normalizeAmount(undefined)).toBeNull();
     expect(normalizeAmount(null)).toBeNull();
     expect(normalizeAmount({})).toBeNull();
+  });
+});
+
+describe("normalizeAmount — formato brasileiro sem centavos", () => {
+  it("lê o ponto como milhar quando vêm três casas", () => {
+    // Antes virava R$ 12,50: uma despesa de doze mil e quinhentos entrava
+    // na conta como doze reais e cinquenta.
+    expect(normalizeAmount("12.500")).toBe(12500);
+    expect(normalizeAmount("1.234")).toBe(1234);
+  });
+
+  it("lê milhar duplo em vez de descartar a linha", () => {
+    // Antes devolvia null e a linha era silenciosamente pulada na importação.
+    expect(normalizeAmount("1.234.567")).toBe(1234567);
+  });
+
+  it("preserva o sinal negativo no formato de milhar", () => {
+    expect(normalizeAmount("-2.000")).toBe(-2000);
+  });
+
+  it("continua lendo ponto decimal americano", () => {
+    expect(normalizeAmount("1.5")).toBe(1.5);
+    expect(normalizeAmount("1.50")).toBe(1.5);
+    expect(normalizeAmount("1234.56")).toBe(1234.56);
+  });
+
+  it("não confunde fração com milhar quando a parte inteira é zero", () => {
+    expect(normalizeAmount("0.500")).toBe(0.5);
   });
 });

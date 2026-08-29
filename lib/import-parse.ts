@@ -28,10 +28,20 @@ export async function parseSpreadsheetFile(file: File): Promise<ParsedFile> {
   return { headers, rows };
 }
 
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** "YYYY-MM-DD" pelos componentes locais do Date. */
+function localDateOnly(d: Date) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 /** Converte valores de data em texto (dd/mm/yyyy, yyyy-mm-dd) ou objetos Date em ISO (yyyy-mm-dd). */
 export function normalizeDate(value: unknown): string | null {
   if (value instanceof Date && !isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
+    // Componentes locais, não `toISOString()`: a planilha entrega a data na
+    // meia-noite do fuso de quem importa, e converter para UTC devolveria o
+    // dia anterior em qualquer fuso a leste de Greenwich.
+    return localDateOnly(value);
   }
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -47,7 +57,7 @@ export function normalizeDate(value: unknown): string | null {
       return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
     }
     const parsed = new Date(trimmed);
-    if (!isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+    if (!isNaN(parsed.getTime())) return localDateOnly(parsed);
   }
   if (typeof value === "number") {
     // Excel serial date fallback.
@@ -57,6 +67,23 @@ export function normalizeDate(value: unknown): string | null {
     }
   }
   return null;
+}
+
+/** Decide se o ponto de um valor SEM vírgula é separador de milhar (padrão
+ * brasileiro, "12.500") ou separador decimal (padrão americano, "12.5").
+ *
+ * Vale a regra do extrato: valor em real tem duas casas decimais, então um
+ * ponto seguido de exatamente três dígitos é milhar. Sem isso, "12.500"
+ * entrava como R$ 12,50 e "1.234.567" era descartado como inválido. */
+function dotIsThousandsSeparator(cleaned: string): boolean {
+  const dots = cleaned.split(".").length - 1;
+  if (dots > 1) return true; // "1.234.567" só faz sentido como milhar
+
+  const match = cleaned.match(/^-?(\d+)\.(\d+)$/);
+  if (!match) return false;
+  const [, inteiro, decimais] = match;
+  // "0.500" é decimal: ninguém escreve zero como parte inteira de um milhar.
+  return decimais.length === 3 && inteiro !== "0";
 }
 
 /** Converte valores monetários em texto (R$ 1.234,56 / 1234.56 / -50) em número. */
@@ -69,10 +96,11 @@ export function normalizeAmount(value: unknown): number | null {
 
   const hasComma = cleaned.includes(",");
   const hasDot = cleaned.includes(".");
-  if (hasComma && hasDot) {
+  if (hasComma) {
+    // Com vírgula, ela é a decimal e o ponto é milhar — padrão brasileiro.
     cleaned = cleaned.replace(/\./g, "").replace(",", ".");
-  } else if (hasComma) {
-    cleaned = cleaned.replace(",", ".");
+  } else if (hasDot && dotIsThousandsSeparator(cleaned)) {
+    cleaned = cleaned.replace(/\./g, "");
   }
 
   const num = Number(cleaned);
