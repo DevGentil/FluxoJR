@@ -69,7 +69,11 @@ export function ServiceCatalogTable({ items, brackets, groups }: Props) {
         const maxRate = i.doctorRates.reduce((max, r) => Math.max(max, r.rate), 0);
         const overpaying =
           available != null && i.doctorRates.filter((r) => r.rate > available).map((r) => r.doctorName);
-        return { item: i, margin, available, maxRate, overpaying: overpaying || [] };
+        // Item ativo que ninguém tem contratado não dá para lançar: o
+        // formulário do dia só oferece o que está no contrato do médico.
+        // Ou falta combinar o valor, ou o item deveria estar arquivado.
+        const semContrato = i.active && i.doctorRates.length === 0;
+        return { item: i, margin, available, maxRate, overpaying: overpaying || [], semContrato };
       });
   }, [items, search, brackets]);
 
@@ -84,19 +88,27 @@ export function ServiceCatalogTable({ items, brackets, groups }: Props) {
   }, [rows]);
 
   const emAlerta = rows.filter((r) => r.overpaying.length > 0).length;
+  const semContrato = rows.filter((r) => r.semContrato).length;
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {emAlerta > 0 ? (
-          <p className="flex items-center gap-1.5 text-sm text-destructive">
-            <TriangleAlert className="size-4 shrink-0" />
-            {emAlerta} {emAlerta === 1 ? "item tem repasse" : "itens têm repasse"} acima do que sobra depois das
-            taxas — dá prejuízo a cada atendimento.
-          </p>
-        ) : (
-          <span />
-        )}
+        <div className="space-y-1">
+          {emAlerta > 0 && (
+            <p className="flex items-center gap-1.5 text-sm text-destructive">
+              <TriangleAlert className="size-4 shrink-0" />
+              {emAlerta} {emAlerta === 1 ? "item tem repasse" : "itens têm repasse"} acima do que sobra depois
+              das taxas — dá prejuízo a cada atendimento.
+            </p>
+          )}
+          {semContrato > 0 && (
+            <p className="flex items-center gap-1.5 text-sm text-amber-600 dark:text-amber-500">
+              <TriangleAlert className="size-4 shrink-0" />
+              {semContrato} {semContrato === 1 ? "item ativo não tem" : "itens ativos não têm"} nenhum médico
+              com valor combinado — não dá para lançar.
+            </p>
+          )}
+        </div>
         <div className="relative max-w-xs w-full sm:w-64">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
@@ -154,7 +166,7 @@ export function ServiceCatalogTable({ items, brackets, groups }: Props) {
                   <TableCell />
                 </TableRow>
                 {isOpen &&
-                  groupRows.map(({ item, margin, available, maxRate, overpaying }) => (
+                  groupRows.map(({ item, margin, available, maxRate, overpaying, semContrato }) => (
                     <TableRow key={item.id} className={item.active ? undefined : "opacity-50"}>
                       <TableCell className="pl-6 font-medium">
                         <span className="flex items-center gap-1.5">
@@ -196,7 +208,13 @@ export function ServiceCatalogTable({ items, brackets, groups }: Props) {
                           overpaying.length > 0 ? "text-destructive font-medium" : ""
                         }`}
                       >
-                        {maxRate > 0 ? formatCurrency(maxRate) : "—"}
+                        {maxRate > 0 ? (
+                          formatCurrency(maxRate)
+                        ) : semContrato ? (
+                          <span className="text-xs text-amber-600 dark:text-amber-500">sem contrato</span>
+                        ) : (
+                          "—"
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-1">

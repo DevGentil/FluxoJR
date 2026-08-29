@@ -6,7 +6,6 @@ import { dateFilter, monthPresets, parseMonthRange, type MonthRange } from "@/li
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DeleteButton } from "@/components/delete-button";
-import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { MonthRangeFilter } from "@/components/month-range-filter";
 import { KpiCard } from "@/components/kpi-card";
 import { ServiceItemFormDialog } from "./service-item-form-dialog";
@@ -14,6 +13,7 @@ import { ServiceCatalogTable } from "./service-catalog-table";
 import { TaxBracketFormDialog } from "./tax-bracket-form-dialog";
 import { deleteTaxBracket } from "./tax-brackets-actions";
 import { MetricsTable, type MetricRow } from "./metrics-table";
+import { UnitsTable, type UnitRow } from "./units-table";
 import { CostCompositionChart, ConversionChart } from "./metrics-charts";
 import { Wallet, Activity, Percent, TrendingUp, TrendingDown } from "lucide-react";
 
@@ -76,39 +76,55 @@ function profitTotals(rows: MetricRow[]) {
 
 function OperationKpis({ rows }: { rows: MetricRow[] }) {
   const totalValue = rows.reduce((s, r) => s + r.totalValue, 0);
+  const unpriced = rows.reduce((s, r) => s + r.unpricedCost, 0);
   const consultas = rows.reduce((s, r) => s + r.consultationCount, 0);
   const exames = rows.reduce((s, r) => s + r.examCount, 0);
   const { revenue, profit, marginLabel } = profitTotals(rows);
+
+  // Só o repasse dos itens que TÊM preço entra na conta do lucro. Sem esse
+  // número à vista, a linha de KPIs parecia errada: receita menor que custo
+  // e mesmo assim lucro positivo. A diferença é o plantão e o auxílio, que
+  // custam e não geram receita direta.
+  const comparableCost = totalValue - unpriced;
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
       <KpiCard
         label="Receita apurada"
         value={revenue > 0 ? formatCurrency(revenue) : "—"}
+        hint="Só dos itens com preço cadastrado"
         icon={TrendingUp}
         iconClass="text-sky-500"
       />
       <KpiCard
         label="Custo de repasses"
         value={formatCurrency(totalValue)}
+        hint={
+          unpriced > 0
+            ? `${formatCurrency(comparableCost)} comparável · ${formatCurrency(unpriced)} sem preço`
+            : undefined
+        }
         icon={Wallet}
         iconClass="text-amber-500"
       />
       <KpiCard
         label="Lucro previsto"
         value={revenue > 0 ? formatCurrency(profit) : "—"}
+        hint={revenue > 0 ? "Receita − repasse comparável − taxas − custo" : undefined}
         icon={profit < 0 ? TrendingDown : TrendingUp}
         iconClass={profit < 0 ? "text-destructive" : "text-emerald-500"}
       />
       <KpiCard
         label="Margem"
         value={marginLabel}
+        hint="Sobre a receita apurada"
         icon={Percent}
         iconClass={profit < 0 ? "text-destructive" : "text-emerald-500"}
       />
       <KpiCard
         label="Conversão"
         value={consultas > 0 ? `${((exames / consultas) * 100).toFixed(1)}%` : "—"}
+        hint={consultas > 0 ? `${exames} exames em ${consultas} consultas` : undefined}
         icon={Activity}
         iconClass="text-violet-500"
       />
@@ -168,9 +184,18 @@ async function ConsolidatedSummary({
     doctorCountByCompany.set(d.companyId, (doctorCountByCompany.get(d.companyId) ?? 0) + 1);
   }
 
-  const byCompany = new Map<string, { id: string; name: string; consultas: number; exames: number; total: number }>();
+  const byCompany = new Map<string, UnitRow>();
   for (const c of companies) {
-    byCompany.set(c.id, { id: c.id, name: c.name, consultas: 0, exames: 0, total: 0 });
+    byCompany.set(c.id, {
+      id: c.id,
+      name: c.name,
+      doctors: doctorCountByCompany.get(c.id) ?? 0,
+      consultas: 0,
+      exames: 0,
+      total: 0,
+      revenue: 0,
+      profit: 0,
+    });
   }
   for (const r of metricRows) {
     const entry = byCompany.get(r.entityId);
@@ -178,9 +203,10 @@ async function ConsolidatedSummary({
     entry.consultas += r.consultationCount;
     entry.exames += r.examCount;
     entry.total += r.totalValue;
+    entry.revenue += r.revenue;
+    entry.profit += r.profit;
   }
   const summaries = Array.from(byCompany.values());
-  const grandTotalValue = metricRows.reduce((s, r) => s + r.totalValue, 0);
 
   return (
     <div className="space-y-6">
@@ -227,49 +253,7 @@ async function ConsolidatedSummary({
           <CardTitle>{summaries.length} unidade(s)</CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Unidade</TableHead>
-                <TableHead className="text-right">Médicos ativos</TableHead>
-                <TableHead className="text-right">Consultas</TableHead>
-                <TableHead className="text-right">Exames</TableHead>
-                <TableHead className="text-right">% conversão</TableHead>
-                <TableHead className="text-right">Custo total</TableHead>
-                <TableHead className="text-right">% do grupo</TableHead>
-                <TableHead className="w-32" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {summaries.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                    Nenhuma empresa nesse escopo.
-                  </TableCell>
-                </TableRow>
-              )}
-              {summaries.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell className="font-medium">{s.name}</TableCell>
-                  <TableCell className="text-right tabular-nums">{doctorCountByCompany.get(s.id) ?? 0}</TableCell>
-                  <TableCell className="text-right tabular-nums">{s.consultas}</TableCell>
-                  <TableCell className="text-right tabular-nums">{s.exames}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {s.consultas > 0 ? `${((s.exames / s.consultas) * 100).toFixed(1)}%` : "—"}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{formatCurrency(s.total)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">
-                    {grandTotalValue > 0 ? `${((s.total / grandTotalValue) * 100).toFixed(1)}%` : "—"}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end">
-                      <SwitchToCompanyButton companyId={s.id} label="Ver detalhes" />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <UnitsTable units={summaries} />
         </CardContent>
       </Card>
 
