@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { parseDateOnly } from "@/lib/date-only";
+import { contractOn } from "@/lib/doctor-rates";
 
 export interface DailyLineInput {
   serviceItemId: string;
@@ -51,19 +52,24 @@ function validate(input: DailyEntryInput): string | null {
   return null;
 }
 
-/** Congela a taxa contratada do médico em cada linha — se o contrato mudar
- * depois (e muda: são 13 reajustes reais nas planilhas), o que já foi
- * lançado não se altera. */
-async function buildLines(doctorId: string, lines: DailyLineInput[]) {
+/** Congela em cada linha o valor que o contrato tinha NO DIA do atendimento
+ * — não o de hoje.
+ *
+ * A diferença aparece ao lançar um dia com atraso: se o ECG caiu de R$15
+ * para R$10 em junho e só agora se lança um dia de maio, o valor congelado
+ * tem que ser R$15. Pegar o vigente hoje pagaria a menos, calado. Depois de
+ * congelado o valor não muda mais, mesmo que o contrato mude de novo. */
+async function buildLines(doctorId: string, date: Date, lines: DailyLineInput[]) {
   if (lines.length === 0) return [];
 
-  const rates = await prisma.doctorServiceRate.findMany({
+  const versions = await prisma.doctorServiceRate.findMany({
     where: { doctorId, serviceItemId: { in: lines.map((l) => l.serviceItemId) } },
+    select: { serviceItemId: true, rate: true, validFrom: true },
   });
-  const rateByItem = new Map(rates.map((r) => [r.serviceItemId, Number(r.rate)]));
+  const vigentes = new Map(contractOn(versions, date).map((r) => [r.serviceItemId, Number(r.rate)]));
 
   return lines.map((l) => {
-    const rate = rateByItem.get(l.serviceItemId);
+    const rate = vigentes.get(l.serviceItemId);
     if (rate === undefined) {
       throw new Error("Esse médico não tem valor contratado para um dos itens selecionados.");
     }
@@ -82,13 +88,14 @@ export async function createDailyEntry(input: DailyEntryInput): Promise<{ error?
     const doctor = await prisma.doctor.findFirst({ where: { id: input.doctorId, companyId } });
     if (!doctor) return { error: "Médico não encontrado." };
 
-    const linesData = await buildLines(input.doctorId, input.lines);
+    const entryDate = parseDateOnly(input.date);
+    const linesData = await buildLines(input.doctorId, entryDate, input.lines);
 
     await prisma.doctorDailyEntry.create({
       data: {
         doctorId: input.doctorId,
         companyId,
-        date: parseDateOnly(input.date),
+        date: entryDate,
         // Detalhou por item? O valor passa a ser derivado das linhas.
         amount: linesData.length > 0 ? null : input.amount,
         paid: input.paid,
@@ -118,7 +125,8 @@ export async function updateDailyEntry(id: string, input: DailyEntryInput): Prom
     const doctor = await prisma.doctor.findFirst({ where: { id: input.doctorId, companyId } });
     if (!doctor) return { error: "Médico não encontrado." };
 
-    const linesData = await buildLines(input.doctorId, input.lines);
+    const entryDate = parseDateOnly(input.date);
+    const linesData = await buildLines(input.doctorId, entryDate, input.lines);
 
     await prisma.$transaction(async (tx) => {
       await tx.doctorDailyLine.deleteMany({ where: { entryId: id } });
@@ -126,7 +134,7 @@ export async function updateDailyEntry(id: string, input: DailyEntryInput): Prom
         where: { id },
         data: {
           doctorId: input.doctorId,
-          date: parseDateOnly(input.date),
+          date: entryDate,
           amount: linesData.length > 0 ? null : input.amount,
           paid: input.paid,
           notes: input.notes?.trim() || null,

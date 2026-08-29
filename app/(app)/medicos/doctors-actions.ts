@@ -4,10 +4,22 @@ import { revalidateRepassesModule } from "@/lib/revalidate-repasses";
 import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
+import { parseDateOnly, todayDateOnly } from "@/lib/date-only";
+import { contractOn } from "@/lib/doctor-rates";
+
+/** Hoje como data de calendário, para a vigência padrão de um reajuste. */
+function hoje() {
+  return parseDateOnly(todayDateOnly());
+}
 
 export interface DoctorServiceRateInput {
   serviceItemId: string;
   rate: number;
+  /** "YYYY-MM-DD": desde quando o valor NOVO passa a valer. Só é usado
+   * quando o valor de fato mudou — reajuste retroativo é o caso comum,
+   * porque a renegociação costuma ser cadastrada depois de já ter começado
+   * a valer. Sem data, vale a partir de hoje. */
+  validFrom?: string;
 }
 
 export interface DoctorInput {
@@ -60,6 +72,7 @@ export async function createDoctor(input: DoctorInput): Promise<{ error?: string
           create: input.serviceRates.map((r) => ({
             serviceItemId: r.serviceItemId,
             rate: r.rate,
+            validFrom: r.validFrom ? parseDateOnly(r.validFrom) : hoje(),
             lastCheckedAt: new Date(),
           })),
         },
@@ -84,15 +97,52 @@ export async function updateDoctor(id: string, input: DoctorInput): Promise<{ er
     const doctor = await prisma.doctor.findFirst({ where: { id, companyId } });
     if (!doctor) return { error: "Médico não encontrado." };
 
-    // Só reinicia o relógio da "última conferência" do valor que realmente
-    // mudou — senão salvar o médico marcaria o contrato inteiro como
-    // conferido hoje, que é justamente o vício da planilha (a coluna
-    // existia e nunca dizia nada).
-    const previous = await prisma.doctorServiceRate.findMany({ where: { doctorId: id } });
-    const previousByItem = new Map(previous.map((r) => [r.serviceItemId, r]));
+    // O contrato agora tem histórico: um reajuste ACRESCENTA uma versão em
+    // vez de sobrescrever a anterior. Antes, salvar o médico apagava todas
+    // as linhas e recriava — o que perdia a informação de quanto se pagava
+    // antes, justamente a que as planilhas provaram existir (13 reajustes).
+    const existing = await prisma.doctorServiceRate.findMany({ where: { doctorId: id } });
+    const vigentes = new Map(contractOn(existing, hoje()).map((r) => [r.serviceItemId, r]));
+    const itensNoFormulario = new Set(input.serviceRates.map((r) => r.serviceItemId));
+
+    // Item tirado do contrato sai por inteiro, com todas as versões: o
+    // usuário está dizendo que esse médico não atende mais esse item. Os
+    // lançamentos já feitos não se abalam — cada linha tem a taxa congelada.
+    const removidos = existing.filter((r) => !itensNoFormulario.has(r.serviceItemId)).map((r) => r.id);
+
+    const novasVersoes = input.serviceRates.flatMap((r) => {
+      const atual = vigentes.get(r.serviceItemId);
+      if (atual && Number(atual.rate) === r.rate) return []; // nada mudou
+      return [
+        {
+          doctorId: id,
+          serviceItemId: r.serviceItemId,
+          rate: r.rate,
+          validFrom: r.validFrom ? parseDateOnly(r.validFrom) : hoje(),
+          lastCheckedAt: new Date(),
+        },
+      ];
+    });
 
     await prisma.$transaction(async (tx) => {
-      await tx.doctorServiceRate.deleteMany({ where: { doctorId: id } });
+      if (removidos.length > 0) {
+        await tx.doctorServiceRate.deleteMany({ where: { id: { in: removidos } } });
+      }
+      for (const v of novasVersoes) {
+        // Reajuste cadastrado duas vezes com a mesma data sobrescreve o
+        // próprio registro do dia, em vez de estourar a chave única.
+        await tx.doctorServiceRate.upsert({
+          where: {
+            doctorId_serviceItemId_validFrom: {
+              doctorId: v.doctorId,
+              serviceItemId: v.serviceItemId,
+              validFrom: v.validFrom,
+            },
+          },
+          create: v,
+          update: { rate: v.rate, lastCheckedAt: v.lastCheckedAt },
+        });
+      }
       await tx.doctor.update({
         where: { id },
         data: {
@@ -102,17 +152,6 @@ export async function updateDoctor(id: string, input: DoctorInput): Promise<{ er
           paymentMethod: input.paymentMethod?.trim() || null,
           active: input.active,
           notes: input.notes?.trim() || null,
-          serviceRates: {
-            create: input.serviceRates.map((r) => {
-              const prev = previousByItem.get(r.serviceItemId);
-              const unchanged = prev != null && Number(prev.rate) === r.rate;
-              return {
-                serviceItemId: r.serviceItemId,
-                rate: r.rate,
-                lastCheckedAt: unchanged ? prev.lastCheckedAt : new Date(),
-              };
-            }),
-          },
         },
       });
     });

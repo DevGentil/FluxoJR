@@ -391,6 +391,11 @@ model TaxBracket {
 model DoctorServiceRate {
   id            String    @id @default(cuid())
   rate          Decimal   @db.Decimal(14, 2)
+  // Desde quando ESTE valor vale. Um reajuste cria uma linha nova em vez de
+  // sobrescrever: as planilhas trazem 13 reajustes reais em 11 médicos, e
+  // sem vigência um dia de maio lançado depois de um reajuste de junho
+  // congelava o valor errado. Ver lib/doctor-rates.ts.
+  validFrom     DateTime
   // "Última conferência" da planilha: coluna que criaram e nunca
   // conseguiram manter preenchida.
   lastCheckedAt DateTime?
@@ -401,7 +406,8 @@ model DoctorServiceRate {
   serviceItemId String
   serviceItem   ServiceItem @relation(fields: [serviceItemId], references: [id], onDelete: Cascade)
 
-  @@unique([doctorId, serviceItemId])
+  @@unique([doctorId, serviceItemId, validFrom])
+  @@index([doctorId, serviceItemId, validFrom])
 }
 
 // Repasse agregado de um médico num mês: contagem de consultas (com a taxa

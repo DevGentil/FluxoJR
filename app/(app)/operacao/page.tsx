@@ -14,8 +14,13 @@ import { TaxBracketFormDialog } from "./tax-bracket-form-dialog";
 import { deleteTaxBracket } from "./tax-brackets-actions";
 import { MetricsTable, type MetricRow } from "./metrics-table";
 import { UnitsTable, type UnitRow } from "./units-table";
+import { contractOn } from "@/lib/doctor-rates";
+import { parseDateOnly, todayDateOnly } from "@/lib/date-only";
 import { CostCompositionChart, ConversionChart } from "./metrics-charts";
 import { Wallet, Activity, Percent, TrendingUp, TrendingDown } from "lucide-react";
+
+/** O contrato vigente é o de hoje. */
+const hoje = parseDateOnly(todayDateOnly());
 
 interface Props {
   searchParams: Promise<{ from?: string; to?: string }>;
@@ -287,7 +292,7 @@ export default async function OperacaoPage({ searchParams }: Props) {
   const [doctors, serviceItems, taxBrackets, entries] = await Promise.all([
     prisma.doctor.findMany({
       where: { companyId },
-      select: { name: true, serviceRates: { select: { serviceItemId: true, rate: true } } },
+      select: { name: true, serviceRates: { select: { serviceItemId: true, rate: true, validFrom: true } } },
       orderBy: { name: "asc" },
     }),
     prisma.serviceItem.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
@@ -309,7 +314,10 @@ export default async function OperacaoPage({ searchParams }: Props) {
   // valor combinado com o médico passa do que sobra depois das taxas.
   const ratesByItem = new Map<string, { doctorName: string; rate: number }[]>();
   for (const d of doctors) {
-    for (const r of d.serviceRates) {
+    // Só o que vale hoje: o alerta de repasse acima do teto tem que
+    // comparar o preço atual com o valor que está sendo pago agora, não
+    // com um reajuste antigo que já saiu de vigência.
+    for (const r of contractOn(d.serviceRates, hoje)) {
       const list = ratesByItem.get(r.serviceItemId) ?? [];
       list.push({ doctorName: d.name, rate: Number(r.rate) });
       ratesByItem.set(r.serviceItemId, list);

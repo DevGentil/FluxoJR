@@ -231,3 +231,89 @@ describe("markContractChecked", () => {
     expect(result.error).toBeTruthy();
   });
 });
+
+describe("vigência do contrato", () => {
+  /** Médico já cadastrado há um tempo — é assim que o reajuste acontece na
+   * vida real: o contrato existe desde o começo do ano e muda no meio. */
+  async function seedMedicoComItem(rate: number) {
+    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
+    const item = await seedItem(company.id, "ECG", "EXAME");
+    const criado = await createDoctor(
+      baseInput(item.id, {
+        serviceRates: [{ serviceItemId: item.id, rate, validFrom: "2026-01-01" }],
+      })
+    );
+    expect(criado.error).toBeUndefined();
+    const doctor = await testPrisma.doctor.findFirstOrThrow();
+    return { company, item, doctor };
+  }
+
+  it("reajuste acrescenta uma versão em vez de sobrescrever a anterior", async () => {
+    // O caso real das planilhas: ECG de R$15 para R$10 em junho de 2026.
+    const { item, doctor } = await seedMedicoComItem(15);
+
+    const result = await updateDoctor(
+      doctor.id,
+      baseInput(item.id, {
+        serviceRates: [{ serviceItemId: item.id, rate: 10, validFrom: "2026-06-01" }],
+      })
+    );
+
+    expect(result.error).toBeUndefined();
+    const versoes = await testPrisma.doctorServiceRate.findMany({
+      where: { doctorId: doctor.id },
+      orderBy: { validFrom: "asc" },
+    });
+    expect(versoes).toHaveLength(2);
+    expect(versoes.map((v) => Number(v.rate))).toEqual([15, 10]);
+    expect(versoes[1].validFrom.toISOString()).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  it("salvar o médico sem mexer no valor não inventa versão nova", async () => {
+    const { item, doctor } = await seedMedicoComItem(15);
+
+    await updateDoctor(
+      doctor.id,
+      baseInput(item.id, { name: "Dr. Nome Novo", serviceRates: [{ serviceItemId: item.id, rate: 15 }] })
+    );
+
+    await expect(testPrisma.doctorServiceRate.count({ where: { doctorId: doctor.id } })).resolves.toBe(1);
+    const atualizado = await testPrisma.doctor.findFirstOrThrow();
+    expect(atualizado.name).toBe("Dr. Nome Novo");
+  });
+
+  it("tirar o item do contrato remove todas as versões dele", async () => {
+    const { company, item, doctor } = await seedMedicoComItem(15);
+    await updateDoctor(
+      doctor.id,
+      baseInput(item.id, { serviceRates: [{ serviceItemId: item.id, rate: 10, validFrom: "2026-06-01" }] })
+    );
+    const outro = await seedItem(company.id, "Consulta", "CONSULTA");
+
+    await updateDoctor(
+      doctor.id,
+      baseInput(outro.id, { serviceRates: [{ serviceItemId: outro.id, rate: 40 }] })
+    );
+
+    const restantes = await testPrisma.doctorServiceRate.findMany({ where: { doctorId: doctor.id } });
+    expect(restantes).toHaveLength(1);
+    expect(restantes[0].serviceItemId).toBe(outro.id);
+  });
+
+  it("dois reajustes no mesmo dia viram um só, sem estourar a chave única", async () => {
+    const { item, doctor } = await seedMedicoComItem(15);
+    const comData = (rate: number) =>
+      baseInput(item.id, { serviceRates: [{ serviceItemId: item.id, rate, validFrom: "2026-06-01" }] });
+
+    await updateDoctor(doctor.id, comData(10));
+    const result = await updateDoctor(doctor.id, comData(12));
+
+    expect(result.error).toBeUndefined();
+    const versoes = await testPrisma.doctorServiceRate.findMany({
+      where: { doctorId: doctor.id },
+      orderBy: { validFrom: "asc" },
+    });
+    expect(versoes).toHaveLength(2);
+    expect(Number(versoes[1].rate)).toBe(12);
+  });
+});

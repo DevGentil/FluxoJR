@@ -25,6 +25,8 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { createDoctor, updateDoctor, type DoctorInput } from "./doctors-actions";
+import { todayDateOnly } from "@/lib/date-only";
+import { formatDate } from "@/lib/format";
 
 export interface ServiceItemOption {
   id: string;
@@ -35,6 +37,13 @@ interface RateLine {
   id: string;
   serviceItemId: string;
   rate: string;
+  /** O valor com que a linha abriu. Comparar com `rate` é o que diz se
+   * houve reajuste — e só então a vigência precisa ser perguntada. */
+  originalRate: string;
+  /** Desde quando o valor ATUAL vale, para mostrar embaixo da linha. */
+  currentValidFrom: string | null;
+  /** Desde quando o valor NOVO passa a valer. */
+  validFrom: string;
 }
 
 interface Props {
@@ -47,8 +56,12 @@ interface Props {
     paymentMethod: string | null;
     active: boolean;
     notes: string | null;
-    serviceRates: { id: string; serviceItemId: string; rate: number }[];
+    serviceRates: { id: string; serviceItemId: string; rate: number; validFrom: string }[];
   };
+}
+
+function hojeISO() {
+  return todayDateOnly();
 }
 
 export function DoctorFormDialog({ serviceItems, doctor }: Props) {
@@ -64,7 +77,14 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
   const [active, setActive] = useState(doctor?.active ?? true);
   const [notes, setNotes] = useState(doctor?.notes ?? "");
   const [rates, setRates] = useState<RateLine[]>(
-    doctor?.serviceRates.map((r) => ({ id: r.id, serviceItemId: r.serviceItemId, rate: String(r.rate) })) ?? []
+    doctor?.serviceRates.map((r) => ({
+      id: r.id,
+      serviceItemId: r.serviceItemId,
+      rate: String(r.rate),
+      originalRate: String(r.rate),
+      currentValidFrom: r.validFrom,
+      validFrom: hojeISO(),
+    })) ?? []
   );
 
   function newId() {
@@ -73,11 +93,34 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
   }
 
   function addRate() {
-    setRates((prev) => [...prev, { id: newId(), serviceItemId: "", rate: "" }]);
+    setRates((prev) => [
+      ...prev,
+      {
+        id: newId(),
+        serviceItemId: "",
+        rate: "",
+        originalRate: "",
+        currentValidFrom: null,
+        validFrom: hojeISO(),
+      },
+    ]);
   }
 
-  function updateRate(id: string, field: "serviceItemId" | "rate", value: string) {
+  function updateRate(id: string, field: "serviceItemId" | "rate" | "validFrom", value: string) {
     setRates((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+  }
+
+  /** Linha de contrato que já existia e teve o valor mexido: é um reajuste,
+   * e só aí a data de início importa. Linha nova vale a partir de hoje. */
+  function isReajuste(line: RateLine) {
+    return line.currentValidFrom != null && line.rate !== line.originalRate;
+  }
+
+  /** Reajuste datado ANTES da vigência do valor atual não passa a valer:
+   * ele entra no histórico, mas quem continua vigente é o valor de hoje.
+   * É fácil cair nisso sem perceber ao corrigir um valor "para trás". */
+  function reajusteNaoVigora(line: RateLine) {
+    return isReajuste(line) && line.currentValidFrom != null && line.validFrom < line.currentValidFrom;
   }
 
   function removeRate(id: string) {
@@ -108,7 +151,11 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
       notes: notes || undefined,
       serviceRates: rates
         .filter((r) => r.serviceItemId || r.rate)
-        .map((r) => ({ serviceItemId: r.serviceItemId, rate: Number(r.rate) })),
+        .map((r) => ({
+          serviceItemId: r.serviceItemId,
+          rate: Number(r.rate),
+          validFrom: isReajuste(r) ? r.validFrom : undefined,
+        })),
     };
 
     startTransition(async () => {
@@ -190,7 +237,8 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
             <Label>Contrato de repasse</Label>
             <div className="space-y-2">
               {rates.map((line) => (
-                <div key={line.id} className="flex items-center gap-2">
+                <div key={line.id} className="space-y-1">
+                  <div className="flex items-center gap-2">
                   <Select
                     items={itemLabels}
                     value={line.serviceItemId}
@@ -219,6 +267,33 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
                   <Button type="button" variant="ghost" size="icon" onClick={() => removeRate(line.id)}>
                     <Trash2 className="size-4 text-destructive" />
                   </Button>
+                  </div>
+                  {line.currentValidFrom && !isReajuste(line) && (
+                    <p className="text-xs text-muted-foreground pl-1">
+                      Vigente desde {formatDate(line.currentValidFrom)}
+                    </p>
+                  )}
+                  {isReajuste(line) && (
+                    <div className="flex items-center gap-2 pl-1">
+                      <span className="text-xs text-muted-foreground shrink-0">Reajuste vale a partir de</span>
+                      <Input
+                        type="date"
+                        value={line.validFrom}
+                        onChange={(e) => updateRate(line.id, "validFrom", e.target.value)}
+                        className="h-8 w-40"
+                      />
+                      <span className="text-xs text-muted-foreground">
+                        (o valor de {line.originalRate ? `R$ ${line.originalRate}` : "antes"} fica no histórico)
+                      </span>
+                    </div>
+                  )}
+                  {reajusteNaoVigora(line) && (
+                    <p className="text-xs text-amber-600 dark:text-amber-500 pl-1">
+                      Essa data é anterior à vigência atual ({formatDate(line.currentValidFrom!)}), então o
+                      valor que continua valendo hoje é R$ {line.originalRate}. Use uma data igual ou
+                      posterior para o reajuste passar a valer.
+                    </p>
+                  )}
                 </div>
               ))}
               <Button

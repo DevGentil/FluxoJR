@@ -7,6 +7,10 @@ import {
   toggleDailyEntryPaid,
 } from "./daily-entries-actions";
 import { deleteServiceItem } from "@/app/(app)/operacao/service-items-actions";
+import { parseDateOnly } from "@/lib/date-only";
+
+/** Vigência bem no passado: o contrato vale para qualquer dia lançado. */
+const DESDE_SEMPRE = parseDateOnly("2026-01-01");
 
 beforeEach(resetDb);
 
@@ -25,8 +29,8 @@ async function seedDoctorWithContract() {
       name: "Dr. João Silva",
       serviceRates: {
         create: [
-          { serviceItemId: consulta.id, rate: 24 },
-          { serviceItemId: exame.id, rate: 45 },
+          { serviceItemId: consulta.id, rate: 24, validFrom: DESDE_SEMPRE },
+          { serviceItemId: exame.id, rate: 45, validFrom: DESDE_SEMPRE },
         ],
       },
     },
@@ -87,7 +91,7 @@ describe("createDailyEntry", () => {
       data: {
         companyId: company.id,
         name: "Dr. Plantonista",
-        serviceRates: { create: [{ serviceItemId: plantao.id, rate: 180 }] },
+        serviceRates: { create: [{ serviceItemId: plantao.id, rate: 180, validFrom: DESDE_SEMPRE }] },
       },
     });
 
@@ -277,5 +281,58 @@ describe("deleteServiceItem", () => {
 
     expect(result?.error).toBeTruthy();
     await expect(testPrisma.serviceItem.count()).resolves.toBe(2);
+  });
+});
+
+describe("vigência do contrato no lançamento", () => {
+  /** Reproduz o reajuste real das planilhas: o ECG caiu de R$15 para R$10
+   * em 01/06/2026 para cinco clínicos. */
+  async function seedComReajuste() {
+    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
+    const ecg = await testPrisma.serviceItem.create({
+      data: { companyId: company.id, name: "ECG", category: "EXAME" },
+    });
+    const doctor = await testPrisma.doctor.create({
+      data: {
+        companyId: company.id,
+        name: "Dra. Flaviana",
+        serviceRates: {
+          create: [
+            { serviceItemId: ecg.id, rate: 15, validFrom: parseDateOnly("2026-01-01") },
+            { serviceItemId: ecg.id, rate: 10, validFrom: parseDateOnly("2026-06-01") },
+          ],
+        },
+      },
+    });
+    return { ecg, doctor };
+  }
+
+  async function lancar(doctorId: string, serviceItemId: string, date: string) {
+    const result = await createDailyEntry({ doctorId, date, paid: false, lines: [{ serviceItemId, quantity: 1 }] });
+    expect(result.error).toBeUndefined();
+    const linha = await testPrisma.doctorDailyLine.findFirstOrThrow({ orderBy: { id: "desc" } });
+    return Number(linha.rate);
+  }
+
+  it("um dia anterior ao reajuste congela o valor ANTIGO", async () => {
+    // Sem vigência, lançar maio depois do reajuste de junho pagava R$10 —
+    // menos do que o combinado na época, e sem nenhum aviso.
+    const { ecg, doctor } = await seedComReajuste();
+    await expect(lancar(doctor.id, ecg.id, "2026-05-20")).resolves.toBe(15);
+  });
+
+  it("o primeiro dia de vigência já usa o valor novo", async () => {
+    const { ecg, doctor } = await seedComReajuste();
+    await expect(lancar(doctor.id, ecg.id, "2026-06-01")).resolves.toBe(10);
+  });
+
+  it("um dia posterior usa o valor novo", async () => {
+    const { ecg, doctor } = await seedComReajuste();
+    await expect(lancar(doctor.id, ecg.id, "2026-08-14")).resolves.toBe(10);
+  });
+
+  it("um dia anterior a tudo que se conhece usa a versão mais antiga", async () => {
+    const { ecg, doctor } = await seedComReajuste();
+    await expect(lancar(doctor.id, ecg.id, "2025-11-03")).resolves.toBe(15);
   });
 });

@@ -9,7 +9,13 @@ import { KpiCard } from "@/components/kpi-card";
 import { DoctorFormDialog } from "./doctor-form-dialog";
 import { CheckContractButton } from "./check-contract-button";
 import { deleteDoctor } from "./doctors-actions";
-import { Users, FileSignature, TriangleAlert } from "lucide-react";
+import { Users, FileSignature, TriangleAlert, History } from "lucide-react";
+import { contractOn } from "@/lib/doctor-rates";
+import { parseDateOnly, todayDateOnly, toDateOnly } from "@/lib/date-only";
+import { formatDate } from "@/lib/format";
+
+/** Data de referência das telas: o contrato vigente é o de hoje. */
+const hoje = parseDateOnly(todayDateOnly());
 
 const CATEGORY_SHORT: Record<string, string> = {
   CONSULTA: "consulta",
@@ -58,7 +64,14 @@ async function ConsolidatedSummary({ companyIds, scopeLabel }: { companyIds: str
       : prisma.company.findMany({ where: { id: { in: companyIds } }, orderBy: { name: "asc" } }),
     prisma.doctor.findMany({
       where: { companyId: { in: companyIds } },
-      select: { companyId: true, active: true, serviceRates: { select: { lastCheckedAt: true } } },
+      select: {
+        companyId: true,
+        active: true,
+        // serviceItemId e validFrom são o que permite reduzir as versões
+        // ao contrato vigente — sem eles, um reajuste contaria como dois
+        // itens contratados.
+        serviceRates: { select: { serviceItemId: true, validFrom: true, lastCheckedAt: true } },
+      },
     }),
   ]);
 
@@ -74,8 +87,8 @@ async function ConsolidatedSummary({ companyIds, scopeLabel }: { companyIds: str
     if (!entry) continue;
     if (d.active) entry.ativos += 1;
     else entry.inativos += 1;
-    entry.itens += d.serviceRates.length;
-    if (isStale(d.serviceRates)) entry.aConferir += 1;
+    entry.itens += contractOn(d.serviceRates, hoje).length;
+    if (isStale(contractOn(d.serviceRates, hoje))) entry.aConferir += 1;
   }
   const summaries = Array.from(byCompany.values());
 
@@ -182,8 +195,8 @@ export default async function MedicosPage() {
   const serviceItemOptions = serviceItems.map((s) => ({ id: s.id, name: s.name }));
 
   const activeDoctors = doctors.filter((d) => d.active).length;
-  const totalItens = doctors.reduce((s, d) => s + d.serviceRates.length, 0);
-  const aConferir = doctors.filter((d) => isStale(d.serviceRates)).length;
+  const totalItens = doctors.reduce((s, d) => s + contractOn(d.serviceRates, hoje).length, 0);
+  const aConferir = doctors.filter((d) => isStale(contractOn(d.serviceRates, hoje))).length;
 
   return (
     <div className="space-y-6">
@@ -250,7 +263,15 @@ export default async function MedicosPage() {
                 </TableRow>
               )}
               {doctors.map((d) => {
-                const checked = lastCheckedLabel(d.serviceRates);
+                const vigentes = contractOn(d.serviceRates, hoje);
+                const checked = lastCheckedLabel(vigentes);
+                // Toda versão que não é a vigente é um reajuste já
+                // registrado — o histórico que a planilha não guardava.
+                const reajustes = d.serviceRates.length - vigentes.length;
+                const ultimoReajuste = vigentes.reduce<Date | null>(
+                  (mais, r) => (mais == null || r.validFrom > mais ? r.validFrom : mais),
+                  null
+                );
                 return (
                   <TableRow key={d.id}>
                     <TableCell className="font-medium">{d.name}</TableCell>
@@ -258,7 +279,18 @@ export default async function MedicosPage() {
                     <TableCell>{d.document || "—"}</TableCell>
                     <TableCell>{d.paymentMethod || "—"}</TableCell>
                     <TableCell className="text-sm">
-                      <span className="text-muted-foreground">{contractSummary(d.serviceRates)}</span>
+                      <span className="text-muted-foreground">{contractSummary(vigentes)}</span>
+                      {ultimoReajuste && (
+                        <span className="block text-xs text-muted-foreground">
+                          Vigente desde {formatDate(ultimoReajuste)}
+                        </span>
+                      )}
+                      {reajustes > 0 && (
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <History className="size-3 shrink-0" />
+                          {reajustes} {reajustes === 1 ? "reajuste" : "reajustes"} no histórico
+                        </span>
+                      )}
                       {checked && (
                         <span
                           className={`block text-xs ${checked.stale ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}
@@ -282,10 +314,14 @@ export default async function MedicosPage() {
                             paymentMethod: d.paymentMethod,
                             active: d.active,
                             notes: d.notes,
-                            serviceRates: d.serviceRates.map((r) => ({
+                            // Só o que está vigente hoje vai para o
+                            // formulário — o histórico fica no banco e
+                            // aparece resumido na coluna do contrato.
+                            serviceRates: contractOn(d.serviceRates, hoje).map((r) => ({
                               id: r.id,
                               serviceItemId: r.serviceItemId,
                               rate: Number(r.rate),
+                              validFrom: toDateOnly(r.validFrom),
                             })),
                           }}
                         />

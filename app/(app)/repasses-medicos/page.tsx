@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { formatCurrency } from "@/lib/format";
 import { entryAmount } from "@/lib/doctor-period";
+import { toDateOnly } from "@/lib/date-only";
 import { dateFilter, monthPresets, parseMonthRange, type MonthRange } from "@/lib/month-range";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -194,6 +195,11 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
 
   // O contrato vai junto para o diálogo mostrar os valores combinados na
   // hora de lançar — é o que a planilha deixa à vista ao lado dos dias.
+  //
+  // Vão TODAS as versões, não só a vigente hoje: o diálogo precisa mostrar
+  // o valor que valia na data escolhida, que é o mesmo que o servidor vai
+  // congelar. Mandar só o de hoje faria a tela somar um total e o banco
+  // gravar outro ao lançar um dia anterior a um reajuste.
   const doctorOptions = doctors.map((d) => ({
     id: d.id,
     name: d.name,
@@ -202,6 +208,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
       serviceItemName: r.serviceItem.name,
       rate: Number(r.rate),
       payer: r.serviceItem.payer,
+      validFrom: toDateOnly(r.validFrom),
     })),
   }));
 

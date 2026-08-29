@@ -20,14 +20,24 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { formatCurrency, toDateInputValue } from "@/lib/format";
-import { todayDateOnly } from "@/lib/date-only";
+import { parseDateOnly, todayDateOnly } from "@/lib/date-only";
+import { contractOn } from "@/lib/doctor-rates";
 import { createDailyEntry, updateDailyEntry, type DailyEntryInput } from "./daily-entries-actions";
 
 export interface DoctorOption {
   id: string;
   name: string;
-  /** O contrato: só os itens que esse médico tem valor combinado. */
-  serviceRates: { serviceItemId: string; serviceItemName: string; rate: number; payer: string | null }[];
+  /** TODAS as versões do contrato, não só a vigente hoje. A tela resolve
+   * qual vale na data escolhida, para somar o mesmo valor que o servidor
+   * vai congelar. */
+  serviceRates: {
+    serviceItemId: string;
+    serviceItemName: string;
+    rate: number;
+    payer: string | null;
+    /** "YYYY-MM-DD" */
+    validFrom: string;
+  }[];
 }
 
 interface LineState {
@@ -71,6 +81,20 @@ export function DailyEntryFormDialog({ doctors, entry }: Props) {
   const selectedDoctor = doctors.find((d) => d.id === doctorId);
   const detalhando = lines.length > 0;
 
+  // O contrato que valia na data escolhida — não o de hoje. Trocar a data
+  // reescreve os valores à vista, que é o mesmo critério do servidor.
+  const contrato = useMemo(() => {
+    if (!selectedDoctor) return [];
+    const versoes = selectedDoctor.serviceRates.map((r) => ({
+      ...r,
+      validFromDate: parseDateOnly(r.validFrom),
+    }));
+    return contractOn(
+      versoes.map((v) => ({ ...v, validFrom: v.validFromDate })),
+      parseDateOnly(date || todayDateOnly())
+    ).sort((a, b) => a.serviceItemName.localeCompare(b.serviceItemName));
+  }, [selectedDoctor, date]);
+
   function newId() {
     nextId.current += 1;
     return `l${nextId.current}`;
@@ -92,10 +116,10 @@ export function DailyEntryFormDialog({ doctors, entry }: Props) {
   const totalDetalhado = useMemo(() => {
     if (!selectedDoctor) return 0;
     return lines.reduce((sum, l) => {
-      const rate = selectedDoctor.serviceRates.find((r) => r.serviceItemId === l.serviceItemId)?.rate ?? 0;
+      const rate = contrato.find((r) => r.serviceItemId === l.serviceItemId)?.rate ?? 0;
       return sum + (Number(l.quantity) || 0) * rate;
     }, 0);
-  }, [lines, selectedDoctor]);
+  }, [lines, selectedDoctor, contrato]);
 
   const valorDoDia = detalhando ? totalDetalhado : Number(amount) || 0;
 
@@ -137,7 +161,7 @@ export function DailyEntryFormDialog({ doctors, entry }: Props) {
   }
 
   const contratoLabels = Object.fromEntries(
-    (selectedDoctor?.serviceRates ?? []).map((r) => [r.serviceItemId, r.serviceItemName])
+    contrato.map((r) => [r.serviceItemId, r.serviceItemName])
   );
 
   return (
@@ -200,13 +224,13 @@ export function DailyEntryFormDialog({ doctors, entry }: Props) {
 
           {/* O contrato do médico, do mesmo jeito que a planilha mostra ao
               lado dos lançamentos — serve de consulta na hora de somar. */}
-          {selectedDoctor && selectedDoctor.serviceRates.length > 0 && (
+          {selectedDoctor && contrato.length > 0 && (
             <div className="rounded-lg border bg-muted/30 p-3">
               <p className="text-xs font-medium mb-2 text-muted-foreground">
                 Contrato de {selectedDoctor.name}
               </p>
               <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                {selectedDoctor.serviceRates.map((r) => (
+                {contrato.map((r) => (
                   <div key={r.serviceItemId} className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-1.5 truncate">
                       {r.serviceItemName}
@@ -245,7 +269,7 @@ export function DailyEntryFormDialog({ doctors, entry }: Props) {
             <Label>Detalhe por item (opcional)</Label>
             <div className="space-y-2">
               {lines.map((line) => {
-                const rate = selectedDoctor?.serviceRates.find(
+                const rate = contrato.find(
                   (r) => r.serviceItemId === line.serviceItemId
                 )?.rate;
                 return (
@@ -259,7 +283,7 @@ export function DailyEntryFormDialog({ doctors, entry }: Props) {
                         <SelectValue placeholder="Item do contrato" />
                       </SelectTrigger>
                       <SelectContent>
-                        {(selectedDoctor?.serviceRates ?? []).map((r) => (
+                        {contrato.map((r) => (
                           <SelectItem key={r.serviceItemId} value={r.serviceItemId}>
                             {r.serviceItemName} — {formatCurrency(r.rate)}
                           </SelectItem>
@@ -289,12 +313,12 @@ export function DailyEntryFormDialog({ doctors, entry }: Props) {
                 variant="outline"
                 size="sm"
                 onClick={addLine}
-                disabled={!selectedDoctor || selectedDoctor.serviceRates.length === 0}
+                disabled={!selectedDoctor || contrato.length === 0}
               >
                 <Plus className="size-4" />
                 Adicionar item
               </Button>
-              {selectedDoctor && selectedDoctor.serviceRates.length === 0 && (
+              {selectedDoctor && contrato.length === 0 && (
                 <p className="text-xs text-muted-foreground">
                   Esse médico não tem contrato cadastrado — edite o médico primeiro.
                 </p>
