@@ -40,10 +40,12 @@ const SEM_GRUPO = "Sem grupo";
  * com repasse acima desse teto). */
 export function ServiceCatalogTable({ items, brackets, groups }: Props) {
   const [search, setSearch] = useState("");
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Grupos fechados por padrão: são 124 itens no catálogo real, e abrir
+  // tudo enterra o que interessa. A busca abre sozinha o que bater.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   function toggle(key: string) {
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -143,7 +145,7 @@ export function ServiceCatalogTable({ items, brackets, groups }: Props) {
             </TableRow>
           )}
           {groupsOfRows.map(([group, groupRows]) => {
-            const isOpen = isSearching || !collapsed.has(group);
+            const isOpen = isSearching || expanded.has(group);
             return (
               <Fragment key={group}>
                 <TableRow
