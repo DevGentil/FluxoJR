@@ -11,7 +11,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { KpiCard } from "@/components/kpi-card";
-import { ArrowLeft, CalendarCheck, CircleCheck, CircleDashed, History, Wallet } from "lucide-react";
+import { ArrowLeft, CalendarCheck, CircleCheck, CircleDashed, Download, History, Wallet } from "lucide-react";
+import { DeleteButton } from "@/components/delete-button";
+import { Pagination } from "@/components/pagination";
+import { DoctorDocumentDialog } from "../doctor-document-dialog";
+import { DoctorEntriesFilter } from "../doctor-entries-filter";
+import { deleteDoctorDocument } from "../documents-actions";
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 const hoje = parseDateOnly(todayDateOnly());
 
@@ -30,8 +41,17 @@ const PAYER_LABELS: Record<string, string> = { CT: "Cartão de Todos", PARTICULA
  *
  * Nasceu quando a base real trouxe 81 médicos: a lista única deixou de
  * responder "quanto esse médico custou e desde quando o valor é esse". */
-export default async function MedicoPage({ params }: { params: Promise<{ id: string }> }) {
+const LANC_POR_PAGINA = 25;
+
+interface Props {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ page?: string; mes?: string; pago?: string }>;
+}
+
+export default async function MedicoPage({ params, searchParams }: Props) {
   const { id } = await params;
+  const filtros = await searchParams;
+  const page = Math.max(1, Number(filtros.page) || 1);
 
   // O escopo ativo continua mandando: uma unidade não abre a ficha de um
   // médico de outra, nem pelo endereço direto.
@@ -46,6 +66,10 @@ export default async function MedicoPage({ params }: { params: Promise<{ id: str
       dailyEntries: {
         include: { lines: { include: { serviceItem: { select: { name: true } } } } },
         orderBy: { date: "desc" },
+      },
+      documents: {
+        select: { id: true, fileName: true, description: true, size: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
       },
     },
   });
@@ -77,6 +101,17 @@ export default async function MedicoPage({ params }: { params: Promise<{ id: str
     porMes.set(k, { dias: atual.dias + 1, total: atual.total + l.valor });
   }
   const meses = [...porMes.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+
+  // Filtro dos lançamentos: mês e situação de pagamento. Fica na URL para
+  // compor com a paginação e sobreviver ao recarregar.
+  const filtrados = lancamentos.filter((l) => {
+    if (filtros.mes && toMonthKey(l.date) !== filtros.mes) return false;
+    if (filtros.pago === "sim" && !l.paid) return false;
+    if (filtros.pago === "nao" && l.paid) return false;
+    return true;
+  });
+  const visiveis = filtrados.slice((page - 1) * LANC_POR_PAGINA, page * LANC_POR_PAGINA);
+  const totalFiltrado = filtrados.reduce((s, l) => s + l.valor, 0);
 
   return (
     <div className="space-y-6">
@@ -236,11 +271,86 @@ export default async function MedicoPage({ params }: { params: Promise<{ id: str
       )}
 
       <Card>
-        <CardHeader>
-          <CardTitle>{lancamentos.length} lançamento(s)</CardTitle>
-          <CardDescription>Para lançar ou editar um dia, use a tela de Repasses Médicos.</CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Arquivos</CardTitle>
+            <CardDescription>
+              Contrato assinado, aditivos, documentos do médico — guardados junto da ficha.
+            </CardDescription>
+          </div>
+          <DoctorDocumentDialog doctorId={doctor.id} doctorName={doctor.name} />
         </CardHeader>
         <CardContent>
+          {doctor.documents.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">
+              Nenhum arquivo anexado. O contrato assinado é o candidato natural.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Arquivo</TableHead>
+                  <TableHead>Descrição</TableHead>
+                  <TableHead className="text-right">Tamanho</TableHead>
+                  <TableHead>Enviado em</TableHead>
+                  <TableHead className="w-24" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {doctor.documents.map((d) => (
+                  <TableRow key={d.id}>
+                    <TableCell className="font-medium">{d.fileName}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{d.description}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground text-sm">
+                      {formatBytes(d.size)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm tabular-nums">
+                      {formatDate(d.createdAt)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          nativeButton={false}
+                          render={<a href={`/api/documents/${d.id}`} />}
+                          aria-label={`Baixar ${d.fileName}`}
+                        >
+                          <Download className="size-4" />
+                        </Button>
+                        <DeleteButton
+                          action={deleteDoctorDocument.bind(null, d.id)}
+                          title={`Excluir "${d.fileName}"?`}
+                        />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            {filtrados.length} lançamento(s)
+            {filtrados.length !== lancamentos.length && (
+              <span className="text-muted-foreground font-normal text-sm"> de {lancamentos.length}</span>
+            )}
+            <span className="text-muted-foreground font-normal text-sm">
+              {" "}
+              · {formatCurrency(totalFiltrado)}
+            </span>
+          </CardTitle>
+          <CardDescription>Para lançar ou editar um dia, use a tela de Repasses Médicos.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <DoctorEntriesFilter
+            doctorId={doctor.id}
+            meses={meses.map(([mes]) => mes)}
+          />
           <Table>
             <TableHeader>
               <TableRow>
@@ -251,14 +361,16 @@ export default async function MedicoPage({ params }: { params: Promise<{ id: str
               </TableRow>
             </TableHeader>
             <TableBody>
-              {lancamentos.length === 0 && (
+              {visiveis.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                    Nenhum dia lançado para esse médico ainda.
+                    {lancamentos.length === 0
+                      ? "Nenhum dia lançado para esse médico ainda."
+                      : "Nenhum lançamento para esse filtro."}
                   </TableCell>
                 </TableRow>
               )}
-              {lancamentos.map((l) => (
+              {visiveis.map((l) => (
                 <TableRow key={l.id}>
                   <TableCell className="tabular-nums">{formatDate(l.date)}</TableCell>
                   <TableCell className="text-muted-foreground text-xs">
@@ -283,6 +395,13 @@ export default async function MedicoPage({ params }: { params: Promise<{ id: str
               ))}
             </TableBody>
           </Table>
+          <Pagination
+            total={filtrados.length}
+            page={page}
+            pageSize={LANC_POR_PAGINA}
+            basePath={`/medicos/${doctor.id}`}
+            params={filtros}
+          />
         </CardContent>
       </Card>
     </div>
