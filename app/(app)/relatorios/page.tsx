@@ -248,7 +248,7 @@ async function DreReportsSection({ companyId }: { companyId: string }) {
             )}
             {reports.map((r) => (
               <TableRow key={r.id}>
-                <TableCell className="font-medium capitalize">{formatCompetencia(r.competencia)}</TableCell>
+                <TableCell className="font-medium first-letter:uppercase">{formatCompetencia(r.competencia)}</TableCell>
                 <TableCell className="max-w-64 truncate">{r.fileName}</TableCell>
                 <TableCell className="max-w-64 truncate text-muted-foreground">{r.notes || "—"}</TableCell>
                 <TableCell>{formatBytes(r.size)}</TableCell>
@@ -335,7 +335,7 @@ async function DreReportsConsolidatedSummary({ companyIds }: { companyIds: strin
               <TableRow key={s.companyId}>
                 <TableCell className="font-medium">{s.companyName}</TableCell>
                 <TableCell className="text-right tabular-nums">{s.count}</TableCell>
-                <TableCell className="capitalize">{formatCompetencia(s.lastCompetencia)}</TableCell>
+                <TableCell className="first-letter:uppercase">{formatCompetencia(s.lastCompetencia)}</TableCell>
                 <TableCell>
                   <div className="flex justify-end">
                     <SwitchToCompanyButton companyId={s.companyId} label="Ver DREs" />

@@ -234,7 +234,7 @@ export default async function MedicoPage({ params, searchParams }: Props) {
               <TableBody>
                 {meses.map(([mes, v]) => (
                   <TableRow key={mes}>
-                    <TableCell className="font-medium capitalize">
+                    <TableCell className="font-medium first-letter:uppercase">
                       {formatMonth(mes)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{v.dias}</TableCell>

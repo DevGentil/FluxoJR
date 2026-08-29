@@ -1,7 +1,8 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Info, Search } from "lucide-react";
+import { Info, Search } from "lucide-react";
+import { TableDisclosure } from "@/components/table-disclosure";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -267,16 +268,20 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
                   }
                   onClick={isSearching ? undefined : () => togglePeriod(group.key)}
                 >
-                  <TableCell className="font-semibold capitalize">
-                    <span className="flex items-center gap-1.5">
-                      {!isSearching &&
-                        (isExpanded ? (
-                          <ChevronDown className="size-4 text-muted-foreground shrink-0" />
-                        ) : (
-                          <ChevronRight className="size-4 text-muted-foreground shrink-0" />
-                        ))}
-                      {periodOf(toMonthKey(group.anchor), granularity, "longo").label}
-                    </span>
+                  <TableCell className="font-semibold first-letter:uppercase">
+                    {isSearching ? (
+                      periodOf(toMonthKey(group.anchor), granularity, "longo").label
+                    ) : (
+                      <TableDisclosure
+                        open={isExpanded}
+                        onToggle={() => togglePeriod(group.key)}
+                        label={periodOf(toMonthKey(group.anchor), granularity, "longo").label}
+                      >
+                        <span className="first-letter:uppercase">
+                          {periodOf(toMonthKey(group.anchor), granularity, "longo").label}
+                        </span>
+                      </TableDisclosure>
+                    )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">{consultas}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">{exames}</TableCell>

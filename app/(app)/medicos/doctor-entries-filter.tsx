@@ -36,7 +36,7 @@ export function DoctorEntriesFilter({ doctorId, meses }: { doctorId: string; mes
           id="mes"
           value={mes}
           onChange={(e) => aplicar({ mes: e.target.value })}
-          className="h-9 w-48 rounded-lg border border-input bg-transparent px-2.5 text-sm capitalize"
+          className="h-9 w-48 rounded-lg border border-input bg-transparent px-2.5 text-sm [&>option]:first-letter:uppercase"
         >
           <option value="">Todos</option>
           {meses.map((m) => (

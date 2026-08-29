@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { TableDisclosure } from "@/components/table-disclosure";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { formatCurrency, formatPercent } from "@/lib/format";
@@ -103,14 +103,13 @@ export function UnitsTable({ units }: { units: UnitRow[] }) {
             onClick={() => setShowEmpty((v) => !v)}
           >
             <TableCell colSpan={10} className="text-muted-foreground text-sm">
-              <span className="flex items-center gap-1.5">
-                {showEmpty ? (
-                  <ChevronDown className="size-4 shrink-0" />
-                ) : (
-                  <ChevronRight className="size-4 shrink-0" />
-                )}
+              <TableDisclosure
+                open={showEmpty}
+                onToggle={() => setShowEmpty((v) => !v)}
+                label="as unidades sem movimento"
+              >
                 {empty.length} unidade(s) sem movimento no período
-              </span>
+              </TableDisclosure>
             </TableCell>
           </TableRow>
         )}

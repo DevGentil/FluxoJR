@@ -2,7 +2,8 @@
 
 import { Fragment, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronRight, Pencil, Search, Trash2 } from "lucide-react";
+import { Pencil, Search, Trash2 } from "lucide-react";
+import { TableDisclosure } from "@/components/table-disclosure";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -184,15 +185,16 @@ export function DailyEntriesTable({ entries, doctors }: Props) {
                   className="cursor-pointer bg-muted/40 hover:bg-muted/60"
                   onClick={() => abrirMes(mes.key)}
                 >
-                  <TableCell className="font-semibold capitalize">
-                    <span className="flex items-center gap-1.5">
-                      {mesAbertoAgora ? (
-                        <ChevronDown className="size-4 text-muted-foreground shrink-0" />
-                      ) : (
-                        <ChevronRight className="size-4 text-muted-foreground shrink-0" />
-                      )}
-                      {formatMonth(mes.key)}
-                    </span>
+                  <TableCell className="font-semibold">
+                    <TableDisclosure
+                      open={mesAbertoAgora}
+                      onToggle={() => abrirMes(mes.key)}
+                      label={formatMonth(mes.key)}
+                    >
+                      {/* Só a primeira letra: `capitalize` produzia "Agosto
+                          De 2026", que não é português. */}
+                      <span className="first-letter:uppercase">{formatMonth(mes.key)}</span>
+                    </TableDisclosure>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">{mes.medicos} médico(s)</TableCell>
                   <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
@@ -214,15 +216,14 @@ export function DailyEntriesTable({ entries, doctors }: Props) {
                       <Fragment key={dia.key}>
                         <TableRow className="cursor-pointer hover:bg-muted/30" onClick={() => abrirDia(dia.key)}>
                           <TableCell className="pl-6">
-                            <span className="flex items-center gap-1.5 tabular-nums">
-                              {diaAberto ? (
-                                <ChevronDown className="size-4 text-muted-foreground shrink-0" />
-                              ) : (
-                                <ChevronRight className="size-4 text-muted-foreground shrink-0" />
-                              )}
-                              {formatDate(dia.extra)}
+                            <TableDisclosure
+                              open={diaAberto}
+                              onToggle={() => abrirDia(dia.key)}
+                              label={`os lançamentos de ${formatDate(dia.extra)}`}
+                            >
+                              <span className="tabular-nums">{formatDate(dia.extra)}</span>
                               <span className="text-muted-foreground text-xs">{formatWeekday(dia.extra)}</span>
-                            </span>
+                            </TableDisclosure>
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">
                             {dia.medicos} médico(s)

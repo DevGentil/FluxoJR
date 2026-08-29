@@ -1,7 +1,8 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Search, TriangleAlert } from "lucide-react";
+import { Search, TriangleAlert } from "lucide-react";
+import { TableDisclosure } from "@/components/table-disclosure";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -150,17 +151,12 @@ export function ServiceCatalogTable({ items, brackets, groups }: Props) {
                   onClick={() => toggle(group)}
                 >
                   <TableCell colSpan={8} className="font-semibold">
-                    <span className="flex items-center gap-1.5">
-                      {isOpen ? (
-                        <ChevronDown className="size-4 text-muted-foreground shrink-0" />
-                      ) : (
-                        <ChevronRight className="size-4 text-muted-foreground shrink-0" />
-                      )}
+                    <TableDisclosure open={isOpen} onToggle={() => toggle(group)} label={`o grupo ${group}`}>
                       {group}
                       <span className="text-muted-foreground font-normal text-sm">
                         · {groupRows.length} {groupRows.length === 1 ? "item" : "itens"}
                       </span>
-                    </span>
+                    </TableDisclosure>
                   </TableCell>
                   <TableCell />
                 </TableRow>
