@@ -9,6 +9,7 @@ import { DeleteButton } from "@/components/delete-button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { KpiCard } from "@/components/kpi-card";
 import { DoctorFormDialog } from "./doctor-form-dialog";
+import { DoctorsFilter } from "./doctors-filter";
 import { CheckContractButton } from "./check-contract-button";
 import { deleteDoctor } from "./doctors-actions";
 import { Users, FileSignature, TriangleAlert, History } from "lucide-react";
@@ -20,7 +21,13 @@ import { formatDate } from "@/lib/format";
 const hoje = parseDateOnly(todayDateOnly());
 
 interface Props {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    q?: string;
+    especialidade?: string;
+    status?: string;
+    conferir?: string;
+  }>;
 }
 
 const CATEGORY_SHORT: Record<string, string> = {
@@ -194,34 +201,64 @@ export default async function MedicosPage({ searchParams }: Props) {
   const companyId = scope.companyId;
   const page = Math.max(1, Number(params.page) || 1);
 
-  const [totalMedicos, resumoContratos, doctors, serviceItems] = await Promise.all([
-    prisma.doctor.count({ where: { companyId } }),
-    // Os KPIs falam do corpo clínico inteiro, não da página aberta — então
-    // saem de uma consulta leve, só com o que a conta precisa.
+  // Uma consulta leve com TODOS os médicos: alimenta os KPIs (que falam do
+  // corpo clínico inteiro, não da página) e é sobre ela que o filtro roda.
+  //
+  // Filtrar aqui e não no banco é de propósito: "contrato a conferir" depende
+  // de reduzir as versões ao contrato VIGENTE antes de olhar a data de
+  // conferência, e um `where` no Prisma olharia todas as versões — marcaria
+  // como pendente um médico que acabou de ter o contrato conferido só porque
+  // existe uma versão antiga na história. São 81 linhas; o custo é nenhum e
+  // a resposta é a mesma que a tela mostra.
+  const [resumo, serviceItems] = await Promise.all([
     prisma.doctor.findMany({
       where: { companyId },
       select: {
+        id: true,
+        name: true,
+        specialty: true,
+        document: true,
         active: true,
         serviceRates: { select: { serviceItemId: true, validFrom: true, lastCheckedAt: true } },
       },
-    }),
-    prisma.doctor.findMany({
-      where: { companyId },
-      include: { serviceRates: { include: { serviceItem: true } } },
       orderBy: { name: "asc" },
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
     }),
     prisma.serviceItem.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
   ]);
+
+  const busca = (params.q ?? "").trim().toLowerCase();
+  const filtrados = resumo.filter((d) => {
+    if (busca && !`${d.name} ${d.document ?? ""}`.toLowerCase().includes(busca)) return false;
+    if (params.especialidade && d.specialty !== params.especialidade) return false;
+    if (params.status === "ativo" && !d.active) return false;
+    if (params.status === "inativo" && d.active) return false;
+    if (params.conferir === "1" && !isStale(contractOn(d.serviceRates, hoje))) return false;
+    return true;
+  });
+
+  const totalMedicos = filtrados.length;
+  const idsDaPagina = filtrados.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((d) => d.id);
+
+  // Só a página aberta carrega o contrato completo, que é a parte pesada.
+  const doctorsSemOrdem =
+    idsDaPagina.length === 0
+      ? []
+      : await prisma.doctor.findMany({
+          where: { id: { in: idsDaPagina } },
+          include: { serviceRates: { include: { serviceItem: true } } },
+        });
+  const porId = new Map(doctorsSemOrdem.map((d) => [d.id, d]));
+  const doctors = idsDaPagina.map((id) => porId.get(id)!).filter(Boolean);
+
+  const especialidades = [...new Set(resumo.map((d) => d.specialty).filter(Boolean))].sort();
 
   // Client Component só aceita objeto plano — o ServiceItem cru traz
   // Decimal (price/operationalCost), que não serializa.
   const serviceItemOptions = serviceItems.map((s) => ({ id: s.id, name: s.name }));
 
-  const activeDoctors = resumoContratos.filter((d) => d.active).length;
-  const totalItens = resumoContratos.reduce((s, d) => s + contractOn(d.serviceRates, hoje).length, 0);
-  const aConferir = resumoContratos.filter((d) => isStale(contractOn(d.serviceRates, hoje))).length;
+  const activeDoctors = resumo.filter((d) => d.active).length;
+  const totalItens = resumo.reduce((s, d) => s + contractOn(d.serviceRates, hoje).length, 0);
+  const aConferir = resumo.filter((d) => isStale(contractOn(d.serviceRates, hoje))).length;
 
   return (
     <div className="space-y-6">
@@ -259,14 +296,20 @@ export default async function MedicosPage({ searchParams }: Props) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>{totalMedicos} médico(s)</CardTitle>
+            <CardTitle>
+              {totalMedicos} médico(s)
+              {totalMedicos !== resumo.length && (
+                <span className="text-muted-foreground font-normal text-sm"> de {resumo.length}</span>
+              )}
+            </CardTitle>
             <CardDescription>
               Confira o contrato depois de cada renegociação — é o que evita pagar pelo valor velho.
             </CardDescription>
           </div>
           <DoctorFormDialog serviceItems={serviceItemOptions} />
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <DoctorsFilter especialidades={especialidades} />
           <Table>
             <TableHeader>
               <TableRow>
