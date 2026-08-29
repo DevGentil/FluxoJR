@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
-import { getConsolidatedBalance, getBalanceProjection, getMonthlySummary } from "@/lib/cashflow";
+import { getAgingBuckets, getConsolidatedBalance, getMonthlySummary } from "@/lib/cashflow";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -9,7 +9,7 @@ import { OpenCompanyButton } from "@/components/open-company-button";
 import { KpiCard } from "@/components/kpi-card";
 
 import { MonthlyChart } from "./monthly-chart";
-import { ProjectionChart } from "./projection-chart";
+import { AgingChart } from "./aging-chart";
 import { TrendingUp, TrendingDown, Wallet, AlertTriangle } from "lucide-react";
 
 interface CompanyDueSummary {
@@ -76,22 +76,29 @@ export default async function DashboardPage() {
   const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
   const isConsolidated = scope.type !== "company";
 
-  const [balance, monthly, projection90, upcoming, dueSummary] = await Promise.all([
+  const [balance, monthly, upcoming, dueSummary, aging] = await Promise.all([
     getConsolidatedBalance(companyIds),
     getMonthlySummary(companyIds, 6),
-    getBalanceProjection(companyIds, 90),
     isConsolidated || companyIds.length === 0 ? [] : getUpcomingEntries(companyIds),
     isConsolidated ? getDueSummaryByCompany(companyIds) : Promise.resolve([]),
+    getAgingBuckets(companyIds),
   ]);
 
   const currentMonth = monthly[monthly.length - 1];
   const previousMonth = monthly[monthly.length - 2];
-  const projectionPoints = projection90.points.map((p) => ({ label: p.label, balance: p.balance }));
 
   const income = currentMonth?.income ?? 0;
   const expense = currentMonth?.expense ?? 0;
   const net = income - expense;
   const previousNet = (previousMonth?.income ?? 0) - (previousMonth?.expense ?? 0);
+
+  // "Projeção 90 dias" saiu junto com o gráfico: somava o saldo às contas
+  // pendentes e supunha que tudo seria pago no dia. No lugar, o que está
+  // comprometido de fato no prazo em que a decisão é tomada.
+  const ate30 = aging.filter((b) => b.label !== "31–60 dias" && b.label !== "60+ dias");
+  const aPagar30 = ate30.reduce((s, b) => s + b.pagar, 0);
+  const aReceber30 = ate30.reduce((s, b) => s + b.receber, 0);
+  const vencido = aging.find((b) => b.label === "Vencido")?.pagar ?? 0;
 
   return (
     <div className="space-y-6">
@@ -129,15 +136,17 @@ export default async function DashboardPage() {
           iconClass={net < 0 ? "text-destructive" : "text-emerald-500"}
         />
         <KpiCard
-          label="Projeção 90 dias"
-          value={formatCurrency(projection90.projectedBalance)}
+          label="A pagar em 30 dias"
+          value={formatCurrency(aPagar30)}
           hint={
-            projection90.overdue !== 0
-              ? `Inclui ${formatCurrency(Math.abs(projection90.overdue))} já vencido`
-              : undefined
+            vencido > 0
+              ? `${formatCurrency(vencido)} já vencido`
+              : aReceber30 > 0
+                ? `${formatCurrency(aReceber30)} a receber no mesmo prazo`
+                : "Nada vencido"
           }
           icon={AlertTriangle}
-          iconClass="text-amber-500"
+          iconClass={vencido > 0 ? "text-destructive" : "text-amber-500"}
         />
       </div>
 
@@ -152,14 +161,13 @@ export default async function DashboardPage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Projeção de saldo (90 dias)</CardTitle>
+            <CardTitle>Vencimentos por faixa de prazo</CardTitle>
             <CardDescription>
-              Saldo atual + contas a pagar/receber pendentes. O que já venceu entra logo depois de
-              &quot;Hoje&quot;.
+              O que já está comprometido e quando vence — obrigações registradas, não estimativa.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ProjectionChart data={projectionPoints} />
+            <AgingChart data={aging} />
           </CardContent>
         </Card>
       </div>

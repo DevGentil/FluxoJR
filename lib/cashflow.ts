@@ -163,3 +163,94 @@ export async function getMonthlySummary(companyIds: string[], months = 6) {
     return { key, label, ...value, net: value.income - value.expense };
   });
 }
+
+export interface AgingBucket {
+  label: string;
+  pagar: number;
+  receber: number;
+}
+
+/** Faixas de prazo, em dias a partir de hoje. `null` no fim é "daqui para
+ * frente". A primeira, negativa, é o que já venceu. */
+const FAIXAS: { label: string; ate: number | null }[] = [
+  { label: "Vencido", ate: -1 },
+  { label: "Até 7 dias", ate: 7 },
+  { label: "8–15 dias", ate: 15 },
+  { label: "16–30 dias", ate: 30 },
+  { label: "31–60 dias", ate: 60 },
+  { label: "60+ dias", ate: null },
+];
+
+/** O que está comprometido e quando vence, por faixa de prazo.
+ *
+ * Diferente da projeção de saldo, isto não estima nada: são obrigações já
+ * registradas, agrupadas pelo prazo. Responde "o que aperta nesta semana?"
+ * com um número exato, em vez de uma linha que supõe que tudo será pago no
+ * dia certo. */
+export async function getAgingBuckets(companyIds: string[]): Promise<AgingBucket[]> {
+  const zerado = FAIXAS.map((f) => ({ label: f.label, pagar: 0, receber: 0 }));
+  if (companyIds.length === 0) return zerado;
+
+  const pendentes = await prisma.scheduledEntry.findMany({
+    where: { companyId: { in: companyIds }, status: { in: ["PENDING", "OVERDUE"] } },
+    select: { dueDate: true, amount: true, type: true },
+  });
+
+  const hoje = todayDateOnly();
+  for (const e of pendentes) {
+    const dias = Math.round(
+      (parseDateOnly(toDateOnly(e.dueDate)).getTime() - parseDateOnly(hoje).getTime()) / 86_400_000
+    );
+    const i = FAIXAS.findIndex((f) => f.ate === null || dias <= f.ate);
+    const bucket = zerado[i === -1 ? zerado.length - 1 : i];
+    if (e.type === "PAYABLE") bucket.pagar += Number(e.amount);
+    else bucket.receber += Number(e.amount);
+  }
+
+  return zerado;
+}
+
+export interface MonthTotals {
+  month: string;
+  income: number;
+  expense: number;
+}
+
+/** Receita e despesa mês a mês, para o comparativo do Balanço.
+ *
+ * Agregado com `date_trunc` no Postgres em vez de trazer as transações para
+ * somá-las aqui: com um ano de operação das sete unidades são dezenas de
+ * milhares de linhas, e o que a tela precisa são dezenas.
+ *
+ * Transferência entre empresas do grupo fica de fora — não é receita nem
+ * despesa, é dinheiro mudando de bolso dentro da mesma holding. */
+export async function getMonthlyTotals(companyIds: string[], meses: number): Promise<MonthTotals[]> {
+  if (companyIds.length === 0) return [];
+
+  const desde = startOfMonth(addMonths(currentMonthKey(), -(meses - 1)));
+
+  const linhas = await prisma.$queryRaw<{ mes: string; type: string; total: string }[]>`
+    SELECT to_char(date_trunc('month', "date"), 'YYYY-MM') AS mes,
+           "type"::text AS type,
+           SUM("amount")::text AS total
+    FROM "Transaction"
+    WHERE "companyId" = ANY(${companyIds})
+      AND "transferCompanyId" IS NULL
+      AND "date" >= ${desde}
+    GROUP BY 1, 2
+  `;
+
+  const map = new Map<string, MonthTotals>();
+  for (let i = 0; i < meses; i++) {
+    const month = addMonths(currentMonthKey(), -(meses - 1 - i));
+    map.set(month, { month, income: 0, expense: 0 });
+  }
+  for (const l of linhas) {
+    const atual = map.get(l.mes);
+    if (!atual) continue;
+    if (l.type === "INCOME") atual.income += Number(l.total);
+    else atual.expense += Number(l.total);
+  }
+
+  return [...map.values()];
+}
