@@ -249,8 +249,10 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>{entries.length} dia(s) lançado(s)</CardTitle>
-            <CardDescription>Expanda o mês para ver os dias.</CardDescription>
+            <CardTitle>Lançamentos</CardTitle>
+            <CardDescription>
+              Abra o mês para ver os dias, e o dia para ver os lançamentos dele.
+            </CardDescription>
           </div>
           <DailyEntryFormDialog doctors={doctorOptions} />
         </CardHeader>
