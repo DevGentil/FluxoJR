@@ -13,7 +13,7 @@ veja [Múltiplas empresas e escopo](#múltiplas-empresas-e-escopo).
 - [Prisma ORM](https://www.prisma.io) 7 + PostgreSQL
 - [Supabase Auth](https://supabase.com/auth) para autenticação
 - [Recharts](https://recharts.org) para os gráficos
-- [Vitest](https://vitest.dev) — 254 testes
+- [Vitest](https://vitest.dev) — 269 testes
 
 ## O que o sistema faz
 
@@ -39,18 +39,21 @@ Modelado a partir das planilhas reais da unidade de Contagem. Ver
   Em três níveis: mês → dia → os lançamentos daquele dia. Aceita o valor total
   do dia (o formato de 98% dos lançamentos reais) ou o detalhe por item, que
   o sistema soma pelo contrato.
-- **Médicos** — cadastro e contrato de cada um, com filtro e paginação. A
-  ficha individual traz o contrato item a item com a data de vigência e o
-  histórico de reajustes, o repasse mês a mês e todos os lançamentos, além dos
-  arquivos do médico (contrato assinado, aditivos).
+- **Médicos** — cadastro e contrato de cada um, com filtro, ordenação por
+  coluna e paginação. A ficha individual traz o contrato item a item com a
+  data de vigência e o histórico de reajustes, o repasse mês a mês e todos os
+  lançamentos — cada tabela com sua própria ordem —, além dos arquivos do
+  médico (contrato assinado, aditivos).
 - **Operação** — o catálogo de procedimentos com preço, encargos e custo de
   insumo, quanto sobra para pagar o médico, e as métricas de rentabilidade
-  (receita, lucro, margem, conversão de consulta em exame).
+  (receita, lucro, margem, conversão de consulta em exame). Ordenável por
+  qualquer coluna, dentro de cada grupo e de cada período.
 
 ### Análise
 
 - **Relatórios** — DRE simplificado por categoria, fornecedor e centro de
-  custo, com exportação em CSV, mais o arquivo do DRE fechado pelo contador.
+  custo, ordenável por qualquer coluna e com exportação em CSV na mesma ordem
+  da tela, mais o arquivo do DRE fechado pelo contador.
 - **Balanço Executivo** — faturamento, despesas e fluxo líquido do período,
   saldo inicial x final por conta e por empresa, ranking de categorias, e um
   comparativo mensal / trimestral / semestral / anual com a variação contra o
@@ -112,6 +115,28 @@ tela diz isso em vez de mostrar zero como se fosse apurado.
 empresa. Apesar do nome do modelo, o percentual engloba taxa de maquininha,
 impostos e demais custos proporcionais ao faturamento — nas telas ele aparece
 como "encargos".
+
+## Ordenação das tabelas
+
+Clicar no cabeçalho ordena (`lib/sorting.ts`, `components/sortable-head.tsx`).
+Três decisões que valem explicação:
+
+**Tabela que pagina no servidor guarda a ordem na URL**, não em `useState`.
+Ordenar no cliente reordenaria só as 20 linhas abertas, e "o maior valor"
+seria o maior daquela página — um número errado com cara de certo. Com a
+ordem no endereço quem ordena é a consulta, a página volta ao começo, e a
+escolha sobrevive ao recarregar. Tabela sem paginação de servidor usa
+`LocalSortableHead`, com a ordem em `useState`.
+
+**A lista de colunas permitidas é obrigatória.** O campo chega da barra de
+endereço; sem a lista daria para pedir ordem por uma coluna que a tela não
+mostra. Fora dela, cai no padrão em vez de errar.
+
+**Valor ausente vai para o fim nas duas direções.** Unidade sem receita não
+tem "a pior margem", tem "não dá para calcular" — tratá-la como o menor
+número a jogaria para o topo do decrescente invertido e esconderia quem está
+de fato no vermelho. Pelo mesmo motivo, coluna de percentual ordena pela
+razão, não pelo texto formatado: "9,0%" viria depois de "12,3%".
 
 ## Organização do código
 

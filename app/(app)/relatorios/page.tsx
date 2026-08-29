@@ -11,10 +11,22 @@ import { DeleteButton } from "@/components/delete-button";
 import { DreReportFormDialog } from "./dre-report-form-dialog";
 import { deleteDreReport } from "./dre-reports-actions";
 import { ExportCsvButton } from "@/components/export-csv-button";
+import { SortableHead } from "@/components/sortable-head";
+import { parseSort, sortBy, type Sort } from "@/lib/sorting";
 import { Download } from "lucide-react";
 
 interface Props {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{
+    from?: string;
+    to?: string;
+    /** Ordem de cada tabela: `e` entradas, `s` saídas, `c` comparativo. */
+    esort?: string;
+    edir?: string;
+    ssort?: string;
+    sdir?: string;
+    csort?: string;
+    cdir?: string;
+  }>;
 }
 
 interface ReportRow {
@@ -51,6 +63,16 @@ function resultColor(value: number) {
   return "";
 }
 
+const COLUNAS_DRE = ["categoria", "fornecedor", "centro", "total"] as const;
+type ColunaDre = (typeof COLUNAS_DRE)[number];
+
+const CHAVES_DRE: Record<ColunaDre, (r: ReportRow) => string | number> = {
+  categoria: (r) => r.categoria,
+  fornecedor: (r) => r.fornecedor,
+  centro: (r) => r.centroCusto,
+  total: (r) => r.total,
+};
+
 function CategorySection({
   title,
   colorClass,
@@ -58,13 +80,22 @@ function CategorySection({
   totalLabel,
   total,
   emptyLabel,
+  prefix,
+  sort,
 }: {
   title: string;
   colorClass: string;
+  /** Já na ordem escolhida — quem ordena é a página, para o CSV sair na
+   * mesma ordem que está na tela. */
   rows: ReportRow[];
   totalLabel: string;
   total: number;
   emptyLabel: string;
+  /** Entradas e saídas são a mesma tabela duas vezes na mesma tela; cada
+   * uma precisa dos próprios parâmetros de ordem. */
+  prefix: string;
+  /** A ordem aplicada, só para o cabeçalho marcar a coluna certa. */
+  sort: Sort<ColunaDre>;
 }) {
   return (
     <Card>
@@ -75,10 +106,18 @@ function CategorySection({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Categoria</TableHead>
-              <TableHead>Fornecedor</TableHead>
-              <TableHead>Centro de custo</TableHead>
-              <TableHead className="text-right">Total</TableHead>
+              <SortableHead field="categoria" prefix={prefix} current={sort}>
+                Categoria
+              </SortableHead>
+              <SortableHead field="fornecedor" prefix={prefix} current={sort}>
+                Fornecedor
+              </SortableHead>
+              <SortableHead field="centro" prefix={prefix} current={sort}>
+                Centro de custo
+              </SortableHead>
+              <SortableHead field="total" prefix={prefix} first="desc" align="right" className="text-right" current={sort}>
+                Total
+              </SortableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -112,28 +151,43 @@ function CategorySection({
   );
 }
 
+interface CompanySummary {
+  companyId: string;
+  companyName: string;
+  income: number;
+  expense: number;
+}
+
+const COLUNAS_EMPRESA = ["empresa", "entradas", "saidas", "resultado", "margem"] as const;
+type ColunaEmpresa = (typeof COLUNAS_EMPRESA)[number];
+
+/** Margem é razão, não coluna guardada: ordenar pelo texto "12,3%" colocaria
+ * 9% depois de 12%. Empresa sem entrada nenhuma vai com `null` — não dá para
+ * calcular margem sobre zero, e fingir 0% mudaria o ranking. */
+const CHAVES_EMPRESA: Record<ColunaEmpresa, (s: CompanySummary) => string | number | null> = {
+  empresa: (s) => s.companyName,
+  entradas: (s) => s.income,
+  saidas: (s) => s.expense,
+  resultado: (s) => s.income - s.expense,
+  margem: (s) => (s.income > 0 ? (s.income - s.expense) / s.income : null),
+};
+
 /** DRE comparativo: uma linha por empresa (entradas, saídas, resultado,
  * margem) em vez de um DRE único somando tudo — reflete como a holding
  * realmente analisa os números (por unidade), com atalho pro DRE completo
  * daquela empresa. */
-function CompanyComparisonTable({ rows }: { rows: ReportRow[] }) {
-  interface CompanySummary {
-    companyId: string;
-    companyName: string;
-    income: number;
-    expense: number;
-  }
-  const summaries: CompanySummary[] = [];
+function CompanyComparisonTable({ rows, sort }: { rows: ReportRow[]; sort: Sort<ColunaEmpresa> }) {
+  const agrupadas: CompanySummary[] = [];
   for (const r of rows) {
-    let summary = summaries.find((s) => s.companyId === r.companyId);
+    let summary = agrupadas.find((s) => s.companyId === r.companyId);
     if (!summary) {
       summary = { companyId: r.companyId, companyName: r.empresa, income: 0, expense: 0 };
-      summaries.push(summary);
+      agrupadas.push(summary);
     }
     if (r.tipo === "INCOME") summary.income += r.total;
     else summary.expense += r.total;
   }
-  summaries.sort((a, b) => a.companyName.localeCompare(b.companyName));
+  const summaries = sortBy(agrupadas, CHAVES_EMPRESA[sort.field], sort.dir);
 
   const totalIncome = summaries.reduce((s, c) => s + c.income, 0);
   const totalExpense = summaries.reduce((s, c) => s + c.expense, 0);
@@ -147,11 +201,21 @@ function CompanyComparisonTable({ rows }: { rows: ReportRow[] }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Empresa</TableHead>
-              <TableHead className="text-right">Entradas</TableHead>
-              <TableHead className="text-right">Saídas</TableHead>
-              <TableHead className="text-right">Resultado</TableHead>
-              <TableHead className="text-right">Margem</TableHead>
+              <SortableHead field="empresa" prefix="c" current={sort}>
+                Empresa
+              </SortableHead>
+              <SortableHead field="entradas" prefix="c" first="desc" align="right" className="text-right" current={sort}>
+                Entradas
+              </SortableHead>
+              <SortableHead field="saidas" prefix="c" first="desc" align="right" className="text-right" current={sort}>
+                Saídas
+              </SortableHead>
+              <SortableHead field="resultado" prefix="c" first="desc" align="right" className="text-right" current={sort}>
+                Resultado
+              </SortableHead>
+              <SortableHead field="margem" prefix="c" first="desc" align="right" className="text-right" current={sort}>
+                Margem
+              </SortableHead>
               <TableHead className="w-32" />
             </TableRow>
           </TableHeader>
@@ -398,8 +462,22 @@ export default async function RelatoriosPage({ searchParams }: Props) {
   }
 
   const allRows = Array.from(grouped.values());
-  const incomeRows = allRows.filter((r) => r.tipo === "INCOME").sort((a, b) => b.total - a.total);
-  const expenseRows = allRows.filter((r) => r.tipo === "EXPENSE").sort((a, b) => b.total - a.total);
+  const incomeRows = allRows.filter((r) => r.tipo === "INCOME");
+  const expenseRows = allRows.filter((r) => r.tipo === "EXPENSE");
+  // Maior valor primeiro é o padrão das duas tabelas — "para onde foi o
+  // dinheiro" começa pelo que pesou mais.
+  const padraoDre: Sort<ColunaDre> = { field: "total", dir: "desc" };
+  const ordemEntradas = parseSort({ sort: params.esort, dir: params.edir }, COLUNAS_DRE, padraoDre);
+  const ordemSaidas = parseSort({ sort: params.ssort, dir: params.sdir }, COLUNAS_DRE, padraoDre);
+  // No comparativo o padrão é alfabético: a lista de unidades é a mesma
+  // toda vez, e achar uma unidade específica é mais frequente do que
+  // rankeá-las.
+  const ordemEmpresas = parseSort({ sort: params.csort, dir: params.cdir }, COLUNAS_EMPRESA, {
+    field: "empresa",
+    dir: "asc",
+  });
+  const entradas = sortBy(incomeRows, CHAVES_DRE[ordemEntradas.field], ordemEntradas.dir);
+  const saidas = sortBy(expenseRows, CHAVES_DRE[ordemSaidas.field], ordemSaidas.dir);
   const totalIncome = incomeRows.reduce((s, r) => s + r.total, 0);
   const totalExpense = expenseRows.reduce((s, r) => s + r.total, 0);
   const result = totalIncome - totalExpense;
@@ -407,7 +485,9 @@ export default async function RelatoriosPage({ searchParams }: Props) {
   // Exportação CSV só faz sentido no DRE de uma empresa específica — o
   // comparativo consolidado é pra visualizar na tela, não pra planilha.
   const csvHeaders = ["Categoria", "Fornecedor", "Tipo", "Centro de Custo", "Total"];
-  const csvRows: (string | number)[][] = [...incomeRows, ...expenseRows].map((r) => [
+  // O CSV sai na mesma ordem da tela — exportar algo diferente do que está
+  // à vista é a armadilha silenciosa que a paginação já ensinou.
+  const csvRows: (string | number)[][] = [...entradas, ...saidas].map((r) => [
     r.categoria,
     r.fornecedor,
     r.tipo === "INCOME" ? "Entrada" : "Saída",
@@ -439,7 +519,7 @@ export default async function RelatoriosPage({ searchParams }: Props) {
 
       {isConsolidated ? (
         <>
-          <CompanyComparisonTable rows={allRows} />
+          <CompanyComparisonTable rows={allRows} sort={ordemEmpresas} />
           <DreReportsConsolidatedSummary companyIds={companyIds} />
         </>
       ) : (
@@ -475,18 +555,22 @@ export default async function RelatoriosPage({ searchParams }: Props) {
             <CategorySection
               title="Entradas por categoria"
               colorClass="text-emerald-600 dark:text-emerald-400"
-              rows={incomeRows}
+              rows={entradas}
               totalLabel="Total de entradas"
               total={totalIncome}
               emptyLabel="Nenhuma entrada no período selecionado."
+              prefix="e"
+              sort={ordemEntradas}
             />
             <CategorySection
               title="Saídas por categoria"
               colorClass="text-red-600 dark:text-red-400"
-              rows={expenseRows}
+              rows={saidas}
               totalLabel="Total de saídas"
               total={totalExpense}
               emptyLabel="Nenhuma saída no período selecionado."
+              prefix="s"
+              sort={ordemSaidas}
             />
           </div>
 

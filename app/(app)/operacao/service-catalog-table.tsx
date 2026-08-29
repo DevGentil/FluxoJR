@@ -1,13 +1,15 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { Search, TriangleAlert } from "lucide-react";
 import { TableDisclosure } from "@/components/table-disclosure";
+import { LocalSortableHead, useLocalSort } from "@/components/sortable-head";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DeleteButton } from "@/components/delete-button";
 import { formatCurrency } from "@/lib/format";
+import { sortBy, type Sort, type SortDirection } from "@/lib/sorting";
 import { computeMargin, type TaxBracketInput } from "@/lib/service-margin";
 import { ServiceItemFormDialog, type ServiceItemFormValues } from "./service-item-form-dialog";
 import { categoryLabel, payerLabel } from "@/lib/service-catalog";
@@ -24,7 +26,69 @@ interface Props {
   groups: string[];
 }
 
+/** Coluna do catálogo. Texto começa crescente e alinhado à esquerda;
+ * dinheiro, decrescente e à direita. */
+function Col({
+  field,
+  sort,
+  onSort,
+  children,
+  align = "right",
+}: {
+  field: Coluna;
+  sort: Sort<Coluna>;
+  onSort: (field: Coluna, first: SortDirection) => void;
+  children: ReactNode;
+  align?: "left" | "right";
+}) {
+  return (
+    <LocalSortableHead
+      field={field}
+      sort={sort}
+      onSort={onSort}
+      first={align === "right" ? "desc" : "asc"}
+      align={align}
+      className={align === "right" ? "text-right" : undefined}
+      hint={ORDEM_HINT}
+    >
+      {children}
+    </LocalSortableHead>
+  );
+}
+
 const SEM_GRUPO = "Sem grupo";
+
+/** Uma linha do catálogo com a economia do item já calculada. */
+interface CatalogComputedRow {
+  item: CatalogRow;
+  margin: ReturnType<typeof computeMargin>;
+  /** Quanto sobra para pagar o médico depois de encargos e insumo. `null`
+   * quando o item não tem preço de tabela (plantão, auxílio). */
+  available: number | null;
+  maxRate: number;
+  overpaying: string[];
+  semContrato: boolean;
+}
+
+/** Item sem preço não tem encargo nem sobra apurados — `null` manda a linha
+ * para o fim em vez de fingir que vale zero. */
+const CHAVES = {
+  item: (r: CatalogComputedRow) => r.item.name,
+  categoria: (r: CatalogComputedRow) => categoryLabel(r.item.category),
+  convenio: (r: CatalogComputedRow) => (r.item.payer ? payerLabel(r.item.payer) : null),
+  preco: (r: CatalogComputedRow) => r.item.price,
+  encargos: (r: CatalogComputedRow) => r.margin?.tax ?? null,
+  insumo: (r: CatalogComputedRow) => r.item.operationalCost,
+  sobra: (r: CatalogComputedRow) => r.available,
+  repasse: (r: CatalogComputedRow) => (r.maxRate > 0 ? r.maxRate : null),
+} satisfies Record<string, (r: CatalogComputedRow) => string | number | null | undefined>;
+
+type Coluna = keyof typeof CHAVES;
+
+/** A ordem vale para os itens dentro de cada grupo. O grupo é o eixo do
+ * catálogo — é ele que define o custo de insumo — então ele continua em
+ * ordem alfabética, sempre no mesmo lugar. */
+const ORDEM_HINT = "os itens de dentro de cada grupo";
 
 /** Catálogo de serviços com a economia de cada item, agrupado pelo grupo
  * operacional (o mesmo agrupamento da planilha de exames, que é o que
@@ -41,6 +105,7 @@ export function ServiceCatalogTable({ items, brackets, groups }: Props) {
   // Grupos fechados por padrão: são 124 itens no catálogo real, e abrir
   // tudo enterra o que interessa. A busca abre sozinha o que bater.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const { sort, onSort } = useLocalSort<Coluna>({ field: "item", dir: "asc" });
 
   function toggle(key: string) {
     setExpanded((prev) => {
@@ -84,8 +149,10 @@ export function ServiceCatalogTable({ items, brackets, groups }: Props) {
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(r);
     }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [rows]);
+    return [...map.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], "pt-BR"))
+      .map(([group, groupRows]) => [group, sortBy(groupRows, CHAVES[sort.field], sort.dir)] as const);
+  }, [rows, sort]);
 
   const emAlerta = rows.filter((r) => r.overpaying.length > 0).length;
   const semContrato = rows.filter((r) => r.semContrato).length;
@@ -123,14 +190,30 @@ export function ServiceCatalogTable({ items, brackets, groups }: Props) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Item</TableHead>
-            <TableHead>Categoria</TableHead>
-            <TableHead>Convênio</TableHead>
-            <TableHead className="text-right">Valor cobrado</TableHead>
-            <TableHead className="text-right">Encargos</TableHead>
-            <TableHead className="text-right">Custo insumo</TableHead>
-            <TableHead className="text-right">Sobra p/ repasse</TableHead>
-            <TableHead className="text-right">Maior repasse</TableHead>
+            <Col field="item" sort={sort} onSort={onSort} align="left">
+              Item
+            </Col>
+            <Col field="categoria" sort={sort} onSort={onSort} align="left">
+              Categoria
+            </Col>
+            <Col field="convenio" sort={sort} onSort={onSort} align="left">
+              Convênio
+            </Col>
+            <Col field="preco" sort={sort} onSort={onSort}>
+              Valor cobrado
+            </Col>
+            <Col field="encargos" sort={sort} onSort={onSort}>
+              Encargos
+            </Col>
+            <Col field="insumo" sort={sort} onSort={onSort}>
+              Custo insumo
+            </Col>
+            <Col field="sobra" sort={sort} onSort={onSort}>
+              Sobra p/ repasse
+            </Col>
+            <Col field="repasse" sort={sort} onSort={onSort}>
+              Maior repasse
+            </Col>
             <TableHead className="w-24" />
           </TableRow>
         </TableHeader>

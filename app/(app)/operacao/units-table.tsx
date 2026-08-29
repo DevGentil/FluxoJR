@@ -2,9 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { TableDisclosure } from "@/components/table-disclosure";
+import { LocalSortableHead, useLocalSort } from "@/components/sortable-head";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { formatCurrency, formatPercent } from "@/lib/format";
+import { sortBy } from "@/lib/sorting";
 
 export interface UnitRow {
   id: string;
@@ -49,30 +51,72 @@ function UnitCells({ u, grandTotal }: { u: UnitRow; grandTotal: number }) {
  * de sete no cenário atual — ocupavam metade da altura com zeros. Elas agora
  * ficam recolhidas atrás de uma linha, ainda a um clique de distância porque
  * "por que essa unidade está zerada?" é uma pergunta legítima. */
+/** Como cada coluna vira um número comparável.
+ *
+ * Conversão e margem são razões, não colunas guardadas: ordenar pelo texto
+ * "12,3%" colocaria 9% depois de 12%. Unidade sem denominador vai para o
+ * fim, com `null` — é "não dá para calcular", não "zero por cento". */
+const CHAVES = {
+  unidade: (u: UnitRow) => u.name,
+  medicos: (u: UnitRow) => u.doctors,
+  consultas: (u: UnitRow) => u.consultas,
+  exames: (u: UnitRow) => u.exames,
+  conversao: (u: UnitRow) => (u.consultas > 0 ? u.exames / u.consultas : null),
+  custo: (u: UnitRow) => u.total,
+  lucro: (u: UnitRow) => (u.revenue > 0 ? u.profit : null),
+  margem: (u: UnitRow) => (u.revenue > 0 ? u.profit / u.revenue : null),
+} satisfies Record<string, (u: UnitRow) => string | number | null>;
+
+type Coluna = keyof typeof CHAVES;
+
 export function UnitsTable({ units }: { units: UnitRow[] }) {
   const [showEmpty, setShowEmpty] = useState(false);
+  const { sort, onSort } = useLocalSort<Coluna>({ field: "custo", dir: "desc" });
 
   const { active, empty, grandTotal } = useMemo(() => {
     const withMovement = units.filter((u) => u.total > 0 || u.consultas > 0 || u.exames > 0);
     return {
-      active: [...withMovement].sort((a, b) => b.total - a.total),
+      active: sortBy(withMovement, CHAVES[sort.field], sort.dir),
       empty: units.filter((u) => !withMovement.includes(u)),
       grandTotal: units.reduce((s, u) => s + u.total, 0),
     };
-  }, [units]);
+  }, [units, sort]);
 
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Unidade</TableHead>
-          <TableHead className="hidden lg:table-cell text-right">Médicos ativos</TableHead>
-          <TableHead className="text-right">Consultas</TableHead>
-          <TableHead className="text-right">Exames</TableHead>
-          <TableHead className="text-right">% conversão</TableHead>
-          <TableHead className="text-right">Custo total</TableHead>
-          <TableHead className="text-right">Lucro</TableHead>
-          <TableHead className="text-right">Margem</TableHead>
+          <LocalSortableHead field="unidade" sort={sort} onSort={onSort}>
+            Unidade
+          </LocalSortableHead>
+          <LocalSortableHead
+            field="medicos"
+            sort={sort}
+            onSort={onSort}
+            first="desc"
+            align="right"
+            className="hidden lg:table-cell text-right"
+          >
+            Médicos ativos
+          </LocalSortableHead>
+          <LocalSortableHead field="consultas" sort={sort} onSort={onSort} first="desc" align="right" className="text-right">
+            Consultas
+          </LocalSortableHead>
+          <LocalSortableHead field="exames" sort={sort} onSort={onSort} first="desc" align="right" className="text-right">
+            Exames
+          </LocalSortableHead>
+          <LocalSortableHead field="conversao" sort={sort} onSort={onSort} first="desc" align="right" className="text-right">
+            % conversão
+          </LocalSortableHead>
+          <LocalSortableHead field="custo" sort={sort} onSort={onSort} first="desc" align="right" className="text-right">
+            Custo total
+          </LocalSortableHead>
+          <LocalSortableHead field="lucro" sort={sort} onSort={onSort} first="desc" align="right" className="text-right">
+            Lucro
+          </LocalSortableHead>
+          <LocalSortableHead field="margem" sort={sort} onSort={onSort} first="desc" align="right" className="text-right">
+            Margem
+          </LocalSortableHead>
           <TableHead className="hidden lg:table-cell text-right">% do grupo</TableHead>
           <TableHead className="w-32" />
         </TableRow>

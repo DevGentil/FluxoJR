@@ -1,12 +1,14 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { Info, Search } from "lucide-react";
 import { TableDisclosure } from "@/components/table-disclosure";
+import { LocalSortableHead, useLocalSort } from "@/components/sortable-head";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency, formatPercent } from "@/lib/format";
+import { sortBy, type Sort, type SortDirection } from "@/lib/sorting";
 import { GRANULARITY_OPTIONS, periodOf, type Granularity } from "@/lib/periods";
 import { toMonthKey } from "@/lib/date-only";
 
@@ -98,6 +100,33 @@ function emptyTotals(entityId: string, entityName: string): EntityTotals {
   };
 }
 
+/** Como cada coluna vira um número comparável para ordenar.
+ *
+ * Razão (conversão, margem, consultas por exame) é calculada aqui e não
+ * lida da tela: ordenar pelo texto "12,3%" colocaria 9% depois de 12%.
+ * Quem não tem denominador vai com `null`, que o comparador manda para o
+ * fim — "não dá para calcular" não é "zero". */
+const CHAVES = {
+  entidade: (e: EntityTotals) => e.entityName,
+  consultas: (e: EntityTotals) => e.consultationCount,
+  exames: (e: EntityTotals) => e.examCount,
+  plantao: (e: EntityTotals) => e.hoursWorked,
+  proporcao: (e: EntityTotals) => (e.examCount > 0 ? e.consultationCount / e.examCount : null),
+  conversao: (e: EntityTotals) => (e.consultationCount > 0 ? e.examCount / e.consultationCount : null),
+  receita: (e: EntityTotals) => e.revenue,
+  repasse: (e: EntityTotals) => e.totalValue,
+  encargos: (e: EntityTotals) => e.tax + e.operationalCost,
+  lucro: (e: EntityTotals) => (e.revenue > 0 ? e.profit : null),
+  margem: (e: EntityTotals) => (e.revenue > 0 ? e.profit / e.revenue : null),
+} satisfies Record<string, (e: EntityTotals) => string | number | null>;
+
+type Coluna = keyof typeof CHAVES;
+
+/** A ordem escolhida vale para as linhas DENTRO de cada período. Os períodos
+ * seguem cronológicos: eles são a espinha da tabela, e reordená-los por
+ * valor tiraria a única leitura que ela oferece de graça, a da evolução. */
+const ORDEM_HINT = "as linhas de dentro de cada período";
+
 /** Agrega as linhas de um período (que pode juntar vários meses, no caso de
  * trimestre/semestre/ano) por entidade, pra alimentar as linhas de detalhe
  * expandidas — mesmas colunas do agregado, só que por médico/unidade. */
@@ -120,7 +149,38 @@ function aggregateByEntity(rows: MetricRow[]): EntityTotals[] {
     entry.profit += r.profit;
     map.set(r.entityId, entry);
   }
-  return Array.from(map.values()).sort((a, b) => b.totalValue - a.totalValue);
+  return Array.from(map.values());
+}
+
+/** Coluna numérica: as onze repetem alinhamento à direita, primeiro clique
+ * decrescente e a mesma dica. Fica um wrapper local em vez de onze linhas
+ * de props copiadas. */
+function Col({
+  field,
+  sort,
+  onSort,
+  children,
+  className = "text-right",
+}: {
+  field: Coluna;
+  sort: Sort<Coluna>;
+  onSort: (field: Coluna, first: SortDirection) => void;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <LocalSortableHead
+      field={field}
+      sort={sort}
+      onSort={onSort}
+      first="desc"
+      align="right"
+      className={className}
+      hint={ORDEM_HINT}
+    >
+      {children}
+    </LocalSortableHead>
+  );
 }
 
 interface Props {
@@ -140,6 +200,9 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
   const [search, setSearch] = useState("");
   const [granularity, setGranularity] = useState<Granularity>("month");
   const [expandedPeriods, setExpandedPeriods] = useState<Set<string>>(new Set());
+  // Repasse decrescente é o padrão porque a primeira pergunta ao abrir um
+  // período é sempre "quem custou mais".
+  const { sort, onSort } = useLocalSort<Coluna>({ field: "repasse", dir: "desc" });
 
   function togglePeriod(key: string) {
     setExpandedPeriods((prev) => {
@@ -227,17 +290,39 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Período / {entityLabel}</TableHead>
-            <TableHead className="text-right">Consultas</TableHead>
-            <TableHead className="text-right">Exames</TableHead>
-            <TableHead className="text-right">Plantão</TableHead>
-            <TableHead className="hidden xl:table-cell text-right">Consultas por exame</TableHead>
-            <TableHead className="text-right">% conversão</TableHead>
-            <TableHead className="text-right">Receita</TableHead>
-            <TableHead className="text-right">Repasse</TableHead>
-            <TableHead className="hidden lg:table-cell text-right">Encargos + insumo</TableHead>
-            <TableHead className="text-right">Lucro</TableHead>
-            <TableHead className="text-right">Margem</TableHead>
+            <LocalSortableHead field="entidade" sort={sort} onSort={onSort} hint={ORDEM_HINT}>
+              Período / {entityLabel}
+            </LocalSortableHead>
+            <Col field="consultas" sort={sort} onSort={onSort}>
+              Consultas
+            </Col>
+            <Col field="exames" sort={sort} onSort={onSort}>
+              Exames
+            </Col>
+            <Col field="plantao" sort={sort} onSort={onSort}>
+              Plantão
+            </Col>
+            <Col field="proporcao" sort={sort} onSort={onSort} className="hidden xl:table-cell text-right">
+              Consultas por exame
+            </Col>
+            <Col field="conversao" sort={sort} onSort={onSort}>
+              % conversão
+            </Col>
+            <Col field="receita" sort={sort} onSort={onSort}>
+              Receita
+            </Col>
+            <Col field="repasse" sort={sort} onSort={onSort}>
+              Repasse
+            </Col>
+            <Col field="encargos" sort={sort} onSort={onSort} className="hidden lg:table-cell text-right">
+              Encargos + insumo
+            </Col>
+            <Col field="lucro" sort={sort} onSort={onSort}>
+              Lucro
+            </Col>
+            <Col field="margem" sort={sort} onSort={onSort}>
+              Margem
+            </Col>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -259,7 +344,7 @@ export function MetricsTable({ rows, entityLabel, searchPlaceholder }: Props) {
             const receita = group.rows.reduce((s, r) => s + r.revenue, 0);
             const encargos = group.rows.reduce((s, r) => s + r.tax + r.operationalCost, 0);
             const lucro = group.rows.reduce((s, r) => s + r.profit, 0);
-            const entityTotals = aggregateByEntity(group.rows);
+            const entityTotals = sortBy(aggregateByEntity(group.rows), CHAVES[sort.field], sort.dir);
             return (
               <Fragment key={group.key}>
                 <TableRow

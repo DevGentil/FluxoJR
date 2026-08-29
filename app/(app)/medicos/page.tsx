@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { Pagination } from "@/components/pagination";
+import { SortableHead } from "@/components/sortable-head";
+import { parseSort, sortBy } from "@/lib/sorting";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -28,8 +30,16 @@ interface Props {
     especialidade?: string;
     status?: string;
     conferir?: string;
+    sort?: string;
+    dir?: string;
   }>;
 }
+
+/** Colunas que aceitam ordenação. A lista é fechada de propósito: o campo
+ * vem da URL, e sem ela daria para pedir ordem por uma coluna que a tela
+ * não mostra. */
+const COLUNAS = ["nome", "especialidade", "crm", "contrato", "status"] as const;
+type Coluna = (typeof COLUNAS)[number];
 
 /** Há quanto tempo o contrato foi conferido pela última vez. Valor antigo
  * é o risco real: nas planilhas, um reajuste de ECG de R$15 para R$10 só
@@ -229,8 +239,21 @@ export default async function MedicosPage({ searchParams }: Props) {
     return true;
   });
 
-  const totalMedicos = filtrados.length;
-  const idsDaPagina = filtrados.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((d) => d.id);
+  // Ordena o conjunto FILTRADO INTEIRO antes de cortar a página. Ordenar
+  // depois reordenaria só as 20 linhas abertas — "o primeiro da lista"
+  // seria o primeiro daquela página, que não é a pergunta.
+  const ordem = parseSort<Coluna>(params, COLUNAS, { field: "nome", dir: "asc" });
+  const chave: Record<Coluna, (d: (typeof filtrados)[number]) => string | number | null> = {
+    nome: (d) => d.name,
+    especialidade: (d) => d.specialty,
+    crm: (d) => d.document,
+    contrato: (d) => contractOn(d.serviceRates, hoje).length,
+    status: (d) => Number(d.active),
+  };
+  const ordenados = sortBy(filtrados, chave[ordem.field], ordem.dir);
+
+  const totalMedicos = ordenados.length;
+  const idsDaPagina = ordenados.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((d) => d.id);
 
   // Só a página aberta carrega o contrato completo, que é a parte pesada.
   const doctorsSemOrdem =
@@ -306,12 +329,22 @@ export default async function MedicosPage({ searchParams }: Props) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>Especialização</TableHead>
-                <TableHead>CRM</TableHead>
+                <SortableHead field="nome" current={ordem}>
+                  Nome
+                </SortableHead>
+                <SortableHead field="especialidade" current={ordem}>
+                  Especialização
+                </SortableHead>
+                <SortableHead field="crm" current={ordem}>
+                  CRM
+                </SortableHead>
                 <TableHead>Pagamento</TableHead>
-                <TableHead>Contrato</TableHead>
-                <TableHead>Status</TableHead>
+                <SortableHead field="contrato" first="desc" current={ordem}>
+                  Contrato
+                </SortableHead>
+                <SortableHead field="status" first="desc" current={ordem}>
+                  Status
+                </SortableHead>
                 <TableHead className="w-24" />
               </TableRow>
             </TableHeader>

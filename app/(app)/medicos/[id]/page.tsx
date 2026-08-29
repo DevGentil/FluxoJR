@@ -15,6 +15,8 @@ import { KpiCard } from "@/components/kpi-card";
 import { ArrowLeft, CalendarCheck, CircleCheck, CircleDashed, Download, History, Wallet } from "lucide-react";
 import { DeleteButton } from "@/components/delete-button";
 import { Pagination } from "@/components/pagination";
+import { SortableHead } from "@/components/sortable-head";
+import { parseSort, sortBy } from "@/lib/sorting";
 import { DoctorDocumentDialog } from "../doctor-document-dialog";
 import { DoctorEntriesFilter } from "../doctor-entries-filter";
 import { deleteDoctorDocument } from "../documents-actions";
@@ -31,8 +33,22 @@ const LANC_POR_PAGINA = 25;
 
 interface Props {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ page?: string; mes?: string; pago?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    mes?: string;
+    pago?: string;
+    /** Ordem da tabela de lançamentos. */
+    sort?: string;
+    dir?: string;
+    /** Ordem da tabela de repasse por mês — parâmetros próprios para as
+     * duas tabelas desta tela não disputarem o mesmo nome. */
+    msort?: string;
+    mdir?: string;
+  }>;
 }
+
+const COLUNAS_LANC = ["dia", "valor", "pago"] as const;
+const COLUNAS_MES = ["mes", "dias", "total", "media"] as const;
 
 export default async function MedicoPage({ params, searchParams }: Props) {
   const { id } = await params;
@@ -86,7 +102,18 @@ export default async function MedicoPage({ params, searchParams }: Props) {
     const atual = porMes.get(k) ?? { dias: 0, total: 0 };
     porMes.set(k, { dias: atual.dias + 1, total: atual.total + l.valor });
   }
-  const meses = [...porMes.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  const mesesBrutos = [...porMes.entries()].map(([mes, v]) => ({
+    mes,
+    dias: v.dias,
+    total: v.total,
+    media: v.total / v.dias,
+  }));
+  const ordemMes = parseSort(
+    { sort: filtros.msort, dir: filtros.mdir },
+    COLUNAS_MES,
+    { field: "mes", dir: "desc" }
+  );
+  const meses = sortBy(mesesBrutos, (m) => m[ordemMes.field], ordemMes.dir);
 
   // Filtro dos lançamentos: mês e situação de pagamento. Fica na URL para
   // compor com a paginação e sobreviver ao recarregar.
@@ -96,7 +123,16 @@ export default async function MedicoPage({ params, searchParams }: Props) {
     if (filtros.pago === "nao" && l.paid) return false;
     return true;
   });
-  const visiveis = filtrados.slice((page - 1) * LANC_POR_PAGINA, page * LANC_POR_PAGINA);
+  // Ordena o filtro inteiro antes de cortar a página, não a página aberta.
+  const ordemLanc = parseSort(filtros, COLUNAS_LANC, { field: "dia", dir: "desc" });
+  const chaveLanc = {
+    dia: (l: (typeof filtrados)[number]) => l.date,
+    valor: (l: (typeof filtrados)[number]) => l.valor,
+    pago: (l: (typeof filtrados)[number]) => Number(l.paid),
+  } as const;
+  const ordenados = sortBy(filtrados, chaveLanc[ordemLanc.field], ordemLanc.dir);
+
+  const visiveis = ordenados.slice((page - 1) * LANC_POR_PAGINA, page * LANC_POR_PAGINA);
   const totalFiltrado = filtrados.reduce((s, l) => s + l.valor, 0);
 
   return (
@@ -225,24 +261,53 @@ export default async function MedicoPage({ params, searchParams }: Props) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Mês</TableHead>
-                  <TableHead className="text-right">Dias</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="text-right">Média por dia</TableHead>
+                  <SortableHead field="mes" first="desc" prefix="m" current={ordemMes}>
+                    Mês
+                  </SortableHead>
+                  <SortableHead
+                    field="dias"
+                    first="desc"
+                    prefix="m"
+                    align="right"
+                    className="text-right"
+                    current={ordemMes}
+                  >
+                    Dias
+                  </SortableHead>
+                  <SortableHead
+                    field="total"
+                    first="desc"
+                    prefix="m"
+                    align="right"
+                    className="text-right"
+                    current={ordemMes}
+                  >
+                    Total
+                  </SortableHead>
+                  <SortableHead
+                    field="media"
+                    first="desc"
+                    prefix="m"
+                    align="right"
+                    className="text-right"
+                    current={ordemMes}
+                  >
+                    Média por dia
+                  </SortableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {meses.map(([mes, v]) => (
-                  <TableRow key={mes}>
+                {meses.map((m) => (
+                  <TableRow key={m.mes}>
                     <TableCell className="font-medium first-letter:uppercase">
-                      {formatMonth(mes)}
+                      {formatMonth(m.mes)}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{v.dias}</TableCell>
+                    <TableCell className="text-right tabular-nums">{m.dias}</TableCell>
                     <TableCell className="text-right tabular-nums font-medium">
-                      {formatCurrency(v.total)}
+                      {formatCurrency(m.total)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {formatCurrency(v.total / v.dias)}
+                      {formatCurrency(m.media)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -329,17 +394,26 @@ export default async function MedicoPage({ params, searchParams }: Props) {
           <CardDescription>Para lançar ou editar um dia, use a tela de Repasses Médicos.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* As opções do filtro saem da lista bruta, sempre do mês mais
+              recente para o mais antigo — ordenar a tabela por valor não
+              deve embaralhar o seletor de mês. */}
           <DoctorEntriesFilter
             doctorId={doctor.id}
-            meses={meses.map(([mes]) => mes)}
+            meses={sortBy(mesesBrutos, (m) => m.mes, "desc").map((m) => m.mes)}
           />
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Dia</TableHead>
+                <SortableHead field="dia" first="desc" current={ordemLanc}>
+                  Dia
+                </SortableHead>
                 <TableHead>Detalhe</TableHead>
-                <TableHead className="text-right">Valor</TableHead>
-                <TableHead>Pago</TableHead>
+                <SortableHead field="valor" first="desc" align="right" className="text-right" current={ordemLanc}>
+                  Valor
+                </SortableHead>
+                <SortableHead field="pago" current={ordemLanc}>
+                  Pago
+                </SortableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
