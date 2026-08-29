@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { OpenCompanyButton } from "@/components/open-company-button";
 import { KpiCard } from "@/components/kpi-card";
-import { currentMonthKey, startOfMonth, startOfNextMonth } from "@/lib/date-only";
+
 import { MonthlyChart } from "./monthly-chart";
 import { ProjectionChart } from "./projection-chart";
 import { TrendingUp, TrendingDown, Wallet, AlertTriangle } from "lucide-react";
@@ -56,46 +56,6 @@ async function getDueSummaryByCompany(companyIds: string[]): Promise<CompanyDueS
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export interface TopExpense {
-  categoryName: string;
-  total: number;
-}
-
-/** As maiores despesas do mês, por categoria. Saber que saíram R$ 68 mil não
- * diz o que fazer; saber que R$ 40 mil foram folha, sim. Transferência entre
- * empresas do grupo fica de fora — não é despesa, é dinheiro mudando de
- * bolso dentro da mesma holding. */
-async function getTopExpenses(companyIds: string[], month: string): Promise<TopExpense[]> {
-  if (companyIds.length === 0) return [];
-
-  const grouped = await prisma.transaction.groupBy({
-    by: ["categoryId"],
-    where: {
-      companyId: { in: companyIds },
-      type: "EXPENSE",
-      transferCompanyId: null,
-      date: { gte: startOfMonth(month), lt: startOfNextMonth(month) },
-    },
-    _sum: { amount: true },
-  });
-  if (grouped.length === 0) return [];
-
-  const categories = await prisma.category.findMany({
-    where: { id: { in: grouped.map((g) => g.categoryId).filter((id): id is string => id != null) } },
-    select: { id: true, name: true },
-  });
-  const nameById = new Map(categories.map((c) => [c.id, c.name]));
-
-  return grouped
-    .map((g) => ({
-      categoryName: g.categoryId ? (nameById.get(g.categoryId) ?? "Sem categoria") : "Sem categoria",
-      total: Number(g._sum.amount ?? 0),
-    }))
-    .filter((r) => r.total > 0)
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 6);
-}
-
 /** Os vencimentos dos próximos 30 dias, para o bloco "a vencer" da visão de
  * uma empresa. Mora fora do componente porque lê o relógio: chamada de
  * dentro do corpo, a leitura tornaria o render impuro. */
@@ -116,13 +76,12 @@ export default async function DashboardPage() {
   const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
   const isConsolidated = scope.type !== "company";
 
-  const [balance, monthly, projection90, upcoming, dueSummary, topExpenses] = await Promise.all([
+  const [balance, monthly, projection90, upcoming, dueSummary] = await Promise.all([
     getConsolidatedBalance(companyIds),
     getMonthlySummary(companyIds, 6),
     getBalanceProjection(companyIds, 90),
     isConsolidated || companyIds.length === 0 ? [] : getUpcomingEntries(companyIds),
     isConsolidated ? getDueSummaryByCompany(companyIds) : Promise.resolve([]),
-    getTopExpenses(companyIds, currentMonthKey()),
   ]);
 
   const currentMonth = monthly[monthly.length - 1];
@@ -133,7 +92,6 @@ export default async function DashboardPage() {
   const expense = currentMonth?.expense ?? 0;
   const net = income - expense;
   const previousNet = (previousMonth?.income ?? 0) - (previousMonth?.expense ?? 0);
-  const totalExpenses = topExpenses.reduce((s, e) => s + e.total, 0);
 
   return (
     <div className="space-y-6">
@@ -205,44 +163,6 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Para onde foi o dinheiro este mês</CardTitle>
-          <CardDescription>
-            Maiores despesas por categoria. Transferência entre empresas do grupo fica de fora.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {topExpenses.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4">Nenhuma despesa lançada neste mês.</p>
-          ) : (
-            <div className="space-y-3">
-              {topExpenses.map((e) => (
-                <div key={e.categoryName} className="space-y-1">
-                  <div className="flex items-baseline justify-between gap-4 text-sm">
-                    <span className="truncate">{e.categoryName}</span>
-                    <span className="tabular-nums shrink-0">
-                      {formatCurrency(e.total)}
-                      <span className="text-muted-foreground ml-2">
-                        {totalExpenses > 0 ? `${((e.total / totalExpenses) * 100).toFixed(0)}%` : ""}
-                      </span>
-                    </span>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-red-500/70"
-                      style={{
-                        width: `${totalExpenses > 0 ? (e.total / totalExpenses) * 100 : 0}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       {isConsolidated ? (
         <Card>
