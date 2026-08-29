@@ -329,7 +329,7 @@ export default async function MedicosPage() {
                         <DeleteButton
                           action={deleteDoctor.bind(null, d.id)}
                           title={`Excluir "${d.name}"?`}
-                          description="Todos os repasses lançados para esse médico também serão excluídos."
+                          description="Só é possível excluir quem ainda não tem nenhum dia lançado. Para tirar da rotina um médico que já atendeu, edite e desmarque &quot;Médico ativo&quot;."
                         />
                       </div>
                     </TableCell>

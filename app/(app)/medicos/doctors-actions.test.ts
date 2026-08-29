@@ -317,3 +317,35 @@ describe("vigência do contrato", () => {
     expect(Number(versoes[1].rate)).toBe(12);
   });
 });
+
+describe("deleteDoctor com lançamentos", () => {
+  it("recusa excluir médico que já tem dia lançado", async () => {
+    // Excluir levava junto os lançamentos em cascata, apagando o histórico
+    // do que já foi pago — sem nenhuma pergunta.
+    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
+    const item = await seedItem(company.id, "Consulta", "CONSULTA");
+    await createDoctor(baseInput(item.id));
+    const doctor = await testPrisma.doctor.findFirstOrThrow();
+    await testPrisma.doctorDailyEntry.create({
+      data: { doctorId: doctor.id, companyId: company.id, date: new Date("2026-08-14T00:00:00Z"), amount: 332 },
+    });
+
+    const result = await deleteDoctor(doctor.id);
+
+    expect(result.error).toContain("não pode ser excluído");
+    await expect(testPrisma.doctor.count()).resolves.toBe(1);
+    await expect(testPrisma.doctorDailyEntry.count()).resolves.toBe(1);
+  });
+
+  it("deixa excluir quem foi cadastrado por engano e nunca lançou nada", async () => {
+    const company = await testPrisma.company.create({ data: { name: "Empresa" } });
+    const item = await seedItem(company.id, "Consulta", "CONSULTA");
+    await createDoctor(baseInput(item.id));
+    const doctor = await testPrisma.doctor.findFirstOrThrow();
+
+    const result = await deleteDoctor(doctor.id);
+
+    expect(result.error).toBeUndefined();
+    await expect(testPrisma.doctor.count()).resolves.toBe(0);
+  });
+});

@@ -167,8 +167,22 @@ export async function deleteDoctor(id: string): Promise<{ error?: string }> {
   try {
     await requireUser();
     const companyId = await getActiveCompanyId();
-    const { count } = await prisma.doctor.deleteMany({ where: { id, companyId } });
-    if (count === 0) return { error: "Médico não encontrado." };
+
+    const doctor = await prisma.doctor.findFirst({ where: { id, companyId }, select: { id: true } });
+    if (!doctor) return { error: "Médico não encontrado." };
+
+    // Excluir levava junto todos os dias lançados, em cascata e em
+    // silêncio — apagando o histórico de quanto já foi pago a ele. Médico
+    // que parou de atender é INATIVO, não excluído; a exclusão fica só
+    // para quem foi cadastrado por engano. Mesma regra do catálogo.
+    const lancamentos = await prisma.doctorDailyEntry.count({ where: { doctorId: id } });
+    if (lancamentos > 0) {
+      return {
+        error: `Esse médico tem ${lancamentos} dia(s) lançado(s) e não pode ser excluído — isso apagaria o histórico do que já foi pago. Desmarque "Médico ativo" para tirá-lo da rotina sem perder os lançamentos.`,
+      };
+    }
+
+    await prisma.doctor.delete({ where: { id } });
 
     revalidateRepassesModule();
     return {};
