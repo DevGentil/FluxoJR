@@ -2,10 +2,12 @@ import { Fragment } from "react";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { getPeriodBalanceReport, type PeriodBalanceReport } from "@/lib/balance-report";
 import { formatCurrency } from "@/lib/format";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { PeriodFilter } from "@/components/period-filter";
+import { ComparisonDashboard } from "./comparison-dashboard";
+import { getMonthlyTotals } from "@/lib/cashflow";
 import { startOfDay, endOfDay, todayDateOnly, startOfWeek, firstDayOfMonth } from "@/lib/date-only";
 
 interface Props {
@@ -131,11 +133,13 @@ export default async function BalancoPage({ searchParams }: Props) {
   const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
   const showCompanyColumn = companyIds.length > 1;
 
-  const report = await getPeriodBalanceReport(
-    companyIds,
-    startOfDay(range.from),
-    endOfDay(range.to)
-  );
+  // O comparativo nao segue o filtro de periodo do resto da tela: ele
+  // existe justamente para olhar para tras, com a janela que a granularidade
+  // escolhida pedir. 48 meses cobrem ate a visao anual.
+  const [report, monthlyTotals] = await Promise.all([
+    getPeriodBalanceReport(companyIds, startOfDay(range.from), endOfDay(range.to)),
+    getMonthlyTotals(companyIds, 48),
+  ]);
 
   const presets = [
     { label: "Hoje", ...presetRange("today") },
@@ -153,6 +157,19 @@ export default async function BalancoPage({ searchParams }: Props) {
       </div>
 
       <PeriodFilter basePath="/balanco" presets={presets} range={range} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Comparativo de desempenho</CardTitle>
+          <CardDescription>
+            Entradas, saídas e resultado ao longo do tempo — mensal, trimestral, semestral ou anual. Não
+            segue o filtro acima: existe para comparar com o passado.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ComparisonDashboard months={monthlyTotals} />
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
