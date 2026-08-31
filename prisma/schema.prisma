@@ -76,6 +76,65 @@ model Company {
   doctorDailyEntries DoctorDailyEntry[]
 
   incomingTransfers Transaction[] @relation("TransactionTransfer")
+
+  userAccess UserAccess[]
+}
+
+/// Conta de acesso ao sistema. A autenticacao continua no Supabase; aqui
+/// mora o que o Supabase nao sabe: quem e a pessoa e o que ela pode fazer.
+model AppUser {
+  id        String   @id @default(cuid())
+  /// Id do usuario no Supabase Auth — a ponte entre a sessao e a permissao.
+  authId    String   @unique
+  email     String   @unique
+  name      String
+  active    Boolean  @default(true)
+  /// Acesso irrestrito a todas as empresas, presentes e futuras. Mora na
+  /// conta e nao numa linha por empresa de proposito: fosse linha, unidade
+  /// nova entraria invisivel para a diretoria ate alguem lembrar de dar
+  /// acesso.
+  holding   Boolean  @default(false)
+  /// A senha atual foi definida por quem criou a conta, nao pelo dono dela.
+  /// Volta a false quando a propria pessoa troca.
+  senhaProvisoria Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  access UserAccess[]
+
+  /// Quem cadastrou esta conta. Criar acesso e a operacao mais privilegiada
+  /// do sistema, e ate o log de auditoria existir e o unico rastro dela.
+  createdById String?
+  createdBy   AppUser?  @relation("ContaCriadaPor", fields: [createdById], references: [id], onDelete: SetNull)
+  criou       AppUser[] @relation("ContaCriadaPor")
+
+  @@index([createdById])
+}
+
+/// O acesso de uma conta a UMA empresa, com o papel que ela exerce ali.
+/// Papel por empresa, e nao global: a mesma pessoa pode ser gestora na
+/// unidade dela e nao ter nada nas outras.
+model UserAccess {
+  id        String   @id @default(cuid())
+  role      UserRole
+  createdAt DateTime @default(now())
+
+  userId String
+  user   AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+}
+
+/// Os papeis dentro de uma unidade. Conta da holding nao usa este enum —
+/// ela nao tem papel, tem ausencia de restricao.
+enum UserRole {
+  OPERACIONAL
+  FINANCEIRO
+  GESTOR
 }
 
 // Arquivo qualquer (contrato, documento societário, etc.) anexado a uma
