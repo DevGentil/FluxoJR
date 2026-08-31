@@ -10,7 +10,8 @@ import {
 import { NavLinks } from "@/components/nav-links";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { LogOut, Wallet } from "lucide-react";
+import { LogOut } from "lucide-react";
+import { JRHoldingMark } from "@/components/jr-holding-logo";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 import { logout } from "@/app/login/actions";
 import { getActiveScope, getGroupsWithCompanies, getAllCompanies, getScopeLabel } from "@/lib/scope";
@@ -34,7 +35,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Sidebar collapsible="icon">
         <SidebarHeader>
           <div className="flex items-center gap-2 px-2 py-1.5">
-            <Wallet className="size-5 shrink-0" />
+            <JRHoldingMark showWordmark={false} className="size-6 shrink-0" />
             <span className="font-semibold truncate">FluxoJR</span>
           </div>
           <CompanySwitcher groups={groups} ungroupedCompanies={ungroupedCompanies} currentValue={currentValue} />
