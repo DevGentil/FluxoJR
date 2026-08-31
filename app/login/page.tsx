@@ -14,53 +14,32 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
-      {/* Painel de marca — só em telas grandes */}
-      <div className="relative hidden flex-col items-center justify-center overflow-hidden bg-black p-10 lg:flex">
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(circle at 50% 38%, color-mix(in oklch, #c9a24b 22%, transparent) 0%, transparent 60%)",
-          }}
-        />
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.04]"
-          style={{
-            backgroundImage:
-              "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)",
-            backgroundSize: "40px 40px",
-          }}
-        />
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background px-4 py-16">
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 60% 45% at 50% 28%, color-mix(in oklch, #c9a24b 16%, transparent) 0%, transparent 70%)",
+        }}
+      />
 
-        <div className="relative flex flex-col items-center text-center">
-          <JRHoldingMark className="h-56 w-56 drop-shadow-[0_0_40px_rgba(201,162,75,0.25)]" />
-          <p className="mt-6 max-w-xs text-sm text-white/50">
-            Fluxo de caixa e controle operacional de toda a holding, em um só
-            lugar.
-          </p>
-        </div>
-
-        <p className="absolute bottom-8 text-xs tracking-wide text-white/30">
-          FluxoJR · Gestão Financeira e Operacional
-        </p>
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
       </div>
 
-      {/* Painel de login */}
-      <div className="relative flex items-center justify-center bg-background p-6">
-        <div className="absolute top-4 right-4">
-          <ThemeToggle />
-        </div>
+      <div className="relative flex w-full max-w-sm flex-col items-center">
+        <JRHoldingMark className="h-24 w-24 drop-shadow-[0_0_24px_rgba(201,162,75,0.18)]" />
+        <p className="mt-4 max-w-xs text-center text-sm text-muted-foreground">
+          Fluxo de caixa e controle operacional de toda a holding, em um só
+          lugar.
+        </p>
 
-        <div className="w-full max-w-sm">
-          <div className="mb-8 flex flex-col items-center gap-4 lg:items-start">
-            <JRHoldingMark showWordmark={false} className="h-14 w-14 lg:hidden" />
-            <div className="text-center lg:text-left">
-              <h1 className="font-heading text-2xl font-semibold">Bem-vindo de volta</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Entre com sua conta para acessar o FluxoJR.
-              </p>
-            </div>
+        <div className="mt-8 w-full rounded-2xl bg-card p-6 ring-1 ring-foreground/10 sm:p-8">
+          <div className="mb-6 text-center">
+            <h1 className="font-heading text-xl font-semibold">Bem-vindo de volta</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Entre com sua conta para acessar o FluxoJR.
+            </p>
           </div>
 
           <form action={formAction} className="space-y-4">
@@ -125,6 +104,10 @@ export default function LoginPage() {
             </Button>
           </form>
         </div>
+
+        <p className="mt-8 text-xs tracking-wide text-muted-foreground/60">
+          FluxoJR · Gestão Financeira e Operacional
+        </p>
       </div>
     </div>
   );
