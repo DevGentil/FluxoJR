@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FluxoJR — Fluxo de Caixa",
-  description: "Sistema de fluxo de caixa da holding",
+  title: "FluxoJR",
+  description: "Sistema de gestão financeira e operacional da holding",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
