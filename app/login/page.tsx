@@ -28,7 +28,7 @@ export default function LoginPage() {
       </div>
 
       <div className="relative flex w-full max-w-sm flex-col items-center">
-        <JRHoldingMark className="h-24 w-24 drop-shadow-[0_0_24px_rgba(201,162,75,0.18)]" />
+        <JRHoldingMark className="h-24 w-24 drop-shadow-[0_0_24px_rgba(201,162,75,0.18)]" sizes="96px" />
         <p className="mt-4 max-w-xs text-center text-sm text-muted-foreground">
           Fluxo de caixa e controle operacional de toda a holding, em um só
           lugar.
