@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
+import { accessFor } from "@/lib/access";
+import { can } from "@/lib/permissions";
+import { mesesFechados, podeReabrir } from "@/lib/period-lock";
 import { formatCurrency } from "@/lib/format";
 import { entryAmount } from "@/lib/doctor-period";
 import { toDateOnly } from "@/lib/date-only";
@@ -180,6 +183,15 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
   const companyId = scope.companyId;
   const dateWhere = dateFilter(range);
 
+  // Quem pode fechar e reabrir, e o que já está fechado. Numa consulta só —
+  // sem isso, doze meses na tela fariam doze perguntas ao banco só para
+  // desenhar doze cadeados.
+  const [acesso, fechados, reabrir] = await Promise.all([
+    accessFor(companyId),
+    mesesFechados([companyId]),
+    podeReabrir(companyId),
+  ]);
+
   const [doctors, entries] = await Promise.all([
     prisma.doctor.findMany({
       where: { companyId },
@@ -257,7 +269,13 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
           <DailyEntryFormDialog doctors={doctorOptions} />
         </CardHeader>
         <CardContent>
-          <DailyEntriesTable entries={entryRows} doctors={doctorOptions} />
+          <DailyEntriesTable
+            entries={entryRows}
+            doctors={doctorOptions}
+            mesesFechados={[...fechados]}
+            podeFechar={can(acesso, "repasses-medicos", "aprovar")}
+            podeReabrir={reabrir}
+          />
         </CardContent>
       </Card>
     </div>

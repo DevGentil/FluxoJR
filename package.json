@@ -9,7 +9,8 @@
     "lint": "eslint",
     "db:seed": "tsx prisma/seed.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:migrate": "prisma migrate deploy && prisma generate && node -e \"require(\\\"fs\\\").rmSync(\\\".next\\\",{recursive:true,force:true})\" && echo Migracao aplicada. Reinicie o servidor de desenvolvimento."
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

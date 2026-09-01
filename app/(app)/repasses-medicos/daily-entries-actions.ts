@@ -9,6 +9,7 @@ import { requireUser } from "@/lib/auth";
 import { parseDateOnly } from "@/lib/date-only";
 import { contractOn } from "@/lib/doctor-rates";
 import { entryAmount } from "@/lib/doctor-period";
+import { exigePeriodoAberto } from "@/lib/period-lock";
 
 export interface DailyLineInput {
   serviceItemId: string;
@@ -92,6 +93,7 @@ export async function createDailyEntry(input: DailyEntryInput): Promise<{ error?
     if (!doctor) return { error: "Médico não encontrado." };
 
     const entryDate = parseDateOnly(input.date);
+    await exigePeriodoAberto(companyId, entryDate);
     const linesData = await buildLines(input.doctorId, entryDate, input.lines);
 
     await prisma.doctorDailyEntry.create({
@@ -129,6 +131,11 @@ export async function updateDailyEntry(id: string, input: DailyEntryInput): Prom
     if (!doctor) return { error: "Médico não encontrado." };
 
     const entryDate = parseDateOnly(input.date);
+    // Os DOIS meses: o de onde o lançamento sai e o para onde vai. Checar só
+    // o destino deixaria arrastar um lançamento para fora de um mês fechado,
+    // que é esvaziar o fechamento pela porta dos fundos.
+    await exigePeriodoAberto(companyId, entry.date);
+    await exigePeriodoAberto(companyId, entryDate);
     const linesData = await buildLines(input.doctorId, entryDate, input.lines);
 
     await prisma.$transaction(async (tx) => {
@@ -166,6 +173,7 @@ export async function deleteDailyEntry(id: string): Promise<{ error?: string }> 
       include: { doctor: { select: { name: true } }, lines: true },
     });
     if (!alvo) return { error: "Lançamento não encontrado." };
+    await exigePeriodoAberto(companyId, alvo.date);
 
     const { count } = await prisma.doctorDailyEntry.deleteMany({ where: { id, companyId } });
     if (count === 0) return { error: "Lançamento não encontrado." };
@@ -197,6 +205,7 @@ export async function toggleDailyEntryPaid(id: string, paid: boolean): Promise<{
       include: { doctor: { select: { name: true } }, lines: true },
     });
     if (!alvo) return { error: "Lançamento não encontrado." };
+    await exigePeriodoAberto(companyId, alvo.date);
 
     const { count } = await prisma.doctorDailyEntry.updateMany({ where: { id, companyId }, data: { paid } });
     if (count === 0) return { error: "Lançamento não encontrado." };

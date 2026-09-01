@@ -4,6 +4,7 @@ import { Fragment, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { Pencil, Search, Trash2 } from "lucide-react";
 import { TableDisclosure } from "@/components/table-disclosure";
+import { FechamentoMes } from "./fechamento-mes";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -40,6 +41,12 @@ export interface DailyEntryRow {
 interface Props {
   entries: DailyEntryRow[];
   doctors: DoctorOption[];
+  /** Chaves "2026-08" dos meses já fechados nesta unidade. */
+  mesesFechados: string[];
+  /** Se a sessão pode fechar mês (nível "aprovar" em Lançamentos). */
+  podeFechar: boolean;
+  /** Se a sessão pode reabrir — gestor da unidade ou holding. */
+  podeReabrir: boolean;
 }
 
 /** Quantos dias por página dentro de um mês aberto. Um mês cheio da unidade
@@ -73,7 +80,14 @@ function resumir<T>(key: string, rows: DailyEntryRow[], extra: T): Grupo<T> {
  * termina e o outro começa — que é justamente como as planilhas organizam.
  * Agora o mês mostra a lista de dias com o total de cada um, e só o dia que
  * se abre mostra quem atendeu. */
-export function DailyEntriesTable({ entries, doctors }: Props) {
+export function DailyEntriesTable({
+  entries,
+  doctors,
+  mesesFechados,
+  podeFechar,
+  podeReabrir,
+}: Props) {
+  const fechados = new Set(mesesFechados);
   const [search, setSearch] = useState("");
   // Todos os meses começam fechados. A linha de cada mês já traz médicos,
   // lançamentos, total e quantos foram pagos — quem quer o detalhe abre.
@@ -206,7 +220,17 @@ export function DailyEntriesTable({ entries, doctors }: Props) {
                   <TableCell className="text-muted-foreground text-xs">
                     {mes.pagos}/{mes.rows.length}
                   </TableCell>
-                  <TableCell />
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <div className="flex justify-end">
+                      <FechamentoMes
+                        mes={mes.key}
+                        fechado={fechados.has(mes.key)}
+                        podeFechar={podeFechar}
+                        podeReabrir={podeReabrir}
+                        lancamentos={mes.rows.length}
+                      />
+                    </div>
+                  </TableCell>
                 </TableRow>
 
                 {mesAbertoAgora &&

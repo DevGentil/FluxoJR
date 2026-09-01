@@ -78,6 +78,7 @@ model Company {
   incomingTransfers Transaction[] @relation("TransactionTransfer")
 
   userAccess UserAccess[]
+  periodClosings PeriodClosing[]
 }
 
 /// Conta de acesso ao sistema. A autenticacao continua no Supabase; aqui
@@ -595,4 +596,28 @@ model AuditLog {
   @@index([at])
   @@index([companyId, at])
   @@index([userId])
+}
+
+/// Mes fechado de uma unidade.
+///
+/// Ate aqui `paid` marcava que o repasse foi pago, mas nao impedia nada: os
+/// 1.981 lancamentos ja pagos de janeiro a julho seguiam editaveis e
+/// apagaveis. Marcar nao e proteger — a linha aqui e o que protege.
+model PeriodClosing {
+  id    String   @id @default(cuid())
+  /// Primeiro dia do mes, meia-noite UTC (a convencao de data do sistema).
+  month DateTime
+
+  closedAt     DateTime @default(now())
+  /// Nome copiado, como no log de auditoria: quem fechou o mes precisa
+  /// continuar respondido depois que a conta sair.
+  closedByName String
+  closedById   String?
+  notes        String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, month])
+  @@index([companyId, month])
 }
