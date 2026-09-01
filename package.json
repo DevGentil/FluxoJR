@@ -10,7 +10,9 @@
     "db:seed": "tsx prisma/seed.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:migrate": "prisma migrate deploy && prisma generate && node -e \"require(\\\"fs\\\").rmSync(\\\".next\\\",{recursive:true,force:true})\" && echo Migracao aplicada. Reinicie o servidor de desenvolvimento."
+    "db:migrate": "prisma migrate deploy && prisma generate && node -e \"require(\\\"fs\\\").rmSync(\\\".next\\\",{recursive:true,force:true})\" && echo Migracao aplicada. Reinicie o servidor de desenvolvimento.",
+    "db:backup": "tsx scripts/backup.ts",
+    "db:backup:verificar": "tsx scripts/verificar-backup.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

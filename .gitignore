@@ -56,3 +56,6 @@ next-env.d.ts
 .windsurf/
 .agents/
 skills-lock.json
+
+# copias do banco: dados reais, nunca no repositorio
+/backups/
