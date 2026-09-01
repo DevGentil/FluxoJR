@@ -38,7 +38,16 @@ import {
  * pagamos aos médicos, como fechou, e o que está cadastrado.
  *
  * Cadastros vão para o fim de propósito: são as telas que se abre uma vez e
- * quase não se volta, e estavam ocupando o meio do caminho. */
+ * quase não se volta, e estavam ocupando o meio do caminho.
+ *
+ * Administração é bloco próprio, e não mais um pedaço de Cadastros. Conta de
+ * acesso, auditoria e erro do sistema não são entidades do negócio — são
+ * sobre QUEM usa o sistema e COMO ele está se comportando. Empilhadas ali,
+ * deixavam Cadastros com sete itens e três significados diferentes, que é
+ * onde uma lista deixa de ajudar a achar e passa a atrapalhar.
+ *
+ * Some por inteiro para quem não é gestor nem holding — ou seja, para a
+ * maioria de quem vai usar o sistema. */
 const grupos: { label: string | null; links: { href: string; label: string; icon: typeof LayoutDashboard; module: Module }[] }[] = [
   {
     label: null,
@@ -74,9 +83,18 @@ const grupos: { label: string | null; links: { href: string; label: string; icon
       { href: "/fornecedores", label: "Fornecedores", icon: Truck, module: "fornecedores" },
       { href: "/contas-bancarias", label: "Contas Bancárias", icon: Landmark, module: "contas-bancarias" },
       { href: "/empresas", label: "Empresas", icon: Building2, module: "empresas" },
+    ],
+  },
+  {
+    label: "Administração",
+    links: [
       { href: "/contas", label: "Contas de Acesso", icon: KeyRound, module: "contas" },
       { href: "/auditoria", label: "Auditoria", icon: History, module: "auditoria" },
-      { href: "/erros", label: "Erros do Sistema", icon: Bug, module: "erros" },
+      // "Erros", e não "Erros do Sistema": dentro de Administração o
+      // complemento é redundante, e era o rótulo mais longo do menu. O nome
+      // inteiro continua em MODULE_LABELS, que é o que aparece nas mensagens
+      // de permissão — lá não existe o contexto do grupo para completar.
+      { href: "/erros", label: "Erros", icon: Bug, module: "erros" },
     ],
   },
 ];
