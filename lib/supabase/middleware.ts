@@ -3,8 +3,22 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 import { MODO_ABERTO } from "@/lib/auth";
 
+/** Cabecalho com a rota pedida.
+ *
+ * Layout de Server Component nao recebe o pathname — e o layout e o unico
+ * lugar por onde TODA pagina passa. Sem isto, a checagem de permissao de
+ * leitura teria que ser repetida em cada page.tsx, e bastaria alguem
+ * esquecer numa tela nova para abrir o buraco de novo. */
+export const HEADER_ROTA = "x-rota";
+
+function comRota(request: NextRequest) {
+  const headers = new Headers(request.headers);
+  headers.set(HEADER_ROTA, request.nextUrl.pathname);
+  return { request: { headers } };
+}
+
 export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+  let supabaseResponse = NextResponse.next(comRota(request));
 
   // Modo aberto: sem login, para desenvolvimento local. Fora de produção
   // apenas — ver o comentário de `MODO_ABERTO`, que explica por que a
@@ -28,7 +42,7 @@ export async function updateSession(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          supabaseResponse = NextResponse.next({ request });
+          supabaseResponse = NextResponse.next(comRota(request));
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           );

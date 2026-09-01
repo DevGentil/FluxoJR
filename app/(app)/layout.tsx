@@ -18,7 +18,11 @@ import { getActiveScope, getGroupsWithCompanies, getAllCompanies, getScopeLabel,
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CompanySwitcher } from "@/components/company-switcher";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { companyIdsVisiveis, contaAtual, modulosVisiveis } from "@/lib/access";
+import { MODULE_LABELS, moduleOfPath } from "@/lib/permissions";
+import { HEADER_ROTA } from "@/lib/supabase/middleware";
+import { SemAcesso } from "@/components/sem-acesso";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Senha definida por outra pessoa nao entra no sistema. Enquanto nao for
@@ -43,6 +47,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // O seletor de escopo tambem se limita ao que a conta enxerga: listar uma
   // unidade que a pessoa nao pode abrir so produz uma tela vazia e a
   // impressao de que o sistema quebrou.
+  // A guarda de LEITURA. Fica aqui e nao em cada page.tsx porque o layout e
+  // o unico ponto por onde toda pagina passa: onze das dezessete nao
+  // checavam nada, e quem soubesse o endereco lia a tela inteira. Repetir a
+  // checagem em cada arquivo resolveria hoje e voltaria a falhar na proxima
+  // tela que alguem criasse esquecendo dela.
+  //
+  // As acoes ja recusavam a escrita por conta propria; isto fecha a leitura.
+  const rota = (await headers()).get(HEADER_ROTA) ?? "";
+  const modulo = moduleOfPath(rota);
+  const podeVerModulo = modulo === null || modulos.includes(modulo);
+
   const permitidas = new Set(visiveis);
   const gruposVisiveis = groups
     .map((g) => ({ ...g, companies: g.companies.filter((c) => permitidas.has(c.id)) }))
@@ -86,7 +101,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <span className="text-sm text-muted-foreground flex-1">{scopeLabel}</span>
           <ThemeToggle />
         </header>
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <main className="flex-1 p-4 md:p-6">
+          {podeVerModulo ? children : <SemAcesso modulo={MODULE_LABELS[modulo!]} />}
+        </main>
       </SidebarInset>
     </SidebarProvider>
   );

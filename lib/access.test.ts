@@ -30,7 +30,8 @@ vi.mock("next/headers", () => ({
 }));
 
 import { resetDb, testPrisma } from "@/tests/helpers/db";
-import { getActiveCompanyId, resolveCompanyIds } from "@/lib/scope";
+import { getActiveCompanyId, getActiveScope, resolveCompanyIds } from "@/lib/scope";
+import { moduleOfPath } from "@/lib/permissions";
 import { contaAtual, companyIdsVisiveis, modulosVisiveis } from "@/lib/access";
 import { createDailyEntry } from "@/app/(app)/repasses-medicos/daily-entries-actions";
 import { createTransaction } from "@/app/(app)/transacoes/actions";
@@ -126,13 +127,21 @@ describe("escrita: getActiveCompanyId", () => {
     await expect(getActiveCompanyId("repasses-medicos")).resolves.toBe(contagem.id);
   });
 
-  it("BARRA o Operacional numa unidade que não é dele", async () => {
+  it("cookie apontando para unidade alheia grava na PRÓPRIA, nunca na alheia", async () => {
     // O buraco de antes: o escopo vinha do cookie e só se validava que a
     // empresa existia. Trocar o cookie dava escrita em qualquer unidade.
-    const { laguna } = await cenario();
+    //
+    // A correção não lança erro — cai na unidade que a conta enxerga. É a
+    // escolha certa porque o cookie fica velho de forma legítima (quando
+    // alguém perde acesso a uma unidade), e errar em toda página seria pior
+    // do que seguir na unidade certa. Não há troca silenciosa: o cabeçalho
+    // mostra sempre qual unidade está ativa.
+    const { contagem, laguna } = await cenario();
     entrar("auth-operacional", laguna.id);
 
-    await expect(getActiveCompanyId("repasses-medicos")).rejects.toThrow(/não tem acesso a essa unidade/i);
+    const destino = await getActiveCompanyId("repasses-medicos");
+    expect(destino).toBe(contagem.id);
+    expect(destino).not.toBe(laguna.id);
   });
 
   it("BARRA o Operacional num módulo que o papel dele não alcança", async () => {
@@ -192,8 +201,10 @@ describe("as actions de verdade respeitam o papel", () => {
     await expect(testPrisma.transaction.count()).resolves.toBe(0);
   });
 
-  it("Operacional NÃO lança repasse em unidade alheia", async () => {
-    const { laguna, doctor } = await cenario();
+  it("com cookie forjado, o lançamento cai na unidade da conta e não na alheia", async () => {
+    // O que importa aqui não é o erro, é ONDE o dado foi parar: em nenhuma
+    // hipótese um Operacional de Contagem grava em Laguna.
+    const { contagem, laguna, doctor } = await cenario();
     entrar("auth-operacional", laguna.id);
 
     const r = await createDailyEntry({
@@ -204,8 +215,12 @@ describe("as actions de verdade respeitam o papel", () => {
       lines: [],
     });
 
-    expect(r.error).toMatch(/não tem acesso/i);
-    await expect(testPrisma.doctorDailyEntry.count()).resolves.toBe(0);
+    expect(r.error).toBeUndefined();
+    const entry = await testPrisma.doctorDailyEntry.findFirstOrThrow();
+    expect(entry.companyId).toBe(contagem.id);
+    await expect(
+      testPrisma.doctorDailyEntry.count({ where: { companyId: laguna.id } })
+    ).resolves.toBe(0);
   });
 });
 
@@ -255,5 +270,43 @@ describe("menu", () => {
     expect(modulos).toContain("transacoes");
     expect(modulos).toContain("auditoria");
     expect(modulos).toContain("erros");
+  });
+});
+
+describe("digitar o endereco de uma tela proibida", () => {
+  it("o modulo da rota nao entra nos modulos visiveis do Operacional", async () => {
+    // E disto que a guarda do layout se serve: se o modulo da rota pedida
+    // nao esta na lista da conta, a tela nao renderiza — mesmo que a pessoa
+    // tenha chegado digitando o endereco, sem passar pelo menu.
+    const { contagem } = await cenario();
+    entrar("auth-operacional", contagem.id);
+
+    const permitidos = await modulosVisiveis([contagem.id]);
+    for (const rota of ["/transacoes", "/balanco", "/operacao", "/contas", "/auditoria", "/erros"]) {
+      const m = moduleOfPath(rota)!;
+      expect(permitidos.includes(m), rota).toBe(false);
+    }
+    for (const rota of ["/dashboard", "/medicos", "/repasses-medicos", "/fechamento-caixa"]) {
+      expect(permitidos.includes(moduleOfPath(rota)!), rota).toBe(true);
+    }
+  });
+});
+
+describe("cookie de escopo forjado", () => {
+  it("nao da acesso a unidade alheia — cai na unidade da propria conta", async () => {
+    // O cookie e dado do cliente. Antes, apontar para outra empresa passava
+    // pela validacao (a empresa existe!) e as telas liam dela.
+    const { contagem, laguna } = await cenario();
+    entrar("auth-operacional", laguna.id);
+
+    const scope = await getActiveScope();
+    expect(scope).toEqual({ type: "company", companyId: contagem.id });
+  });
+
+  it("a holding continua alcancando qualquer unidade pelo cookie", async () => {
+    const { laguna } = await cenario();
+    entrar("auth-holding", laguna.id);
+
+    expect(await getActiveScope()).toEqual({ type: "company", companyId: laguna.id });
   });
 });

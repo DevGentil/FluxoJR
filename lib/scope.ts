@@ -28,18 +28,42 @@ export async function getActiveScope(): Promise<Scope> {
 
   if (raw === "all") return { type: "all" };
 
+  // O cookie é dado do CLIENTE. Validar só que a empresa existe deixava
+  // qualquer sessão editar o valor à mão e ler outra unidade nas telas que
+  // resolvem a empresa pelo escopo. A empresa também precisa ser acessível.
+  const visiveis = await companyIdsVisiveis();
+  const podeVer = new Set(visiveis);
+
   if (raw?.startsWith("group:")) {
     const groupId = raw.slice("group:".length);
-    const exists = await prisma.group.findUnique({ where: { id: groupId }, select: { id: true } });
-    if (exists) return { type: "group", groupId };
+    const doGrupo = await prisma.company.findMany({
+      where: { groupId },
+      select: { id: true },
+    });
+    if (doGrupo.some((c) => podeVer.has(c.id))) return { type: "group", groupId };
   }
 
   if (raw?.startsWith("company:")) {
     const companyId = raw.slice("company:".length);
-    const exists = await prisma.company.findUnique({ where: { id: companyId }, select: { id: true } });
-    if (exists) return { type: "company", companyId };
+    if (podeVer.has(companyId)) return { type: "company", companyId };
   }
 
+  // Cookie ausente, forjado ou apontando para unidade sem acesso: cai na
+  // primeira unidade que a conta REALMENTE enxerga, e não na primeira do
+  // banco. Voltar para uma unidade alheia seria trocar um vazamento por
+  // outro mais silencioso.
+  if (visiveis.length > 0) {
+    const primeira = await prisma.company.findFirst({
+      where: { id: { in: visiveis } },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    if (primeira) return { type: "company", companyId: primeira.id };
+  }
+
+  // Conta sem acesso a unidade nenhuma. Devolve uma empresa qualquer só para
+  // as telas terem um escopo com que renderizar — elas não vão mostrar dado
+  // algum, porque `resolveCompanyIds` e `getActiveCompanyId` recusam.
   let first = await prisma.company.findFirst({ orderBy: { createdAt: "asc" } });
   if (!first) {
     await ensureAtLeastOneCompany();

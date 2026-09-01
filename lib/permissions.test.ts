@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MODULES,
+  moduleOfPath,
   ROLES,
   can,
   levelFor,
@@ -184,5 +185,38 @@ describe("a matriz inteira", () => {
       const aprovaveis = MODULES.filter((m) => levelFor(conta(role), m) === "aprovar");
       expect(aprovaveis.every((m) => m === "repasses-medicos")).toBe(true);
     }
+  });
+});
+
+describe("moduleOfPath", () => {
+  it("resolve a rota simples", () => {
+    expect(moduleOfPath("/transacoes")).toBe("transacoes");
+    expect(moduleOfPath("/dashboard")).toBe("dashboard");
+  });
+
+  it("rota filha herda o modulo do pai", () => {
+    expect(moduleOfPath("/medicos/cmte123abc")).toBe("medicos");
+  });
+
+  it("NAO confunde rotas que comecam igual", () => {
+    // A armadilha: "/contas" e prefixo de texto das outras duas. Comparando
+    // por prefixo, o financeiro abrindo Contas Bancarias cairia na checagem
+    // da tela de acessos, que ele nao tem — e levaria um "sem permissao"
+    // numa tela que e dele.
+    expect(moduleOfPath("/contas")).toBe("contas");
+    expect(moduleOfPath("/contas-bancarias")).toBe("contas-bancarias");
+    expect(moduleOfPath("/contas-a-pagar-receber")).toBe("contas-a-pagar-receber");
+  });
+
+  it("devolve nulo para rota fora de modulo", () => {
+    expect(moduleOfPath("/")).toBeNull();
+    expect(moduleOfPath("/login")).toBeNull();
+    expect(moduleOfPath("/trocar-senha")).toBeNull();
+  });
+
+  it("todo modulo tem uma rota que resolve para ele", () => {
+    // Trava o alinhamento entre a lista de modulos e as rotas: modulo novo
+    // sem rota correspondente, ou renomeado, quebra aqui.
+    for (const m of MODULES) expect(moduleOfPath("/" + m)).toBe(m);
   });
 });

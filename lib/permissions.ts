@@ -180,6 +180,25 @@ export function can(access: Access, module: Module, minimo: Level = "ver"): bool
   return nivelAtinge(levelFor(access, module), minimo);
 }
 
+/** A que módulo uma rota pertence.
+ *
+ * Compara o PRIMEIRO SEGMENTO do caminho com a lista de módulos, e nada
+ * mais. Comparar por prefixo de texto seria uma armadilha: "/contas" é
+ * prefixo de "/contas-bancarias" e de "/contas-a-pagar-receber", e um
+ * financeiro entrando em Contas Bancárias cairia na checagem da tela de
+ * acessos, que ele não tem. Segmento inteiro não tem esse problema.
+ *
+ * Rota filha herda o módulo do pai: "/medicos/<id>" é do módulo "medicos".
+ *
+ * Devolve `null` para rota que não pertence a módulo nenhum — aí a guarda
+ * deixa passar, porque não há permissão a exigir. É o caso de "/" e de
+ * telas futuras fora do menu; se alguma dessas precisar de proteção, ela
+ * entra aqui e no `MODULES`. */
+export function moduleOfPath(pathname: string): Module | null {
+  const primeiro = pathname.split("/").filter(Boolean)[0];
+  return (MODULES as readonly string[]).includes(primeiro) ? (primeiro as Module) : null;
+}
+
 /** Os módulos que aparecem no menu, na ordem de `MODULES`.
  *
  * Esconder do menu é conveniência, NUNCA proteção: quem souber o endereço
