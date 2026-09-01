@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import { contaAtual, companyIdsVisiveis } from "@/lib/access";
+import { contaAtual, companyIdsVisiveis, requirePermission } from "@/lib/access";
+import type { Level, Module } from "@/lib/permissions";
 
 const COOKIE_NAME = "fluxojr_scope";
 
@@ -92,7 +93,7 @@ async function companyIdsDoEscopo(scope: Scope): Promise<string[]> {
  * arquivos de action, e todas passam por este funil. Uma correção, o
  * sistema inteiro coberto; e nenhuma action futura pode esquecer de fazer
  * a verificação, porque ela não é opcional no caminho. */
-export async function getActiveCompanyId(): Promise<string> {
+export async function getActiveCompanyId(module?: Module, minimo: Level = "editar"): Promise<string> {
   const scope = await getActiveScope();
   if (scope.type !== "company") {
     throw new Error("Selecione uma empresa específica para essa ação.");
@@ -104,18 +105,33 @@ export async function getActiveCompanyId(): Promise<string> {
     throw new Error("Sua conta não tem acesso a essa unidade.");
   }
 
+  // O módulo é opcional na assinatura só para não quebrar quem já chamava.
+  // Toda action de mutação passa o dela — é assim que a permissão por papel
+  // chega às 42 chamadas sem depender de ninguém lembrar de checar antes.
+  if (module) await requirePermission(scope.companyId, module, minimo);
+
   return scope.companyId;
 }
 
-/** Guard para as actions de gestão de Grupos/Empresas: só permite criar,
- * editar ou excluir grupos/empresas em escopo consolidado (grupo ou
- * holding) — uma unidade específica só pode ver os próprios dados. */
+/** Guard para as actions de gestão de Grupos/Empresas.
+ *
+ * Duas exigências. A primeira é de escopo: criar ou apagar empresa só faz
+ * sentido na visão consolidada. A segunda é de conta — **isso é operação de
+ * holding**. O papel de Gestor dá "editar" no módulo Empresas para a pessoa
+ * manter os dados da própria unidade (CNPJ, documentos societários); não para
+ * cadastrar unidade nova nem apagar a do vizinho. Sem esta linha, um gestor
+ * que escolhesse a visão consolidada criaria empresas à vontade. */
 export async function requireConsolidatedScope(): Promise<void> {
   const scope = await getActiveScope();
   if (scope.type === "company") {
     throw new Error(
       "Selecione a visão consolidada (grupo ou holding) no menu à esquerda para gerenciar empresas/grupos."
     );
+  }
+
+  const conta = await contaAtual();
+  if (!conta?.holding) {
+    throw new Error("Somente uma conta da holding pode criar ou remover empresas e grupos.");
   }
 }
 

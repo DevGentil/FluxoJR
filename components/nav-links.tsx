@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  KeyRound,
   LayoutDashboard,
   ArrowLeftRight,
   CalendarClock,
@@ -17,6 +18,7 @@ import {
   Users,
   ClipboardList,
 } from "lucide-react";
+import type { Module } from "@/lib/permissions";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -35,51 +37,64 @@ import {
  *
  * Cadastros vão para o fim de propósito: são as telas que se abre uma vez e
  * quase não se volta, e estavam ocupando o meio do caminho. */
-const grupos = [
+const grupos: { label: string | null; links: { href: string; label: string; icon: typeof LayoutDashboard; module: Module }[] }[] = [
   {
     label: null,
-    links: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard }],
+    links: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, module: "dashboard" }],
   },
   {
     label: "Movimento",
     links: [
-      { href: "/transacoes", label: "Transações", icon: ArrowLeftRight },
-      { href: "/contas-a-pagar-receber", label: "A Pagar/Receber", icon: CalendarClock },
-      { href: "/fechamento-caixa", label: "Fechamento de Caixa", icon: Wallet },
+      { href: "/transacoes", label: "Transações", icon: ArrowLeftRight, module: "transacoes" },
+      { href: "/contas-a-pagar-receber", label: "A Pagar/Receber", icon: CalendarClock, module: "contas-a-pagar-receber" },
+      { href: "/fechamento-caixa", label: "Fechamento de Caixa", icon: Wallet, module: "fechamento-caixa" },
     ],
   },
   {
     label: "Repasses médicos",
     links: [
-      { href: "/repasses-medicos", label: "Lançamentos", icon: Stethoscope },
-      { href: "/medicos", label: "Médicos", icon: Users },
-      { href: "/operacao", label: "Operação", icon: ClipboardList },
+      { href: "/repasses-medicos", label: "Lançamentos", icon: Stethoscope, module: "repasses-medicos" },
+      { href: "/medicos", label: "Médicos", icon: Users, module: "medicos" },
+      { href: "/operacao", label: "Operação", icon: ClipboardList, module: "operacao" },
     ],
   },
   {
     label: "Análise",
     links: [
-      { href: "/relatorios", label: "Relatórios", icon: FileBarChart },
-      { href: "/balanco", label: "Balanço", icon: ScrollText },
+      { href: "/relatorios", label: "Relatórios", icon: FileBarChart, module: "relatorios" },
+      { href: "/balanco", label: "Balanço", icon: ScrollText, module: "balanco" },
     ],
   },
   {
     label: "Cadastros",
     links: [
-      { href: "/categorias", label: "Categorias", icon: Tags },
-      { href: "/fornecedores", label: "Fornecedores", icon: Truck },
-      { href: "/contas-bancarias", label: "Contas Bancárias", icon: Landmark },
-      { href: "/empresas", label: "Empresas", icon: Building2 },
+      { href: "/categorias", label: "Categorias", icon: Tags, module: "categorias" },
+      { href: "/fornecedores", label: "Fornecedores", icon: Truck, module: "fornecedores" },
+      { href: "/contas-bancarias", label: "Contas Bancárias", icon: Landmark, module: "contas-bancarias" },
+      { href: "/empresas", label: "Empresas", icon: Building2, module: "empresas" },
+      { href: "/contas", label: "Contas de Acesso", icon: KeyRound, module: "contas" },
     ],
   },
 ];
 
-export function NavLinks() {
+/** O menu recebe os módulos permitidos do layout, que é Server Component e
+ * sabe quem está logado.
+ *
+ * Esconder um item é conveniência, nunca proteção — quem souber o endereço
+ * digita. Cada página recusa por conta própria, no servidor. Um bloco some
+ * inteiro quando nenhum item dele sobra, senão ficaria um título de seção
+ * solto sobre o vazio. */
+export function NavLinks({ modulos }: { modulos: Module[] }) {
   const pathname = usePathname();
+  const permitidos = new Set(modulos);
+
+  const visiveis = grupos
+    .map((g) => ({ ...g, links: g.links.filter((l) => permitidos.has(l.module)) }))
+    .filter((g) => g.links.length > 0);
 
   return (
     <>
-      {grupos.map((grupo, i) => (
+      {visiveis.map((grupo, i) => (
         <SidebarGroup key={grupo.label ?? i} className={grupo.label ? undefined : "pb-0"}>
           {grupo.label && <SidebarGroupLabel>{grupo.label}</SidebarGroupLabel>}
           <SidebarGroupContent>

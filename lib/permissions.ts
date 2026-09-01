@@ -24,6 +24,7 @@ export const MODULES = [
   "fornecedores",
   "contas-bancarias",
   "empresas",
+  "contas",
 ] as const;
 
 export type Module = (typeof MODULES)[number];
@@ -43,6 +44,7 @@ export const MODULE_LABELS: Record<Module, string> = {
   fornecedores: "Fornecedores",
   "contas-bancarias": "Contas Bancárias",
   empresas: "Empresas",
+  contas: "Contas de Acesso",
 };
 
 /** Os quatro níveis são cumulativos: quem aprova também edita, quem edita
@@ -64,7 +66,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   OPERACIONAL: "Fechamento de caixa, lançamento de repasse e cadastro dos médicos da unidade.",
   FINANCEIRO: "Tudo do Operacional, mais transações, contas, cadastros, Balanço, e o aval do repasse.",
-  GESTOR: "Acesso completo à unidade, incluindo a rentabilidade em Operação.",
+  GESTOR: "Acesso completo à unidade, incluindo a rentabilidade em Operação e a gestão de contas.",
 };
 
 /** A matriz, uma linha por papel.
@@ -94,6 +96,7 @@ const MATRIX: Record<Role, Record<Module, Level>> = {
     fornecedores: "nenhum",
     "contas-bancarias": "nenhum",
     empresas: "nenhum",
+    contas: "nenhum",
   },
   FINANCEIRO: {
     dashboard: "ver",
@@ -102,13 +105,16 @@ const MATRIX: Record<Role, Record<Module, Level>> = {
     medicos: "editar",
     transacoes: "editar",
     "contas-a-pagar-receber": "editar",
-    relatorios: "ver",
+    // "editar" e nao "ver": o arquivo do DRE fechado pelo contador chega ao
+    // financeiro, e e ele quem sobe.
+    relatorios: "editar",
     balanco: "ver",
     operacao: "nenhum",
     categorias: "editar",
     fornecedores: "editar",
     "contas-bancarias": "editar",
     empresas: "editar",
+    contas: "nenhum",
   },
   GESTOR: {
     dashboard: "ver",
@@ -117,13 +123,16 @@ const MATRIX: Record<Role, Record<Module, Level>> = {
     medicos: "editar",
     transacoes: "editar",
     "contas-a-pagar-receber": "editar",
-    relatorios: "ver",
+    relatorios: "editar",
     balanco: "ver",
     operacao: "editar",
     categorias: "editar",
     fornecedores: "editar",
     "contas-bancarias": "editar",
     empresas: "editar",
+    // Gestor cria e edita contas da unidade dele. Nunca conta de holding —
+    // essa regra nao cabe na matriz (que e por modulo) e mora na action.
+    contas: "editar",
   },
 };
 

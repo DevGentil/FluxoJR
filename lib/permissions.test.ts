@@ -130,9 +130,15 @@ describe("Gestor", () => {
     }
   });
 
-  it("difere do Financeiro só em Operação", () => {
+  it("difere do Financeiro só em Operação e na gestão de contas", () => {
     const diferencas = MODULES.filter((m) => levelFor(GESTOR, m) !== levelFor(FINANCEIRO, m));
-    expect(diferencas).toEqual(["operacao"]);
+    expect(diferencas).toEqual(["operacao", "contas"]);
+  });
+
+  it("é quem gerencia acesso, junto com a holding", () => {
+    expect(can(GESTOR, "contas", "editar")).toBe(true);
+    expect(can(FINANCEIRO, "contas")).toBe(false);
+    expect(can(OPERACIONAL, "contas")).toBe(false);
   });
 });
 

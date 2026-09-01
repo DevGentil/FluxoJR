@@ -2,9 +2,11 @@ import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { MODO_ABERTO, requireUser } from "@/lib/auth";
 import {
+  MODULES,
   MODULE_LABELS,
   can,
   levelFor,
+  visibleModules,
   type Access,
   type Level,
   type Module,
@@ -104,6 +106,27 @@ export async function companyIdsVisiveis(): Promise<string[]> {
     return empresas.map((c) => c.id);
   }
   return [...conta.papeis.keys()];
+}
+
+/** Os módulos que o menu deve mostrar, dado o escopo aberto.
+ *
+ * União, e não interseção: alguém com acesso a duas unidades, gestora numa
+ * e operacional na outra, precisa enxergar Operação enquanto o escopo
+ * consolidado inclui a unidade em que ela é gestora. A tela de cada módulo
+ * é que recusa o que não couber naquela empresa específica.
+ *
+ * Recebe os ids em vez de resolver o escopo por conta própria porque
+ * `lib/scope.ts` já importa este arquivo — resolver aqui fecharia o ciclo. */
+export async function modulosVisiveis(companyIds: string[]): Promise<Module[]> {
+  const conta = await contaAtual();
+  if (!conta) return [];
+  if (conta.holding) return visibleModules({ holding: true, role: null });
+
+  const uniao = new Set<Module>();
+  for (const id of companyIds) {
+    for (const m of visibleModules(accessOf(conta, id))) uniao.add(m);
+  }
+  return MODULES.filter((m) => uniao.has(m));
 }
 
 export class SemPermissaoError extends Error {
