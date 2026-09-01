@@ -17,6 +17,17 @@ function comRota(request: NextRequest) {
   return { request: { headers } };
 }
 
+/** Rotas que abrem sem sessão.
+ *
+ * Recuperação de senha precisa estar aqui pelo motivo óbvio: quem esqueceu a
+ * senha não tem como fazer login antes. Sem esta lista, o `redirect` abaixo
+ * mandava a pessoa de volta para /login num laço sem saída. */
+const ROTAS_PUBLICAS = ["/login", "/recuperar-senha"];
+
+export function ehPublica(pathname: string) {
+  return ROTAS_PUBLICAS.some((rota) => pathname === rota || pathname.startsWith(`${rota}/`));
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next(comRota(request));
 
@@ -55,15 +66,18 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isLoginRoute = request.nextUrl.pathname.startsWith("/login");
+  const { pathname } = request.nextUrl;
 
-  if (!user && !isLoginRoute) {
+  if (!user && !ehPublica(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
-  if (user && isLoginRoute) {
+  // Só /login devolve quem já entrou. /recuperar-senha não: além de ser onde
+  // a pessoa cai já autenticada pelo link do e-mail, trocar a senha estando
+  // logado é um pedido legítimo.
+  if (user && pathname.startsWith("/login")) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);

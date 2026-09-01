@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { login } from "./actions";
 import { Button } from "@/components/ui/button";
@@ -61,7 +62,15 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Senha</Label>
+              <div className="flex items-baseline justify-between">
+                <Label htmlFor="password">Senha</Label>
+                <Link
+                  href="/recuperar-senha"
+                  className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                  Esqueceu a senha?
+                </Link>
+              </div>
               <div className="relative">
                 <Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
