@@ -57,7 +57,7 @@ export async function createDoctor(input: DoctorInput): Promise<{ error?: string
 
   try {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("medicos");
 
     await prisma.doctor.create({
       data: {
@@ -92,7 +92,7 @@ export async function updateDoctor(id: string, input: DoctorInput): Promise<{ er
 
   try {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("medicos");
 
     const doctor = await prisma.doctor.findFirst({ where: { id, companyId } });
     if (!doctor) return { error: "Médico não encontrado." };
@@ -166,7 +166,7 @@ export async function updateDoctor(id: string, input: DoctorInput): Promise<{ er
 export async function deleteDoctor(id: string): Promise<{ error?: string }> {
   try {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("medicos");
 
     const doctor = await prisma.doctor.findFirst({ where: { id, companyId }, select: { id: true } });
     if (!doctor) return { error: "Médico não encontrado." };
@@ -198,7 +198,7 @@ export async function deleteDoctor(id: string): Promise<{ error?: string }> {
 export async function markContractChecked(doctorId: string): Promise<{ error?: string }> {
   try {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("medicos");
 
     const doctor = await prisma.doctor.findFirst({ where: { id: doctorId, companyId } });
     if (!doctor) return { error: "Médico não encontrado." };

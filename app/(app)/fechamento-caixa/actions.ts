@@ -59,7 +59,7 @@ export async function createCashClosing(input: CashClosingInput): Promise<{ erro
 
   try {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("fechamento-caixa");
 
     const account = await prisma.account.findFirst({ where: { id: input.accountId, companyId } });
     if (!account) return { error: "Conta inválida." };
@@ -118,7 +118,7 @@ export async function updateCashClosing(id: string, input: CashClosingInput): Pr
 
   try {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("fechamento-caixa");
 
     const closing = await prisma.cashClosing.findFirst({ where: { id, companyId } });
     if (!closing) return { error: "Fechamento não encontrado." };
@@ -191,7 +191,7 @@ export async function updateCashClosing(id: string, input: CashClosingInput): Pr
 export async function deleteCashClosing(id: string): Promise<{ error?: string }> {
   try {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("fechamento-caixa");
 
     const closing = await prisma.cashClosing.findFirst({ where: { id, companyId } });
     if (!closing) return { error: "Fechamento não encontrado." };

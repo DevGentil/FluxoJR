@@ -24,7 +24,7 @@ export async function uploadDocument(_prev: ActionState, formData: FormData): Pr
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("empresas");
     const content = Buffer.from(await file.arrayBuffer());
 
     await prisma.document.create({
@@ -45,7 +45,7 @@ export async function uploadDocument(_prev: ActionState, formData: FormData): Pr
 export async function deleteDocument(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("empresas");
     const { count } = await prisma.document.deleteMany({ where: { id, companyId } });
     if (count === 0) throw new Error("Documento não encontrado.");
     revalidatePath("/empresas");

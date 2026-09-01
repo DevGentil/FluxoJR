@@ -31,7 +31,7 @@ export async function createTransaction(_prev: ActionState, formData: FormData):
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("transacoes");
     const { categoryId, supplierId, transferCompanyId, ...data } = result.data;
     await prisma.transaction.create({
       data: {
@@ -62,7 +62,7 @@ export async function updateTransaction(
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("transacoes");
     const { categoryId, supplierId, transferCompanyId, ...data } = result.data;
     const { count } = await prisma.transaction.updateMany({
       where: { id, companyId },
@@ -86,7 +86,7 @@ export async function updateTransaction(
 export async function deleteTransaction(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("transacoes");
     const { count } = await prisma.transaction.deleteMany({
       where: { id, companyId },
     });
@@ -101,7 +101,7 @@ export async function deleteTransactions(ids: string[]): Promise<ActionState> {
   return runMutation(async () => {
     if (ids.length === 0) throw new Error("Nenhuma transação selecionada.");
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("transacoes");
     const { count } = await prisma.transaction.deleteMany({
       where: { id: { in: ids }, companyId },
     });
@@ -130,7 +130,7 @@ export async function importTransactions(input: {
   const parsedRows = z.array(importRowSchema).parse(input.rows);
   if (parsedRows.length === 0) return { imported: 0 };
 
-  const companyId = await getActiveCompanyId();
+  const companyId = await getActiveCompanyId("transacoes");
 
   const account = await prisma.account.findFirst({
     where: { id: input.accountId, companyId },

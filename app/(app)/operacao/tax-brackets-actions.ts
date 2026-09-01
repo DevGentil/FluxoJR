@@ -40,7 +40,7 @@ export async function createTaxBracket(_prev: ActionState, formData: FormData): 
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("operacao");
     await prisma.taxBracket.create({ data: { ...result.data, companyId } });
 
     revalidateRepassesModule();
@@ -57,7 +57,7 @@ export async function updateTaxBracket(
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("operacao");
     const { count } = await prisma.taxBracket.updateMany({
       where: { id, companyId },
       data: result.data,
@@ -71,7 +71,7 @@ export async function updateTaxBracket(
 export async function deleteTaxBracket(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("operacao");
     const { count } = await prisma.taxBracket.deleteMany({ where: { id, companyId } });
     if (count === 0) throw new Error("Faixa não encontrada.");
 

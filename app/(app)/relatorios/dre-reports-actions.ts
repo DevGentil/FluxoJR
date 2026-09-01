@@ -26,7 +26,7 @@ export async function uploadDreReport(_prev: ActionState, formData: FormData): P
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("relatorios");
 
     const existing = await prisma.dreReport.findUnique({
       where: { companyId_competencia: { companyId, competencia: startOfMonth(competencia) } },
@@ -56,7 +56,7 @@ export async function uploadDreReport(_prev: ActionState, formData: FormData): P
 export async function deleteDreReport(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("relatorios");
     const { count } = await prisma.dreReport.deleteMany({ where: { id, companyId } });
     if (count === 0) throw new Error("DRE realizado não encontrado.");
     revalidatePath("/relatorios");

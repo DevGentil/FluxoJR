@@ -31,7 +31,7 @@ export async function uploadDoctorDocument(
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("medicos");
 
     const doctor = await prisma.doctor.findFirst({
       where: { id: doctorId, companyId },
@@ -58,7 +58,7 @@ export async function uploadDoctorDocument(
 export async function deleteDoctorDocument(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("medicos");
 
     const doc = await prisma.document.findFirst({
       where: { id, companyId, doctorId: { not: null } },

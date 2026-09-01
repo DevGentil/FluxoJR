@@ -32,7 +32,7 @@ export async function createScheduledEntry(_prev: ActionState, formData: FormDat
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("contas-a-pagar-receber");
     const { accountId, categoryId, supplierId, dueDate, ...rest } = parsed.data;
     await prisma.scheduledEntry.create({
       data: {
@@ -60,7 +60,7 @@ export async function updateScheduledEntry(
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("contas-a-pagar-receber");
     const { accountId, categoryId, supplierId, dueDate, ...rest } = parsed.data;
     const { count } = await prisma.scheduledEntry.updateMany({
       where: { id, companyId },
@@ -82,7 +82,7 @@ export async function updateScheduledEntry(
 export async function deleteScheduledEntry(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("contas-a-pagar-receber");
     const { count } = await prisma.scheduledEntry.deleteMany({
       where: { id, companyId },
     });
@@ -112,7 +112,7 @@ export async function importScheduledEntries(input: {
   const parsedRows = z.array(importRowSchema).parse(input.rows);
   if (parsedRows.length === 0) return { imported: 0 };
 
-  const companyId = await getActiveCompanyId();
+  const companyId = await getActiveCompanyId("contas-a-pagar-receber");
 
   if (input.accountId) {
     const account = await prisma.account.findFirst({
@@ -144,7 +144,7 @@ export async function importScheduledEntries(input: {
 export async function markAsPaid(id: string, accountId: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("contas-a-pagar-receber");
 
     const [entry, account] = await Promise.all([
       prisma.scheduledEntry.findFirst({ where: { id, companyId } }),

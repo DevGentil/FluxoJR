@@ -44,7 +44,7 @@ export async function createServiceItem(_prev: ActionState, formData: FormData):
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("operacao");
     await prisma.serviceItem.create({ data: { ...result.data, companyId } });
 
     revalidateRepassesModule();
@@ -61,7 +61,7 @@ export async function updateServiceItem(
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("operacao");
     const { count } = await prisma.serviceItem.updateMany({
       where: { id, companyId },
       data: result.data,
@@ -78,7 +78,7 @@ const ARQUIVAR_EM_VEZ_DE_EXCLUIR =
 export async function deleteServiceItem(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("operacao");
     const existing = await prisma.serviceItem.findFirst({ where: { id, companyId } });
     if (!existing) throw new Error("Item não encontrado.");
 

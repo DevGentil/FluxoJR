@@ -29,7 +29,7 @@ export async function createSupplier(_prev: ActionState, formData: FormData): Pr
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("fornecedores");
     await prisma.supplier.create({ data: { ...normalize(result.data), companyId } });
 
     revalidatePath("/fornecedores");
@@ -46,7 +46,7 @@ export async function updateSupplier(
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("fornecedores");
     const { count } = await prisma.supplier.updateMany({
       where: { id, companyId },
       data: normalize(result.data),
@@ -60,7 +60,7 @@ export async function updateSupplier(
 export async function deleteSupplier(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("fornecedores");
     const { count } = await prisma.supplier.deleteMany({
       where: { id, companyId },
     });

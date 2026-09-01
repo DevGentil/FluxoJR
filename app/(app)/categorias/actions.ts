@@ -19,7 +19,7 @@ export async function createCategory(_prev: ActionState, formData: FormData): Pr
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("categorias");
     await prisma.category.create({ data: { ...result.data, companyId } });
 
     revalidatePath("/categorias");
@@ -36,7 +36,7 @@ export async function updateCategory(
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("categorias");
     const { count } = await prisma.category.updateMany({
       where: { id, companyId },
       data: result.data,
@@ -50,7 +50,7 @@ export async function updateCategory(
 export async function deleteCategory(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("categorias");
     const { count } = await prisma.category.deleteMany({
       where: { id, companyId },
     });

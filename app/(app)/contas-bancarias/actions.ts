@@ -19,7 +19,7 @@ export async function createAccount(_prev: ActionState, formData: FormData): Pro
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("contas-bancarias");
     await prisma.account.create({
       data: { ...result.data, companyId },
     });
@@ -39,7 +39,7 @@ export async function updateAccount(
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("contas-bancarias");
     const { count } = await prisma.account.updateMany({
       where: { id, companyId },
       data: result.data,
@@ -54,7 +54,7 @@ export async function updateAccount(
 export async function deleteAccount(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("contas-bancarias");
     const { count } = await prisma.account.deleteMany({
       where: { id, companyId },
     });

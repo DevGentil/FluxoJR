@@ -83,7 +83,7 @@ export async function createDailyEntry(input: DailyEntryInput): Promise<{ error?
 
   try {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("repasses-medicos");
 
     const doctor = await prisma.doctor.findFirst({ where: { id: input.doctorId, companyId } });
     if (!doctor) return { error: "Médico não encontrado." };
@@ -117,7 +117,7 @@ export async function updateDailyEntry(id: string, input: DailyEntryInput): Prom
 
   try {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("repasses-medicos");
 
     const entry = await prisma.doctorDailyEntry.findFirst({ where: { id, companyId } });
     if (!entry) return { error: "Lançamento não encontrado." };
@@ -153,7 +153,7 @@ export async function updateDailyEntry(id: string, input: DailyEntryInput): Prom
 export async function deleteDailyEntry(id: string): Promise<{ error?: string }> {
   try {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("repasses-medicos");
     const { count } = await prisma.doctorDailyEntry.deleteMany({ where: { id, companyId } });
     if (count === 0) return { error: "Lançamento não encontrado." };
 
@@ -169,7 +169,7 @@ export async function deleteDailyEntry(id: string): Promise<{ error?: string }> 
 export async function toggleDailyEntryPaid(id: string, paid: boolean): Promise<{ error?: string }> {
   try {
     await requireUser();
-    const companyId = await getActiveCompanyId();
+    const companyId = await getActiveCompanyId("repasses-medicos");
     const { count } = await prisma.doctorDailyEntry.updateMany({ where: { id, companyId }, data: { paid } });
     if (count === 0) return { error: "Lançamento não encontrado." };
 
