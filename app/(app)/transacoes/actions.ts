@@ -2,6 +2,8 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
+import { auditar } from "@/lib/audit";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
@@ -87,10 +89,23 @@ export async function deleteTransaction(id: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
     const companyId = await getActiveCompanyId("transacoes");
+
+    const alvo = await prisma.transaction.findFirst({ where: { id, companyId } });
+    if (!alvo) throw new Error("Transação não encontrada.");
+
     const { count } = await prisma.transaction.deleteMany({
       where: { id, companyId },
     });
     if (count === 0) throw new Error("Transação não encontrada.");
+
+    await auditar({
+      companyId,
+      module: "transacoes",
+      acao: "excluiu",
+      entidade: alvo.description,
+      resumo: `${formatDate(alvo.date)} — ${alvo.type === "INCOME" ? "entrada" : "saída"} de ${formatCurrency(Number(alvo.amount))}`,
+      registroId: id,
+    });
 
     revalidatePath("/transacoes");
     revalidatePath("/dashboard");
@@ -102,10 +117,26 @@ export async function deleteTransactions(ids: string[]): Promise<ActionState> {
     if (ids.length === 0) throw new Error("Nenhuma transação selecionada.");
     await requireUser();
     const companyId = await getActiveCompanyId("transacoes");
+
+    const alvos = await prisma.transaction.findMany({ where: { id: { in: ids }, companyId } });
+    if (alvos.length === 0) throw new Error("Nenhuma transação encontrada.");
+
     const { count } = await prisma.transaction.deleteMany({
       where: { id: { in: ids }, companyId },
     });
     if (count === 0) throw new Error("Nenhuma transação encontrada.");
+
+    // Exclusão em lote vira UM registro com o total, não um por linha: o
+    // que se quer saber é "sumiram R$ X em N transações naquele dia", e
+    // cinquenta registros seguidos escondem isso em vez de mostrar.
+    const total = alvos.reduce((s, t) => s + Number(t.amount) * (t.type === "INCOME" ? 1 : -1), 0);
+    await auditar({
+      companyId,
+      module: "transacoes",
+      acao: "excluiu",
+      entidade: `${count} transações de uma vez`,
+      resumo: `efeito líquido de ${formatCurrency(total)} desfeito`,
+    });
 
     revalidatePath("/transacoes");
     revalidatePath("/dashboard");

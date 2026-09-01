@@ -560,3 +560,39 @@ model ErrorLog {
   @@index([at])
   @@index([seen])
 }
+
+/// Quem alterou o que, e quando.
+///
+/// Nome da pessoa e da empresa ficam COPIADOS aqui, e nao como chave
+/// estrangeira. Nao e desnormalizacao por descuido: um registro de auditoria
+/// que perde o sujeito quando a conta e removida deixa de ser auditoria. O
+/// `userId` fica junto so para agrupar, e pode apontar para o vazio.
+model AuditLog {
+  id          String   @id @default(cuid())
+  at          DateTime @default(now())
+
+  userId      String?
+  userName    String
+  userEmail   String
+
+  /// Nulo quando o evento e do SISTEMA e nao de uma unidade: criar uma conta
+  /// de holding, por exemplo, nao acontece "dentro" de empresa nenhuma.
+  /// Preferivel a inventar uma empresa so para preencher a coluna.
+  companyId   String?
+  companyName String?
+
+  /// Modulo do sistema, como em lib/permissions.ts.
+  module      String
+  /// O verbo, em portugues e no passado: "alterou", "excluiu", "aprovou".
+  acao        String
+  /// Do que se trata, ja legivel: "Contrato de Dr. Carlos Andrade".
+  entidade    String
+  /// O que mudou, em uma linha: "ECG: R$ 45,00 -> R$ 25,00".
+  resumo      String
+  /// Id do registro afetado, para quem quiser cruzar com a tabela de origem.
+  registroId  String?
+
+  @@index([at])
+  @@index([companyId, at])
+  @@index([userId])
+}

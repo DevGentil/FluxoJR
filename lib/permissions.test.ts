@@ -140,9 +140,18 @@ describe("Gestor", () => {
     for (const role of ROLES) expect(can(conta(role), "erros")).toBe(false);
   });
 
-  it("difere do Financeiro só em Operação e na gestão de contas", () => {
+  it("difere do Financeiro em Operação, contas e auditoria", () => {
+    // As três coisas que cabem a quem responde pela unidade e não a quem
+    // movimenta o dinheiro dela: a rentabilidade, quem tem acesso, e quem
+    // alterou o quê.
     const diferencas = MODULES.filter((m) => levelFor(GESTOR, m) !== levelFor(FINANCEIRO, m));
-    expect(diferencas).toEqual(["operacao", "contas"]);
+    expect(diferencas).toEqual(["operacao", "contas", "auditoria"]);
+  });
+
+  it("enxerga a auditoria da unidade, mas não pode alterá-la", () => {
+    // Log que quem é auditado consegue editar não vale como log.
+    expect(can(GESTOR, "auditoria", "ver")).toBe(true);
+    expect(can(GESTOR, "auditoria", "editar")).toBe(false);
   });
 
   it("é quem gerencia acesso, junto com a holding", () => {

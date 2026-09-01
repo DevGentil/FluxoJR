@@ -1,11 +1,14 @@
 "use server";
 
 import { revalidateRepassesModule } from "@/lib/revalidate-repasses";
+import { auditar } from "@/lib/audit";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { parseDateOnly } from "@/lib/date-only";
 import { contractOn } from "@/lib/doctor-rates";
+import { entryAmount } from "@/lib/doctor-period";
 
 export interface DailyLineInput {
   serviceItemId: string;
@@ -154,8 +157,27 @@ export async function deleteDailyEntry(id: string): Promise<{ error?: string }> 
   try {
     await requireUser();
     const companyId = await getActiveCompanyId("repasses-medicos");
+
+    // Lê antes de apagar: depois do delete não há o que descrever, e um
+    // registro dizendo apenas "excluiu um lançamento" não serve para
+    // reconstituir nada.
+    const alvo = await prisma.doctorDailyEntry.findFirst({
+      where: { id, companyId },
+      include: { doctor: { select: { name: true } }, lines: true },
+    });
+    if (!alvo) return { error: "Lançamento não encontrado." };
+
     const { count } = await prisma.doctorDailyEntry.deleteMany({ where: { id, companyId } });
     if (count === 0) return { error: "Lançamento não encontrado." };
+
+    await auditar({
+      companyId,
+      module: "repasses-medicos",
+      acao: "excluiu",
+      entidade: `Lançamento de ${alvo.doctor.name}`,
+      resumo: `${formatDate(alvo.date)} — ${formatCurrency(entryAmount(alvo))}${alvo.paid ? " (estava marcado como pago)" : ""}`,
+      registroId: id,
+    });
 
     revalidateRepassesModule();
     return {};
@@ -170,8 +192,27 @@ export async function toggleDailyEntryPaid(id: string, paid: boolean): Promise<{
   try {
     await requireUser();
     const companyId = await getActiveCompanyId("repasses-medicos");
+    const alvo = await prisma.doctorDailyEntry.findFirst({
+      where: { id, companyId },
+      include: { doctor: { select: { name: true } }, lines: true },
+    });
+    if (!alvo) return { error: "Lançamento não encontrado." };
+
     const { count } = await prisma.doctorDailyEntry.updateMany({ where: { id, companyId }, data: { paid } });
     if (count === 0) return { error: "Lançamento não encontrado." };
+
+    // Marcar como pago é a afirmação de que o dinheiro saiu. Quem afirmou
+    // isso, e quando, é exatamente o que se pergunta numa divergência.
+    await auditar({
+      companyId,
+      module: "repasses-medicos",
+      acao: paid ? "pagou" : "alterou",
+      entidade: `Lançamento de ${alvo.doctor.name}`,
+      resumo: paid
+        ? `${formatDate(alvo.date)} — ${formatCurrency(entryAmount(alvo))} marcado como pago`
+        : `${formatDate(alvo.date)} — ${formatCurrency(entryAmount(alvo))} deixou de estar pago`,
+      registroId: id,
+    });
 
     revalidateRepassesModule();
     return {};

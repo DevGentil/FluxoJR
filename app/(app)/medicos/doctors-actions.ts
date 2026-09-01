@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidateRepassesModule } from "@/lib/revalidate-repasses";
+import { auditar, diff } from "@/lib/audit";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
@@ -94,7 +96,10 @@ export async function updateDoctor(id: string, input: DoctorInput): Promise<{ er
     await requireUser();
     const companyId = await getActiveCompanyId("medicos");
 
-    const doctor = await prisma.doctor.findFirst({ where: { id, companyId } });
+    const doctor = await prisma.doctor.findFirst({
+      where: { id, companyId },
+      include: { company: { select: { name: true } } },
+    });
     if (!doctor) return { error: "Médico não encontrado." };
 
     // O contrato agora tem histórico: um reajuste ACRESCENTA uma versão em
@@ -102,6 +107,13 @@ export async function updateDoctor(id: string, input: DoctorInput): Promise<{ er
     // as linhas e recriava — o que perdia a informação de quanto se pagava
     // antes, justamente a que as planilhas provaram existir (13 reajustes).
     const existing = await prisma.doctorServiceRate.findMany({ where: { doctorId: id } });
+    // Nome do item para o log dizer "ECG" e não um id — quem lê o registro
+    // precisa entender sem consultar outra tabela.
+    const itens = await prisma.serviceItem.findMany({
+      where: { id: { in: existing.map((r) => r.serviceItemId).concat(input.serviceRates.map((r) => r.serviceItemId)) } },
+      select: { id: true, name: true },
+    });
+    const itensPorId = new Map(itens.map((i) => [i.id, i.name]));
     const vigentes = new Map(contractOn(existing, hoje()).map((r) => [r.serviceItemId, r]));
     const itensNoFormulario = new Set(input.serviceRates.map((r) => r.serviceItemId));
 
@@ -154,6 +166,51 @@ export async function updateDoctor(id: string, input: DoctorInput): Promise<{ er
           notes: input.notes?.trim() || null,
         },
       });
+
+      // O registro entra na MESMA transação: se a alteração der meia-volta,
+      // o log não fica afirmando um reajuste que não aconteceu.
+      //
+      // Uma linha por item reajustado, e não uma por "salvou o médico": numa
+      // divergência, a pergunta é sempre "quem mexeu NESTE valor", e um
+      // registro que só diz "fulano salvou o cadastro" não responde.
+      for (const v of novasVersoes) {
+        const item = itensPorId.get(v.serviceItemId);
+        const anterior = vigentes.get(v.serviceItemId);
+        await auditar(
+          {
+            companyId,
+            companyName: doctor.company.name,
+            module: "medicos",
+            acao: anterior ? "alterou" : "criou",
+            entidade: `Contrato de ${doctor.name}`,
+            resumo:
+              (anterior
+                ? diff(item ?? "item", anterior.rate, v.rate)
+                : `${item ?? "item"}: ${formatCurrency(v.rate)} (novo)`) +
+              ` · vigente a partir de ${formatDate(v.validFrom)}`,
+            registroId: id,
+          },
+          tx
+        );
+      }
+
+      for (const r of existing.filter((r) => removidos.includes(r.id))) {
+        // Só a versão vigente vira registro: as antigas saem junto por serem
+        // histórico do mesmo item, e listar todas encheria o log de ruído.
+        if (!vigentes.has(r.serviceItemId)) continue;
+        await auditar(
+          {
+            companyId,
+            companyName: doctor.company.name,
+            module: "medicos",
+            acao: "excluiu",
+            entidade: `Contrato de ${doctor.name}`,
+            resumo: `${itensPorId.get(r.serviceItemId) ?? "item"} saiu do contrato (valia ${formatCurrency(Number(r.rate))})`,
+            registroId: id,
+          },
+          tx
+        );
+      }
     });
 
     revalidateRepassesModule();

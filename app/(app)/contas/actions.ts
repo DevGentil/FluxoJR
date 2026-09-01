@@ -5,7 +5,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { contaAtual } from "@/lib/access";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { ROLES } from "@/lib/permissions";
+import { ROLES, ROLE_LABELS, type Role } from "@/lib/permissions";
+import { auditar } from "@/lib/audit";
 import { parseForm, runMutation, type ActionState } from "@/lib/actions-utils";
 
 /** Gestão de contas de acesso.
@@ -127,8 +128,41 @@ export async function criarConta(_prev: ActionState, formData: FormData): Promis
       throw e;
     }
 
+    await auditarConta("criou", { name, email, holding, acessos });
     revalidatePath("/contas");
   });
+}
+
+/** Criar e alterar acesso é a operação mais privilegiada do sistema — ela
+ * decide quem pode fazer todas as outras. Vai para o log sempre, mesmo
+ * quando nada de dinheiro se moveu. */
+async function auditarConta(
+  acao: "criou" | "alterou" | "desativou",
+  conta: { name: string; email: string; holding: boolean; acessos: { companyId: string; role: string }[] },
+  extra?: string
+) {
+  const onde = conta.holding
+    ? "acesso de holding, todas as unidades"
+    : conta.acessos.length > 0
+      ? await descreverAcessos(conta.acessos)
+      : "sem unidade";
+
+  await auditar({
+    // Evento do sistema: uma conta não pertence a uma unidade só.
+    module: "contas",
+    acao,
+    entidade: `Conta de ${conta.name} <${conta.email}>`,
+    resumo: extra ? `${onde} · ${extra}` : onde,
+  });
+}
+
+async function descreverAcessos(acessos: { companyId: string; role: string }[]) {
+  const empresas = await prisma.company.findMany({
+    where: { id: { in: acessos.map((a) => a.companyId) } },
+    select: { id: true, name: true },
+  });
+  const nomes = new Map(empresas.map((e) => [e.id, e.name]));
+  return acessos.map((a) => `${ROLE_LABELS[a.role as Role]} em ${nomes.get(a.companyId) ?? "unidade"}`).join(", ");
 }
 
 const editarSchema = z.object({
@@ -193,6 +227,11 @@ export async function editarConta(_prev: ActionState, formData: FormData): Promi
       });
     });
 
+    await auditarConta(
+      "alterou",
+      { name, email: alvo.email, holding, acessos },
+      active === alvo.active ? undefined : active ? "reativada" : "desativada"
+    );
     revalidatePath("/contas");
   });
 }
@@ -230,6 +269,12 @@ export async function redefinirSenha(_prev: ActionState, formData: FormData): Pr
     if (error) throw new Error("Não foi possível redefinir a senha. Tente novamente.");
 
     await prisma.appUser.update({ where: { id }, data: { senhaProvisoria: true } });
+    await auditar({
+      module: "contas",
+      acao: "alterou",
+      entidade: `Conta de ${alvo.name} <${alvo.email}>`,
+      resumo: "senha redefinida por terceiro; troca exigida no próximo acesso",
+    });
     revalidatePath("/contas");
   });
 }
@@ -255,6 +300,12 @@ export async function desativarConta(id: string): Promise<ActionState> {
     }
 
     await prisma.appUser.update({ where: { id }, data: { active: false } });
+    await auditar({
+      module: "contas",
+      acao: "desativou",
+      entidade: `Conta de ${alvo.name} <${alvo.email}>`,
+      resumo: "acesso removido; a conta continua na lista",
+    });
     revalidatePath("/contas");
   });
 }
