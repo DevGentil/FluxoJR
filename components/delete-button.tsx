@@ -21,12 +21,16 @@ interface Props {
   action: () => Promise<ActionState>;
   title?: string;
   description?: string;
+  /** O verbo do botão que confirma. Nem toda remoção é exclusão: desativar
+   * um acesso é reversível, e chamar isso de "Excluir" assusta à toa. */
+  confirmLabel?: string;
 }
 
 export function DeleteButton({
   action,
   title = "Excluir registro?",
   description = "Essa ação não pode ser desfeita.",
+  confirmLabel = "Excluir",
 }: Props) {
   const [isPending, startTransition] = useTransition();
 
@@ -50,7 +54,7 @@ export function DeleteButton({
         <AlertDialogFooter>
           <AlertDialogCancel>Cancelar</AlertDialogCancel>
           <AlertDialogAction disabled={isPending} onClick={handleDelete}>
-            Excluir
+            {confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
