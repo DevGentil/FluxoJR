@@ -7,6 +7,7 @@ import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { parseDateOnly, todayDateOnly } from "@/lib/date-only";
 import { runMutation, type ActionState } from "@/lib/actions-utils";
+import { lerAnexos } from "@/lib/anexos";
 
 const scheduledSchema = z.object({
   type: z.enum(["PAYABLE", "RECEIVABLE"]),
@@ -34,6 +35,12 @@ export async function createScheduledEntry(_prev: ActionState, formData: FormDat
     await requireUser();
     const companyId = await getActiveCompanyId("contas-a-pagar-receber");
     const { accountId, categoryId, supplierId, dueDate, ...rest } = parsed.data;
+
+    // A nota costuma chegar junto com a conta a pagar; o comprovante vem
+    // depois, na baixa. Por isso anexar é opcional aqui e existe de novo
+    // no momento de marcar como pago.
+    const anexos = await lerAnexos(formData, "anexos");
+
     await prisma.scheduledEntry.create({
       data: {
         ...rest,
@@ -42,6 +49,7 @@ export async function createScheduledEntry(_prev: ActionState, formData: FormDat
         accountId: accountId || null,
         categoryId: categoryId || null,
         supplierId: supplierId || null,
+        documents: { create: anexos.map((a) => ({ ...a, company: { connect: { id: companyId } } })) },
       },
     });
 
@@ -74,8 +82,33 @@ export async function updateScheduledEntry(
     });
     if (count === 0) throw new Error("Lançamento não encontrado.");
 
+    // Acrescenta, não substitui — vale o mesmo raciocínio das transações.
+    const anexos = await lerAnexos(formData, "anexos");
+    if (anexos.length > 0) {
+      await prisma.document.createMany({
+        data: anexos.map((a) => ({ ...a, companyId, scheduledEntryId: id })),
+      });
+    }
+
     revalidatePath("/contas-a-pagar-receber");
     revalidatePath("/dashboard");
+  });
+}
+
+/** Remove um anexo de uma conta a pagar/receber. O `companyId` no where
+ * impede que um id de outra unidade apague anexo alheio. */
+export async function removerAnexoAgendado(id: string): Promise<ActionState> {
+  return runMutation(async () => {
+    await requireUser();
+    const companyId = await getActiveCompanyId("contas-a-pagar-receber");
+    const { count } = await prisma.document.deleteMany({
+      where: { id, companyId, scheduledEntryId: { not: null } },
+    });
+    if (count === 0) throw new Error("Anexo não encontrado.");
+
+    // Sem `revalidatePath`, pelo mesmo motivo da remoção em transações: o
+    // refresh remontaria o diálogo aberto e o arquivo reapareceria depois
+    // de apagado.
   });
 }
 
@@ -141,7 +174,15 @@ export async function importScheduledEntries(input: {
   return { imported: parsedRows.length };
 }
 
-export async function markAsPaid(id: string, accountId: string): Promise<ActionState> {
+/** Dá baixa no lançamento, criando a transação correspondente.
+ *
+ * Recebe `FormData` porque é aqui que o comprovante de pagamento aparece
+ * na vida real — quem acabou de pagar tem o PDF do banco na mão. Anexar
+ * continua opcional: a baixa não pode ficar refém de ter o arquivo. */
+export async function markAsPaid(id: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  const accountId = String(formData.get("accountId") ?? "");
+  if (!accountId) return { error: "Selecione a conta." };
+
   return runMutation(async () => {
     await requireUser();
     const companyId = await getActiveCompanyId("contas-a-pagar-receber");
@@ -153,6 +194,11 @@ export async function markAsPaid(id: string, accountId: string): Promise<ActionS
     if (!entry) throw new Error("Lançamento não encontrado.");
     if (!account) throw new Error("Conta inválida.");
     if (entry.status === "PAID") throw new Error("Este lançamento já foi baixado.");
+
+    // Lido ANTES de abrir a transação: ler arquivos de 10MB dentro dela
+    // seguraria a conexão do banco durante a leitura à toa, e um anexo
+    // recusado deve barrar a baixa antes de qualquer escrita.
+    const anexos = await lerAnexos(formData, "anexos");
 
     await prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.create({
@@ -178,6 +224,15 @@ export async function markAsPaid(id: string, accountId: string): Promise<ActionS
           accountId,
         },
       });
+
+      // O comprovante fica no lançamento, e não na transação criada: é na
+      // tela de contas a pagar que a pessoa vai procurá-lo, ao lado da
+      // nota que já estava lá desde que a conta foi cadastrada.
+      if (anexos.length > 0) {
+        await tx.document.createMany({
+          data: anexos.map((a) => ({ ...a, companyId, scheduledEntryId: id })),
+        });
+      }
     });
 
     revalidatePath("/contas-a-pagar-receber");

@@ -20,7 +20,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { createScheduledEntry, updateScheduledEntry } from "./actions";
+import { createScheduledEntry, removerAnexoAgendado, updateScheduledEntry } from "./actions";
+import { CampoAnexos, type AnexoSalvo } from "@/components/campo-anexos";
 import type { ActionState } from "@/lib/actions-utils";
 import { Pencil, Plus } from "lucide-react";
 import { useCloseOnSuccess } from "@/hooks/use-close-on-success";
@@ -45,6 +46,7 @@ interface Props {
     accountId: string | null;
     categoryId: string | null;
     supplierId?: string | null;
+    anexos?: AnexoSalvo[];
   };
 }
 
@@ -186,6 +188,10 @@ export function ScheduledFormDialog({ accounts, categories, suppliers = [], defa
               </SelectContent>
             </Select>
           </div>
+          <CampoAnexos
+            existentes={entry?.anexos}
+            aoRemover={entry ? removerAnexoAgendado : undefined}
+          />
           {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
           <DialogFooter>
             <Button type="submit" disabled={pending}>

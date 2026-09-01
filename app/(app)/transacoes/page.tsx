@@ -169,7 +169,15 @@ export default async function TransacoesPage({ searchParams }: Props) {
     prisma.transaction.count({ where }),
     prisma.transaction.findMany({
       where,
-      include: { account: true, category: true, supplier: true },
+      include: {
+        account: true,
+        category: true,
+        supplier: true,
+        // Sem o `content`: são os metadados que a tela precisa, e trazer o
+        // binário de cada anexo aqui carregaria megabytes por página para
+        // desenhar um nome de arquivo.
+        documents: { select: { id: true, fileName: true, size: true }, orderBy: { createdAt: "asc" } },
+      },
       orderBy,
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
@@ -351,6 +359,7 @@ export default async function TransacoesPage({ searchParams }: Props) {
               source: t.source,
               type: t.type as "INCOME" | "EXPENSE",
               amount: Number(t.amount),
+              anexos: t.documents,
             }))}
           />
           <Pagination

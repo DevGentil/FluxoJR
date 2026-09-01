@@ -20,7 +20,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { createTransaction, updateTransaction } from "./actions";
+import { createTransaction, removerAnexoTransacao, updateTransaction } from "./actions";
+import { CampoAnexos, type AnexoSalvo } from "@/components/campo-anexos";
 import type { ActionState } from "@/lib/actions-utils";
 import { Pencil, Plus } from "lucide-react";
 import { useCloseOnSuccess } from "@/hooks/use-close-on-success";
@@ -48,6 +49,7 @@ interface Props {
     categoryId: string | null;
     supplierId?: string | null;
     transferCompanyId?: string | null;
+    anexos?: AnexoSalvo[];
   };
 }
 
@@ -212,6 +214,10 @@ export function TransactionFormDialog({ accounts, categories, suppliers = [], ot
               </p>
             </div>
           )}
+          <CampoAnexos
+            existentes={transaction?.anexos}
+            aoRemover={transaction ? removerAnexoTransacao : undefined}
+          />
           {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
           <DialogFooter>
             <Button type="submit" disabled={pending}>

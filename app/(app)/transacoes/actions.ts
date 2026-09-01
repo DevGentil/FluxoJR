@@ -9,6 +9,7 @@ import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { parseForm, runMutation, type ActionState } from "@/lib/actions-utils";
 import { parseDateOnly } from "@/lib/date-only";
+import { lerAnexos } from "@/lib/anexos";
 
 const NONE = "__none__";
 const optionalSelect = z
@@ -35,6 +36,13 @@ export async function createTransaction(_prev: ActionState, formData: FormData):
     await requireUser();
     const companyId = await getActiveCompanyId("transacoes");
     const { categoryId, supplierId, transferCompanyId, ...data } = result.data;
+
+    // Os anexos entram no mesmo create: ou a transação nasce com a nota e o
+    // comprovante, ou não nasce. Gravar em dois passos deixaria lançamento
+    // sem anexo toda vez que o segundo falhasse — e ninguém descobre isso
+    // olhando a tela.
+    const anexos = await lerAnexos(formData, "anexos");
+
     await prisma.transaction.create({
       data: {
         ...data,
@@ -44,6 +52,7 @@ export async function createTransaction(_prev: ActionState, formData: FormData):
         supplierId: supplierId || null,
         transferCompanyId: transferCompanyId || null,
         source: "MANUAL",
+        documents: { create: anexos.map((a) => ({ ...a, company: { connect: { id: companyId } } })) },
       },
     });
 
@@ -78,10 +87,41 @@ export async function updateTransaction(
     });
     if (count === 0) throw new Error("Transação não encontrada.");
 
+    // Anexo novo na edição ACRESCENTA; os que já estavam continuam. Trocar
+    // o conjunto inteiro apagaria a nota fiscal de quem só quis corrigir a
+    // data — e para remover existe o botão por anexo.
+    const anexos = await lerAnexos(formData, "anexos");
+    if (anexos.length > 0) {
+      await prisma.document.createMany({
+        data: anexos.map((a) => ({ ...a, companyId, transactionId: id })),
+      });
+    }
+
     revalidatePath("/transacoes");
     revalidatePath("/dashboard");
     revalidatePath("/relatorios");
     revalidatePath("/balanco");
+  });
+}
+
+/** Remove um anexo de uma transação.
+ *
+ * O `companyId` no where não é redundante com o id: sem ele, um id copiado
+ * de outra unidade apagaria anexo alheio. */
+export async function removerAnexoTransacao(id: string): Promise<ActionState> {
+  return runMutation(async () => {
+    await requireUser();
+    const companyId = await getActiveCompanyId("transacoes");
+    const { count } = await prisma.document.deleteMany({
+      where: { id, companyId, transactionId: { not: null } },
+    });
+    if (count === 0) throw new Error("Anexo não encontrado.");
+
+    // Sem `revalidatePath` de propósito. A tabela não mostra anexos — só o
+    // diálogo aberto mostra — e o refresh remontaria justamente esse
+    // diálogo, descartando o estado dele e fazendo o arquivo reaparecer na
+    // tela depois de já ter sido apagado. Quem atualiza a lista aqui é o
+    // próprio componente, que esconde o que removeu.
   });
 }
 

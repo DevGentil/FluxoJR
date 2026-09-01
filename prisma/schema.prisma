@@ -159,8 +159,19 @@ model Document {
   doctorId String?
   doctor   Doctor? @relation(fields: [doctorId], references: [id], onDelete: Cascade)
 
+  // Nota fiscal e comprovante do lancamento. Como o doctorId acima, sao
+  // opcionais e mutuamente exclusivos na pratica: um arquivo pertence a um
+  // lugar so. Nulo nos tres e documento solto da empresa.
+  transactionId String?
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  scheduledEntryId String?
+  scheduledEntry   ScheduledEntry? @relation(fields: [scheduledEntryId], references: [id], onDelete: Cascade)
+
   @@index([companyId])
   @@index([doctorId])
+  @@index([transactionId])
+  @@index([scheduledEntryId])
 }
 
 // DRE realizado (fechado pelo contador/financeiro, ex: em Excel ou PDF) de
@@ -268,6 +279,7 @@ model Transaction {
 
   scheduledEntry ScheduledEntry?
   cashClosing    CashClosing?
+  documents      Document[]
 
   @@index([companyId, date])
   @@index([accountId])
@@ -300,6 +312,8 @@ model ScheduledEntry {
 
   transactionId String?      @unique
   transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  documents Document[]
 
   @@index([companyId, dueDate])
   @@index([status])

@@ -18,6 +18,16 @@ async function seedAccount(initialBalance = 0) {
   return { company, account };
 }
 
+/** A baixa passou a receber FormData para o comprovante poder vir junto.
+ * Este helper monta o formulario minimo, sem anexo — que e o caso da
+ * maioria dos testes. */
+function baixa(entryId: string, accountId: string, anexos: File[] = []) {
+  const fd = new FormData();
+  fd.set("accountId", accountId);
+  for (const a of anexos) fd.append("anexos", a);
+  return markAsPaid(entryId, undefined, fd);
+}
+
 describe("createScheduledEntry", () => {
   it("cria um lançamento a pagar sem conta definida (definida só na baixa)", async () => {
     await seedAccount();
@@ -93,7 +103,7 @@ describe("markAsPaid", () => {
       data: { companyId: company.id, type: "PAYABLE", description: "Aluguel", amount: 300, dueDate: new Date(), status: "PENDING" },
     });
 
-    const result = await markAsPaid(entry.id, account.id);
+    const result = await baixa(entry.id, account.id);
 
     expect(result).toBeUndefined();
 
@@ -121,7 +131,7 @@ describe("markAsPaid", () => {
       data: { companyId: company.id, type: "RECEIVABLE", description: "Consultoria", amount: 800, dueDate: new Date(), status: "PENDING" },
     });
 
-    await markAsPaid(entry.id, account.id);
+    await baixa(entry.id, account.id);
 
     const transaction = await testPrisma.transaction.findFirstOrThrow({ where: { description: "Consultoria" } });
     expect(transaction.type).toBe("INCOME");
@@ -141,7 +151,7 @@ describe("markAsPaid", () => {
       },
     });
 
-    const result = await markAsPaid(entry.id, account.id);
+    const result = await baixa(entry.id, account.id);
     expect(result?.error).toBeTruthy();
   });
 
@@ -155,10 +165,82 @@ describe("markAsPaid", () => {
       data: { companyId: company.id, type: "PAYABLE", description: "Aluguel", amount: 100, dueDate: new Date(), status: "PENDING" },
     });
 
-    const result = await markAsPaid(entry.id, contaDeB.id);
+    const result = await baixa(entry.id, contaDeB.id);
     expect(result?.error).toBeTruthy();
     await expect(testPrisma.scheduledEntry.findUniqueOrThrow({ where: { id: entry.id } })).resolves.toMatchObject({
       status: "PENDING",
     });
+  });
+});
+
+describe("anexos de nota e comprovante", () => {
+  function pdf(nome: string) {
+    return new File([new Uint8Array([9, 9])], nome, { type: "application/pdf" });
+  }
+
+  it("a conta a pagar nasce com a nota anexada", async () => {
+    const { company, account } = await seedAccount();
+    const fd = new FormData();
+    fd.set("type", "PAYABLE");
+    fd.set("description", "Aluguel");
+    fd.set("amount", "300");
+    fd.set("dueDate", "2026-09-10");
+    fd.set("accountId", account.id);
+    fd.append("anexos", pdf("nota-aluguel.pdf"));
+
+    const r = await createScheduledEntry(undefined, fd);
+
+    expect(r).toBeUndefined();
+    const entry = await testPrisma.scheduledEntry.findFirstOrThrow({ include: { documents: true } });
+    expect(entry.documents.map((d) => d.fileName)).toEqual(["nota-aluguel.pdf"]);
+    expect(entry.documents[0].companyId).toBe(company.id);
+  });
+
+  it("a baixa guarda o comprovante no lançamento", async () => {
+    // É o caminho que a feature existe para servir: quem acabou de pagar
+    // tem o PDF do banco na mão, e o comprovante fica onde a conta está.
+    const { account } = await seedAccount(1000);
+    const entry = await testPrisma.scheduledEntry.create({
+      data: { companyId: account.companyId, type: "PAYABLE", description: "Energia", amount: 200, dueDate: new Date(), status: "PENDING" },
+    });
+
+    const r = await baixa(entry.id, account.id, [pdf("comprovante-energia.pdf")]);
+
+    expect(r).toBeUndefined();
+    const salvo = await testPrisma.scheduledEntry.findUniqueOrThrow({
+      where: { id: entry.id },
+      include: { documents: true },
+    });
+    expect(salvo.status).toBe("PAID");
+    expect(salvo.documents.map((d) => d.fileName)).toEqual(["comprovante-energia.pdf"]);
+  });
+
+  it("a baixa acontece sem comprovante — anexar não pode travar o pagamento", async () => {
+    const { account } = await seedAccount(1000);
+    const entry = await testPrisma.scheduledEntry.create({
+      data: { companyId: account.companyId, type: "PAYABLE", description: "Água", amount: 50, dueDate: new Date(), status: "PENDING" },
+    });
+
+    expect(await baixa(entry.id, account.id)).toBeUndefined();
+    await expect(
+      testPrisma.scheduledEntry.findUniqueOrThrow({ where: { id: entry.id } })
+    ).resolves.toMatchObject({ status: "PAID" });
+  });
+
+  it("comprovante recusado não deixa a baixa acontecer pela metade", async () => {
+    const { account } = await seedAccount(1000);
+    const entry = await testPrisma.scheduledEntry.create({
+      data: { companyId: account.companyId, type: "PAYABLE", description: "Internet", amount: 90, dueDate: new Date(), status: "PENDING" },
+    });
+    const ruim = new File([new Uint8Array([0])], "foto.bmp", { type: "image/bmp" });
+
+    const r = await baixa(entry.id, account.id, [ruim]);
+
+    expect(r?.error).toBeTruthy();
+    await expect(
+      testPrisma.scheduledEntry.findUniqueOrThrow({ where: { id: entry.id } })
+    ).resolves.toMatchObject({ status: "PENDING" });
+    // Nenhuma transação criada: a baixa toda foi desfeita.
+    await expect(testPrisma.transaction.count()).resolves.toBe(0);
   });
 });

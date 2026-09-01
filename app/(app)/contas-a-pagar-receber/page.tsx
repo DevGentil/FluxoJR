@@ -32,7 +32,13 @@ async function EntriesTable({ companyId, type }: { companyId: string; type: "PAY
   const [entries, accounts, categories, suppliers] = await Promise.all([
     prisma.scheduledEntry.findMany({
       where: { companyId, type },
-      include: { account: true, category: true, supplier: true },
+      include: {
+        account: true,
+        category: true,
+        supplier: true,
+        // Sem o `content`: a tela usa só o nome e o tamanho.
+        documents: { select: { id: true, fileName: true, size: true }, orderBy: { createdAt: "asc" } },
+      },
       orderBy: { dueDate: "asc" },
     }),
     prisma.account.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
@@ -110,6 +116,7 @@ async function EntriesTable({ companyId, type }: { companyId: string; type: "PAY
                         accountId: entry.accountId,
                         categoryId: entry.categoryId,
                         supplierId: entry.supplierId,
+                        anexos: entry.documents,
                       }}
                     />
                     <DeleteButton action={deleteScheduledEntry.bind(null, entry.id)} title="Excluir lançamento?" />

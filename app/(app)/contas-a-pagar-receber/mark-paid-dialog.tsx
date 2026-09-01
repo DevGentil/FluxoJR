@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -20,8 +20,10 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { CheckCircle2 } from "lucide-react";
-import { toast } from "sonner";
 import { markAsPaid } from "./actions";
+import { CampoAnexos } from "@/components/campo-anexos";
+import type { ActionState } from "@/lib/actions-utils";
+import { useCloseOnSuccess } from "@/hooks/use-close-on-success";
 
 interface Props {
   entryId: string;
@@ -30,22 +32,19 @@ interface Props {
   defaultAccountId: string | null;
 }
 
+/** Confirmação da baixa.
+ *
+ * Virou `<form>` para o comprovante poder viajar junto: é aqui que ele
+ * existe na vida real — quem acabou de pagar tem o PDF do banco na mão, e
+ * pedir para anexar depois, numa segunda tela, é o mesmo que não pedir. */
 export function MarkPaidDialog({ entryId, type, accounts, defaultAccountId }: Props) {
   const [open, setOpen] = useState(false);
   const [accountId, setAccountId] = useState(defaultAccountId ?? accounts[0]?.id ?? "");
-  const [isPending, startTransition] = useTransition();
-
-  function confirm() {
-    if (!accountId) return;
-    startTransition(async () => {
-      const result = await markAsPaid(entryId, accountId);
-      if (result?.error) {
-        toast.error(result.error);
-        return;
-      }
-      setOpen(false);
-    });
-  }
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(
+    markAsPaid.bind(null, entryId),
+    undefined
+  );
+  useCloseOnSuccess(pending, Boolean(state?.error), () => setOpen(false));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -60,30 +59,40 @@ export function MarkPaidDialog({ entryId, type, accounts, defaultAccountId }: Pr
             Isso cria a transação correspondente na conta selecionada.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-2">
-          <Label>Conta</Label>
-          <Select
-            items={Object.fromEntries(accounts.map((a) => [a.id, a.name]))}
-            value={accountId}
-            onValueChange={(v) => setAccountId(v ?? "")}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Selecione a conta" />
-            </SelectTrigger>
-            <SelectContent>
-              {accounts.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <DialogFooter>
-          <Button onClick={confirm} disabled={!accountId || isPending}>
-            {isPending ? "Confirmando..." : "Confirmar"}
-          </Button>
-        </DialogFooter>
+        <form action={formAction} className="space-y-4">
+          <div className="space-y-2">
+            <Label>Conta</Label>
+            {/* O Select é controlado e não envia valor sozinho; o hidden é
+                o que de fato chega ao servidor. */}
+            <input type="hidden" name="accountId" value={accountId} />
+            <Select
+              items={Object.fromEntries(accounts.map((a) => [a.id, a.name]))}
+              value={accountId}
+              onValueChange={(v) => setAccountId(v ?? "")}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecione a conta" />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <CampoAnexos />
+
+          {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
+
+          <DialogFooter>
+            <Button type="submit" disabled={!accountId || pending}>
+              {pending ? "Confirmando..." : "Confirmar"}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

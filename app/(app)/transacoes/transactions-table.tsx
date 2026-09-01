@@ -22,6 +22,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { TransactionFormDialog } from "./transaction-form-dialog";
 import { DeleteButton } from "@/components/delete-button";
 import { deleteTransaction, deleteTransactions } from "./actions";
+import type { AnexoSalvo } from "@/components/campo-anexos";
 
 interface Option {
   id: string;
@@ -42,6 +43,7 @@ interface TransactionRow {
   source: "MANUAL" | "IMPORT" | "SCHEDULED";
   type: "INCOME" | "EXPENSE";
   amount: number;
+  anexos: AnexoSalvo[];
 }
 
 interface Props {
@@ -266,6 +268,7 @@ export function TransactionsTable({ transactions, accounts, categories, supplier
                                   categoryId: t.categoryId,
                                   supplierId: t.supplierId,
                                   transferCompanyId: t.transferCompanyId,
+                                  anexos: t.anexos,
                                 }}
                               />
                               <DeleteButton action={deleteTransaction.bind(null, t.id)} title="Excluir transação?" />
