@@ -75,7 +75,7 @@ export function AuditoriaFiltro({
           id="modulo"
           value={modulo}
           onChange={(e) => aplicar({ modulo: e.target.value })}
-          className="h-8 w-44 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+          className="h-8 w-44 rounded-lg border border-input bg-background text-foreground px-2.5 text-sm"
         >
           <option value="">Todos</option>
           {modulos.map((m) => (
@@ -93,7 +93,7 @@ export function AuditoriaFiltro({
             id="empresa"
             value={empresa}
             onChange={(e) => aplicar({ empresa: e.target.value })}
-            className="h-8 w-44 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            className="h-8 w-44 rounded-lg border border-input bg-background text-foreground px-2.5 text-sm"
           >
             <option value="">Todas</option>
             {opcoesEmpresa.map((e) => (

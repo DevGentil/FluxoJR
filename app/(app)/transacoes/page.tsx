@@ -262,7 +262,7 @@ export default async function TransacoesPage({ searchParams }: Props) {
                 id="accountId"
                 name="accountId"
                 defaultValue={params.accountId ?? ""}
-                className="h-8 w-44 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                className="h-8 w-44 rounded-lg border border-input bg-background text-foreground px-2.5 text-sm"
               >
                 <option value="">Todas</option>
                 {accounts.map((a) => (
@@ -278,7 +278,7 @@ export default async function TransacoesPage({ searchParams }: Props) {
                 id="categoryId"
                 name="categoryId"
                 defaultValue={params.categoryId ?? ""}
-                className="h-8 w-44 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                className="h-8 w-44 rounded-lg border border-input bg-background text-foreground px-2.5 text-sm"
               >
                 <option value="">Todas</option>
                 {categories.map((c) => (
@@ -294,7 +294,7 @@ export default async function TransacoesPage({ searchParams }: Props) {
                 id="supplierId"
                 name="supplierId"
                 defaultValue={params.supplierId ?? ""}
-                className="h-8 w-44 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                className="h-8 w-44 rounded-lg border border-input bg-background text-foreground px-2.5 text-sm"
               >
                 <option value="">Todos</option>
                 {suppliers.map((s) => (
@@ -310,7 +310,7 @@ export default async function TransacoesPage({ searchParams }: Props) {
                 id="type"
                 name="type"
                 defaultValue={params.type ?? ""}
-                className="h-8 w-36 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                className="h-8 w-36 rounded-lg border border-input bg-background text-foreground px-2.5 text-sm"
               >
                 <option value="">Todos</option>
                 <option value="INCOME">Entrada</option>

@@ -64,7 +64,7 @@ export function DoctorsFilter({ especialidades }: { especialidades: string[] }) 
           id="especialidade"
           value={especialidade}
           onChange={(e) => aplicar({ especialidade: e.target.value })}
-          className="h-9 w-52 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+          className="h-9 w-52 rounded-lg border border-input bg-background text-foreground px-2.5 text-sm"
         >
           <option value="">Todas</option>
           {especialidades.map((e) => (
@@ -81,7 +81,7 @@ export function DoctorsFilter({ especialidades }: { especialidades: string[] }) 
           id="status"
           value={status}
           onChange={(e) => aplicar({ status: e.target.value })}
-          className="h-9 w-36 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+          className="h-9 w-36 rounded-lg border border-input bg-background text-foreground px-2.5 text-sm"
         >
           <option value="">Todos</option>
           <option value="ativo">Ativos</option>

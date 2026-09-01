@@ -131,6 +131,19 @@
   * {
     @apply border-border outline-ring/50;
   }
+
+  /* A lista suspensa do <select> nativo e desenhada pelo navegador, e no
+     Chrome ela herda o background-color do PROPRIO select. Com
+     `bg-transparent` isso caia no branco do sistema, enquanto o texto vinha
+     do --foreground claro do tema escuro: branco sobre branco, so a opcao
+     destacada legivel.
+     Declarar a cor em cada <option> resolve independentemente do que o
+     navegador escolha para o fundo do popup — e vale para os dez selects do
+     sistema de uma vez, sem repetir classe em cada tela. */
+  select option {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
   body {
     @apply bg-background text-foreground;
   }
