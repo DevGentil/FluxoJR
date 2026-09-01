@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { contaAtual, companyIdsVisiveis } from "@/lib/access";
 
 const COOKIE_NAME = "fluxojr_scope";
 
@@ -46,8 +47,23 @@ export async function getActiveScope(): Promise<Scope> {
   return { type: "company", companyId: first.id };
 }
 
-/** Resolve um escopo para a lista de ids de empresa que ele abrange. */
+/** Resolve um escopo para a lista de ids de empresa que ele abrange, já
+ * cortada pelo que a conta enxerga.
+ *
+ * O corte é a metade de leitura da mesma correção que `getActiveCompanyId`
+ * faz na escrita. Sem ele, alguém sem acesso à holding escolhia
+ * "Holding (todas as empresas)" no seletor e as telas consolidadas — Balanço,
+ * Relatórios, Operação — somavam unidades que aquela conta não pode ver.
+ * Proteger só a escrita deixaria o número aberto para quem não deveria
+ * enxergá-lo, que num sistema financeiro é metade do problema. */
 export async function resolveCompanyIds(scope: Scope): Promise<string[]> {
+  const doEscopo = await companyIdsDoEscopo(scope);
+  const visiveis = await companyIdsVisiveis();
+  const permitidas = new Set(visiveis);
+  return doEscopo.filter((id) => permitidas.has(id));
+}
+
+async function companyIdsDoEscopo(scope: Scope): Promise<string[]> {
   if (scope.type === "company") return [scope.companyId];
 
   if (scope.type === "group") {
@@ -62,13 +78,32 @@ export async function resolveCompanyIds(scope: Scope): Promise<string[]> {
   return companies.map((c) => c.id);
 }
 
-/** Helper para as telas/actions operacionais, que só fazem sentido para UMA
- * empresa por vez (ex: cadastrar uma conta bancária). */
+/** A empresa em que a ação vai gravar, já confirmada como acessível.
+ *
+ * Helper para as telas e actions operacionais, que só fazem sentido para UMA
+ * empresa por vez (ex: cadastrar uma conta bancária).
+ *
+ * O escopo vem de um cookie, e cookie é dado do cliente: até aqui a única
+ * validação era "essa empresa existe?", então qualquer sessão trocava o
+ * valor e escrevia na unidade que quisesse. Agora vale "essa conta tem
+ * acesso a essa empresa?".
+ *
+ * A checagem mora aqui de propósito — são 49 chamadas espalhadas por 16
+ * arquivos de action, e todas passam por este funil. Uma correção, o
+ * sistema inteiro coberto; e nenhuma action futura pode esquecer de fazer
+ * a verificação, porque ela não é opcional no caminho. */
 export async function getActiveCompanyId(): Promise<string> {
   const scope = await getActiveScope();
   if (scope.type !== "company") {
     throw new Error("Selecione uma empresa específica para essa ação.");
   }
+
+  const conta = await contaAtual();
+  if (!conta) throw new Error("Sua conta não tem acesso a este sistema.");
+  if (!conta.holding && !conta.papeis.has(scope.companyId)) {
+    throw new Error("Sua conta não tem acesso a essa unidade.");
+  }
+
   return scope.companyId;
 }
 
