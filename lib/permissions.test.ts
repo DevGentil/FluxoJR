@@ -120,7 +120,12 @@ describe("Financeiro", () => {
 
 describe("Gestor", () => {
   it("enxerga a unidade inteira", () => {
-    for (const m of MODULES) expect(can(GESTOR, m, "ver")).toBe(true);
+    // "erros" fica de fora: e modulo do SISTEMA, nao da unidade. Erro de
+    // aplicacao e assunto de quem mantem o software, e quem mantem e a
+    // holding — por completo que seja o acesso do gestor na unidade dele.
+    const daUnidade = MODULES.filter((m) => m !== "erros");
+    for (const m of daUnidade) expect(can(GESTOR, m, "ver")).toBe(true);
+    expect(can(GESTOR, "erros")).toBe(false);
   });
 
   it("faz tudo que o Financeiro faz", () => {
@@ -128,6 +133,11 @@ describe("Gestor", () => {
       if (can(FINANCEIRO, m, "aprovar")) expect(can(GESTOR, m, "aprovar")).toBe(true);
       if (can(FINANCEIRO, m, "editar")) expect(can(GESTOR, m, "editar")).toBe(true);
     }
+  });
+
+  it("só a holding enxerga os erros do sistema", () => {
+    expect(can(HOLDING, "erros")).toBe(true);
+    for (const role of ROLES) expect(can(conta(role), "erros")).toBe(false);
   });
 
   it("difere do Financeiro só em Operação e na gestão de contas", () => {

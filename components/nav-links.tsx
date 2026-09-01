@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Bug,
   KeyRound,
   LayoutDashboard,
   ArrowLeftRight,
@@ -73,6 +74,7 @@ const grupos: { label: string | null; links: { href: string; label: string; icon
       { href: "/contas-bancarias", label: "Contas Bancárias", icon: Landmark, module: "contas-bancarias" },
       { href: "/empresas", label: "Empresas", icon: Building2, module: "empresas" },
       { href: "/contas", label: "Contas de Acesso", icon: KeyRound, module: "contas" },
+      { href: "/erros", label: "Erros do Sistema", icon: Bug, module: "erros" },
     ],
   },
 ];

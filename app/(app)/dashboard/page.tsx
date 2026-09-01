@@ -10,7 +10,9 @@ import { KpiCard } from "@/components/kpi-card";
 
 import { MonthlyChart } from "./monthly-chart";
 import { AgingChart } from "./aging-chart";
-import { TrendingUp, TrendingDown, Wallet, AlertTriangle } from "lucide-react";
+import { TrendingUp, TrendingDown, Wallet, AlertTriangle, Bug } from "lucide-react";
+import Link from "next/link";
+import { contaAtual } from "@/lib/access";
 
 interface CompanyDueSummary {
   companyId: string;
@@ -100,12 +102,35 @@ export default async function DashboardPage() {
   const aReceber30 = ate30.reduce((s, b) => s + b.receber, 0);
   const vencido = aging.find((b) => b.label === "Vencido")?.pagar ?? 0;
 
+  // O aviso de erro aparece onde a pessoa JA olha todo dia. Uma tela de
+  // erros que so responde quando alguem vai ate la nao resolve "so descubro
+  // se me contarem" — o aviso e que resolve.
+  const conta = await contaAtual();
+  const errosNaoVistos = conta?.holding
+    ? await prisma.errorLog.count({ where: { seen: false } })
+    : 0;
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Dashboard</h1>
         <p className="text-muted-foreground text-sm">Visão geral do fluxo de caixa — {scopeLabel}.</p>
       </div>
+
+      {errosNaoVistos > 0 && (
+        <Link
+          href="/erros"
+          className="flex items-center gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/5 px-4 py-2.5 text-sm transition-colors hover:bg-amber-500/10"
+        >
+          <Bug className="size-4 shrink-0 text-amber-500" />
+          <span>
+            <span className="font-medium">
+              {errosNaoVistos} {errosNaoVistos === 1 ? "erro novo" : "erros novos"} no sistema
+            </span>
+            <span className="text-muted-foreground"> — alguém pode ter esbarrado numa tela quebrada.</span>
+          </span>
+        </Link>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard label="Saldo atual" value={formatCurrency(balance)} icon={Wallet} iconClass="text-muted-foreground" />

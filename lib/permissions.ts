@@ -25,6 +25,7 @@ export const MODULES = [
   "contas-bancarias",
   "empresas",
   "contas",
+  "erros",
 ] as const;
 
 export type Module = (typeof MODULES)[number];
@@ -45,6 +46,7 @@ export const MODULE_LABELS: Record<Module, string> = {
   "contas-bancarias": "Contas Bancárias",
   empresas: "Empresas",
   contas: "Contas de Acesso",
+  erros: "Erros do Sistema",
 };
 
 /** Os quatro níveis são cumulativos: quem aprova também edita, quem edita
@@ -97,6 +99,7 @@ const MATRIX: Record<Role, Record<Module, Level>> = {
     "contas-bancarias": "nenhum",
     empresas: "nenhum",
     contas: "nenhum",
+    erros: "nenhum",
   },
   FINANCEIRO: {
     dashboard: "ver",
@@ -115,6 +118,7 @@ const MATRIX: Record<Role, Record<Module, Level>> = {
     "contas-bancarias": "editar",
     empresas: "editar",
     contas: "nenhum",
+    erros: "nenhum",
   },
   GESTOR: {
     dashboard: "ver",
@@ -133,6 +137,10 @@ const MATRIX: Record<Role, Record<Module, Level>> = {
     // Gestor cria e edita contas da unidade dele. Nunca conta de holding —
     // essa regra nao cabe na matriz (que e por modulo) e mora na action.
     contas: "editar",
+    // Erro de sistema e assunto de quem mantem o sistema, nao de quem opera
+    // a unidade. Fica so para a holding, que passa pela regra de ausencia
+    // de restricao.
+    erros: "nenhum",
   },
 };
 

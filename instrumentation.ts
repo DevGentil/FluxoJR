@@ -10,3 +10,39 @@ export async function register() {
     await prisma.company.create({ data: { name: "Minha Empresa" } });
   }
 }
+
+/** Guarda todo erro de servidor que o Next captura.
+ *
+ * Hook oficial do framework — pega o que estoura em Server Component, server
+ * action e route handler, inclusive o que a tela de erro engoliu. Antes disso
+ * o sistema só reportava para o terminal de quem estivesse com o `dev`
+ * aberto: em produção, um erro às 9h da manhã só era descoberto se a pessoa
+ * avisasse.
+ *
+ * O `digest` é o mesmo código que a tela mostra ao usuário. É ele que liga o
+ * print que a pessoa manda no WhatsApp à linha do banco. */
+export async function onRequestError(
+  err: unknown,
+  request: { path: string; method: string },
+) {
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+
+  try {
+    const { prisma } = await import("@/lib/prisma");
+    const erro = err as { message?: string; stack?: string; digest?: string };
+
+    await prisma.errorLog.create({
+      data: {
+        message: erro?.message?.slice(0, 2000) ?? String(err).slice(0, 2000),
+        digest: erro?.digest ?? null,
+        stack: erro?.stack?.slice(0, 8000) ?? null,
+        route: request.path?.slice(0, 500) ?? null,
+        method: request.method ?? null,
+      },
+    });
+  } catch {
+    // Se o próprio registro falhar — banco fora do ar, que é justamente
+    // quando mais erro acontece — não vale derrubar a requisição por causa
+    // do log. O erro original já foi para o stderr pelo Next.
+  }
+}

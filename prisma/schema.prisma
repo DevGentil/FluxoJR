@@ -539,3 +539,24 @@ model DoctorDailyLine {
 
   @@unique([entryId, serviceItemId])
 }
+
+/// Erro que estourou em producao, capturado pelo hook `onRequestError` do
+/// Next. Existe para responder "o sistema quebrou para alguem?" sem depender
+/// de a pessoa avisar — que ate aqui era a unica forma de descobrir.
+model ErrorLog {
+  id      String   @id @default(cuid())
+  at      DateTime @default(now())
+  message String
+  /// O mesmo codigo que a tela de erro mostra ao usuario ("Codigo para
+  /// suporte"). E o que liga o print que a pessoa manda a linha daqui.
+  digest  String?
+  stack   String?
+  route   String?
+  method  String?
+  /// Marcado quando alguem da holding le. O aviso no Dashboard conta os nao
+  /// vistos — erro que ninguem olhou e erro que ninguem tratou.
+  seen    Boolean  @default(false)
+
+  @@index([at])
+  @@index([seen])
+}
