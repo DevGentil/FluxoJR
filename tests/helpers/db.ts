@@ -24,6 +24,13 @@ export async function resetDb() {
   await testPrisma.doctor.deleteMany();
   await testPrisma.serviceItem.deleteMany();
   await testPrisma.account.deleteMany();
+  // Sem FK para Company, entao nao saem no cascade: acumulariam entre os
+  // testes e um teste passaria a enxergar o registro deixado pelo anterior.
+  await testPrisma.auditLog.deleteMany();
+  await testPrisma.errorLog.deleteMany();
+  await testPrisma.periodClosing.deleteMany();
+  await testPrisma.userAccess.deleteMany();
+  await testPrisma.appUser.deleteMany();
   await testPrisma.company.deleteMany();
   await testPrisma.group.deleteMany();
 }

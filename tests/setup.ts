@@ -31,8 +31,18 @@ config({ path: ".env.test", override: true });
 
 // Os testes de integração chamam as server actions diretamente (fora de uma
 // request do Next.js), então `cookies()`/Supabase Auth não têm como funcionar
-// aqui. Força o app a rodar em "modo aberto" nos testes — a lógica de negócio
-// é testada aqui; a proteção via Supabase é responsabilidade do proxy.ts e do
-// próprio Supabase, não desta suíte.
+// aqui. Força o app a rodar em "modo aberto", e por isso a maioria dos testes
+// roda como se fosse a holding: eles verificam a REGRA DE NEGÓCIO, não quem
+// pode executá-la.
+//
+// Quem verifica a permissão é `lib/access.test.ts`, que simula só a sessão e
+// deixa `contaAtual`, a matriz de papéis e `getActiveCompanyId` rodarem de
+// verdade. A separação é deliberada: sem ela, todo teste teria que carregar
+// uma conta só para exercitar uma regra que não tem a ver com acesso.
+//
+// Vale o aviso: enquanto o controle de acesso não existia, o comentário aqui
+// dizia que a proteção era "responsabilidade do Supabase". Deixou de ser —
+// hoje ela mora em lib/permissions.ts, lib/access.ts e lib/scope.ts, e é
+// coberta por esta suíte.
 delete process.env.NEXT_PUBLIC_SUPABASE_URL;
 delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
