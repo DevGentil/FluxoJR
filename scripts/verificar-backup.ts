@@ -94,6 +94,15 @@ execFileSync(bin("psql"), [urlPostgres, "-qc", `create database ${BANCO_DE_CONFE
   stdio: ["ignore", "ignore", "inherit"],
 });
 
+// O dump traz `CREATE SCHEMA public`, que falha num banco recém-criado
+// porque o Postgres já vem com ele. Derrubar o schema antes deixa a
+// restauração recriar tudo do zero — e, principalmente, mantém a
+// checagem de erro rígida: assim qualquer falha do `pg_restore` a partir
+// daqui é problema de verdade no backup, e não ruído esperado.
+execFileSync(bin("psql"), [urlConferencia, "-qc", "drop schema if exists public cascade"], {
+  stdio: ["ignore", "ignore", "inherit"],
+});
+
 try {
   execFileSync(bin("pg_restore"), ["--dbname", urlConferencia, "--no-owner", "--no-acl", arquivo], {
     stdio: ["ignore", "inherit", "inherit"],
