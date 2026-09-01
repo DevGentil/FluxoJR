@@ -1,14 +1,21 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
+import { MODO_ABERTO } from "@/lib/auth";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
-  // Sem credenciais do Supabase configuradas, o app roda em modo aberto
-  // (útil para desenvolvimento local antes de criar o projeto Supabase).
-  if (!isSupabaseConfigured) {
+  // Modo aberto: sem login, para desenvolvimento local. Fora de produção
+  // apenas — ver o comentário de `MODO_ABERTO`, que explica por que a
+  // ausência das variáveis não pode, sozinha, destrancar o sistema.
+  if (MODO_ABERTO) {
     return supabaseResponse;
+  }
+
+  // Produção sem Supabase configurado: nada passa. Falha segura.
+  if (!isSupabaseConfigured) {
+    return new NextResponse("Autenticação não configurada.", { status: 503 });
   }
 
   const supabase = createServerClient(
