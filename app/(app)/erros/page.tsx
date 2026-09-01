@@ -77,7 +77,8 @@ export default async function ErrosPage({ searchParams }: Props) {
           <div>
             <CardTitle>{total} registro(s)</CardTitle>
             <CardDescription>
-              O mais recente primeiro. Abrir uma linha mostra a pilha completa.
+              O mais recente primeiro. Cada linha mostra a causa resumida — abra para ver a mensagem
+              inteira e a pilha.
             </CardDescription>
           </div>
           {naoVistos > 0 && (
