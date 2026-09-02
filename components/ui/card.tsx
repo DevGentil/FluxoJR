@@ -73,7 +73,12 @@ function CardContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-content"
-      className={cn("px-(--card-spacing)", className)}
+      // `min-w-0`: o Card é uma coluna flex, e sem isso o conteúdo não
+      // encolhe abaixo da própria largura mínima. Uma tabela larga aqui
+      // dentro empurrava a página inteira para o lado, mesmo já tendo
+      // `overflow-x-auto` na própria caixa — o scroll existia, mas nunca
+      // era usado porque ninguém apertava o conteúdo.
+      className={cn("min-w-0 px-(--card-spacing)", className)}
       {...props}
     />
   )
