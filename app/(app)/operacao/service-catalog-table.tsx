@@ -24,6 +24,10 @@ interface Props {
   items: CatalogRow[];
   brackets: TaxBracketInput[];
   groups: string[];
+  /** Termo vindo da busca global, para o catálogo já abrir filtrado. É
+   * valor inicial, não controlado: a partir daí quem manda é a caixa de
+   * busca da tabela, senão apagar o texto não teria efeito. */
+  buscaInicial?: string;
 }
 
 /** Coluna do catálogo. Texto começa crescente e alinhado à esquerda;
@@ -100,8 +104,8 @@ const ORDEM_HINT = "os itens de dentro de cada grupo";
  * médico sem entrar no vermelho — e é exatamente a conta que faltava quando
  * os repasses foram negociados (na planilha, 24% dos procedimentos ficaram
  * com repasse acima desse teto). */
-export function ServiceCatalogTable({ items, brackets, groups }: Props) {
-  const [search, setSearch] = useState("");
+export function ServiceCatalogTable({ items, brackets, groups, buscaInicial = "" }: Props) {
+  const [search, setSearch] = useState(buscaInicial);
   // Grupos fechados por padrão: são 124 itens no catálogo real, e abrir
   // tudo enterra o que interessa. A busca abre sozinha o que bater.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());

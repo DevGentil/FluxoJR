@@ -18,6 +18,7 @@ import { logout } from "@/app/login/actions";
 import { getActiveScope, getGroupsWithCompanies, getAllCompanies, getScopeLabel, resolveCompanyIds } from "@/lib/scope";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CompanySwitcher } from "@/components/company-switcher";
+import { BuscaGlobal } from "@/components/busca-global";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { companyIdsVisiveis, contaAtual, modulosVisiveis } from "@/lib/access";
@@ -114,7 +115,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger />
           <Separator orientation="vertical" className="h-4" />
-          <span className="text-sm text-muted-foreground flex-1">{scopeLabel}</span>
+          {/* O rotulo do escopo encolhe antes da busca: saber onde voce
+              esta e contexto, buscar e acao. */}
+          <span className="text-sm text-muted-foreground min-w-0 flex-1 truncate">{scopeLabel}</span>
+          <BuscaGlobal />
           <ThemeToggle />
         </header>
         {/* `min-w-0`: sem isso, conteúdo que não quebra linha — uma rota

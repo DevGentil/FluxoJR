@@ -17,6 +17,10 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 
 interface Props {
   searchParams: Promise<{
+    /** Busca por descrição. Existe para a busca global ter para onde
+     * levar: não há tela de uma transação só, então o resultado abre a
+     * lista já filtrada pelo que a pessoa procurou. */
+    q?: string;
     accountId?: string;
     categoryId?: string;
     supplierId?: string;
@@ -147,6 +151,7 @@ export default async function TransacoesPage({ searchParams }: Props) {
   if (params.accountId) where.accountId = params.accountId;
   if (params.categoryId) where.categoryId = params.categoryId;
   if (params.supplierId) where.supplierId = params.supplierId;
+  if (params.q) where.description = { contains: params.q, mode: "insensitive" };
   if (params.type === "INCOME" || params.type === "EXPENSE") where.type = params.type;
   if (params.from || params.to) {
     where.date = {

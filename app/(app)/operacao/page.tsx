@@ -23,7 +23,14 @@ import { Wallet, Activity, Percent, TrendingUp, TrendingDown } from "lucide-reac
 const hoje = parseDateOnly(todayDateOnly());
 
 interface Props {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{
+    from?: string;
+    to?: string;
+    /** Termo para o catálogo já abrir filtrado. A tabela tem busca
+     * própria, do lado do cliente; isto só entrega a ela o que a pessoa
+     * já digitou na busca global, para ela não procurar duas vezes. */
+    catalogo?: string;
+  }>;
 }
 
 /** Composição do custo mês a mês (consultas/exames/plantão), últimos 12
@@ -278,7 +285,8 @@ async function ConsolidatedSummary({
 }
 
 export default async function OperacaoPage({ searchParams }: Props) {
-  const range = parseMonthRange(await searchParams);
+  const params = await searchParams;
+  const range = parseMonthRange(params);
 
   const scope = await getActiveScope();
   if (scope.type !== "company") {
@@ -409,7 +417,12 @@ export default async function OperacaoPage({ searchParams }: Props) {
           <ServiceItemFormDialog groups={catalogGroups} />
         </CardHeader>
         <CardContent>
-          <ServiceCatalogTable items={catalogRows} brackets={brackets} groups={catalogGroups} />
+          <ServiceCatalogTable
+            items={catalogRows}
+            brackets={brackets}
+            groups={catalogGroups}
+            buscaInicial={params.catalogo}
+          />
         </CardContent>
       </Card>
 
