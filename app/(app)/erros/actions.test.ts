@@ -13,7 +13,7 @@ import {
   excluirAntigos,
   excluirErro,
   excluirErros,
-  excluirTodos,
+  excluirFiltrados,
 } from "./actions";
 
 beforeEach(async () => {
@@ -99,17 +99,48 @@ describe("apagar antigos", () => {
   });
 });
 
-describe("apagar tudo", () => {
-  it("esvazia o registro inteiro", async () => {
+describe("apagar o que o filtro alcanca", () => {
+  it("sem filtro, esvazia o registro inteiro", async () => {
     await registrar("a", diasAtras(400));
     await registrar("b", new Date());
 
-    expect(await excluirTodos()).toBeUndefined();
+    expect(await excluirFiltrados({})).toBeUndefined();
     expect(await mensagensRestantes()).toEqual([]);
   });
 
-  it("registro já vazio avisa em vez de dizer que apagou", async () => {
-    const r = await excluirTodos();
+  it("com filtro de gravidade, poupa o resto", async () => {
+    // O ponto: "Selecionar tudo" com o filtro em Critico nao pode levar
+    // junto os avisos que a pessoa nem esta vendo.
+    await testPrisma.errorLog.create({ data: { message: "critico", severity: "CRITICO" } });
+    await testPrisma.errorLog.create({ data: { message: "aviso", severity: "AVISO" } });
+
+    expect(await excluirFiltrados({ gravidade: "CRITICO" })).toBeUndefined();
+    expect(await mensagensRestantes()).toEqual(["aviso"]);
+  });
+
+  it("com filtro de estado, poupa o resto", async () => {
+    await registrar("visto", new Date(), true);
+    await registrar("novo", new Date(), false);
+
+    expect(await excluirFiltrados({ estado: "vistos" })).toBeUndefined();
+    expect(await mensagensRestantes()).toEqual(["novo"]);
+  });
+
+  it("gravidade inventada na URL nao vira filtro que apaga demais", async () => {
+    // O valor vem do endereco, que e dado de fora. Se passasse cru para o
+    // Prisma, a consulta quebraria; se fosse ignorado em silencio sem
+    // validar, um erro de digitacao apagaria tudo achando que filtrou.
+    await testPrisma.errorLog.create({ data: { message: "critico", severity: "CRITICO" } });
+    await testPrisma.errorLog.create({ data: { message: "aviso", severity: "AVISO" } });
+
+    await excluirFiltrados({ gravidade: "CATASTROFE" });
+    // Sem gravidade valida, o filtro cai para "tudo" — que e o mesmo que o
+    // botao "Todos" mostra, entao bate com o que a tela dizia.
+    expect(await mensagensRestantes()).toEqual([]);
+  });
+
+  it("registro ja vazio avisa em vez de dizer que apagou", async () => {
+    const r = await excluirFiltrados({});
     expect(r?.error).toMatch(/Não há registros/);
   });
 });
@@ -125,7 +156,7 @@ describe("quem não é da holding", () => {
       () => excluirErro(erro.id),
       () => excluirErros([erro.id]),
       () => excluirAntigos(),
-      () => excluirTodos(),
+      () => excluirFiltrados({}),
     ]) {
       const r = await acao();
       expect(r?.error).toMatch(/holding/);

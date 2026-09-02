@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { contaAtual } from "@/lib/access";
 import { runMutation, type ActionState } from "@/lib/actions-utils";
 import { DIAS_ANTIGO } from "./constantes";
+import { GRAVIDADES, type Gravidade } from "@/lib/erro-gravidade";
 
 /** Erro de sistema é assunto de quem mantém o sistema.
  *
@@ -85,10 +86,34 @@ export async function excluirAntigos(): Promise<ActionState> {
   });
 }
 
-export async function excluirTodos(): Promise<ActionState> {
+/** Apaga tudo que o filtro da tela alcança.
+ *
+ * É o que "Selecionar tudo" promete. Mandar a lista de ids funcionaria
+ * para a página aberta e mentiria no resto: com o filtro em Crítico e
+ * quatro páginas, o que a pessoa marcou são os críticos todos, não os
+ * vinte e cinco que ela está vendo.
+ *
+ * Recebe o filtro em vez de ids também porque a lista pode ter mudado
+ * entre o carregamento da página e o clique — aqui o corte é feito no
+ * momento da exclusão, sobre o estado real do banco. */
+export async function excluirFiltrados(filtro: {
+  gravidade?: string;
+  estado?: string;
+}): Promise<ActionState> {
   return runMutation(async () => {
     await exigeHolding();
-    const { count } = await prisma.errorLog.deleteMany({});
+
+    const gravidade = (GRAVIDADES as readonly string[]).includes(filtro.gravidade ?? "")
+      ? (filtro.gravidade as Gravidade)
+      : undefined;
+
+    const where = {
+      ...(filtro.estado === "novos" ? { seen: false } : {}),
+      ...(filtro.estado === "vistos" ? { seen: true } : {}),
+      ...(gravidade ? { severity: gravidade } : {}),
+    };
+
+    const { count } = await prisma.errorLog.deleteMany({ where });
     if (count === 0) throw new Error("Não há registros para apagar.");
     revalidatePath("/erros");
     revalidatePath("/dashboard");

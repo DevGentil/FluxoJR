@@ -134,7 +134,6 @@ export default async function ErrosPage({ searchParams }: Props) {
               inteira e a pilha.
             </CardDescription>
           </div>
-          <FiltrosErros contagem={contagem} total={totalDoEstado} />
         </CardHeader>
         <CardContent className="space-y-4">
           {erros.length === 0 ? (
@@ -148,8 +147,10 @@ export default async function ErrosPage({ searchParams }: Props) {
             <ErrosLista
               erros={erros}
               antigos={limpeza.antigos}
-              total={limpeza.total}
+              totalFiltrado={filtrados}
               naoVistos={naoVistos}
+              filtro={{ gravidade, estado }}
+              filtros={<FiltrosErros contagem={contagem} total={totalDoEstado} />}
             />
           )}
           <Pagination
