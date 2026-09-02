@@ -6,9 +6,12 @@ import { Pagination } from "@/components/pagination";
 import { CircleCheck, TriangleAlert, Clock } from "lucide-react";
 import { contarParaLimpeza } from "./actions";
 import { ErrosLista } from "./erros-lista";
+import { FiltrosErros } from "./filtros-erros";
+import { GRAVIDADES, type Gravidade } from "@/lib/erro-gravidade";
+import type { Prisma } from "@/lib/generated/prisma/client";
 
 interface Props {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; gravidade?: string; estado?: string }>;
 }
 
 const POR_PAGINA = 25;
@@ -17,6 +20,14 @@ const POR_PAGINA = 25;
  * de pureza do React — a mesma correção que o Dashboard já tinha. */
 function desdeOntem() {
   return new Date(Date.now() - 24 * 60 * 60 * 1000);
+}
+
+/** Só aceita o que existe. O filtro vem da URL, e URL é dado de fora: sem
+ * isto, `?gravidade=qualquer` viraria consulta inválida. */
+function gravidadeValida(valor?: string): Gravidade | undefined {
+  return (GRAVIDADES as readonly string[]).includes(valor ?? "")
+    ? (valor as Gravidade)
+    : undefined;
 }
 
 /** Os erros que estouraram em produção.
@@ -37,18 +48,44 @@ export default async function ErrosPage({ searchParams }: Props) {
 
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
+  const gravidade = gravidadeValida(params.gravidade);
+  const estado = params.estado === "novos" || params.estado === "vistos" ? params.estado : undefined;
 
-  const [total, naoVistos, ultimas24h, erros, limpeza] = await Promise.all([
-    prisma.errorLog.count(),
-    prisma.errorLog.count({ where: { seen: false } }),
-    prisma.errorLog.count({ where: { at: { gte: desdeOntem() } } }),
-    prisma.errorLog.findMany({
-      orderBy: { at: "desc" },
-      skip: (page - 1) * POR_PAGINA,
-      take: POR_PAGINA,
-    }),
-    contarParaLimpeza(),
-  ]);
+  // O filtro roda no BANCO, não em memória: a paginação conta o total antes
+  // de escolher a página, e filtrar depois mostraria páginas vazias.
+  //
+  // O estado entra na contagem por gravidade — para os números dos botões
+  // baterem com o que aparece ao clicar — mas a gravidade não, senão cada
+  // botão mostraria zero para as outras.
+  const filtroEstado: Prisma.ErrorLogWhereInput =
+    estado === "novos" ? { seen: false } : estado === "vistos" ? { seen: true } : {};
+  const where: Prisma.ErrorLogWhereInput = {
+    ...filtroEstado,
+    ...(gravidade ? { severity: gravidade } : {}),
+  };
+
+  const [total, filtrados, naoVistos, ultimas24h, criticos, erros, limpeza, porGravidade] =
+    await Promise.all([
+      prisma.errorLog.count(),
+      prisma.errorLog.count({ where }),
+      prisma.errorLog.count({ where: { seen: false } }),
+      prisma.errorLog.count({ where: { at: { gte: desdeOntem() } } }),
+      prisma.errorLog.count({ where: { severity: "CRITICO", seen: false } }),
+      prisma.errorLog.findMany({
+        where,
+        orderBy: { at: "desc" },
+        skip: (page - 1) * POR_PAGINA,
+        take: POR_PAGINA,
+      }),
+      contarParaLimpeza(),
+      prisma.errorLog.groupBy({ by: ["severity"], where: filtroEstado, _count: { _all: true } }),
+    ]);
+
+  const contagem: Record<Gravidade, number> = { CRITICO: 0, ERRO: 0, AVISO: 0 };
+  for (const linha of porGravidade) contagem[linha.severity as Gravidade] = linha._count._all;
+  const totalDoEstado = contagem.CRITICO + contagem.ERRO + contagem.AVISO;
+
+  const filtrando = Boolean(gravidade || estado);
 
   return (
     <div className="space-y-6">
@@ -61,6 +98,16 @@ export default async function ErrosPage({ searchParams }: Props) {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
+        {/* Crítico sem ver vem primeiro: é o único número que pede ação
+            agora. "Não vistos" sozinho misturava a queda do banco com uma
+            sessão vencida de alguém. */}
+        <KpiCard
+          label="Críticos sem ver"
+          value={String(criticos)}
+          hint={criticos > 0 ? "O sistema ficou fora" : "Nenhum agora"}
+          icon={criticos > 0 ? TriangleAlert : CircleCheck}
+          iconClass={criticos > 0 ? "text-red-500" : "text-emerald-500"}
+        />
         <KpiCard
           label="Não vistos"
           value={String(naoVistos)}
@@ -68,23 +115,34 @@ export default async function ErrosPage({ searchParams }: Props) {
           icon={naoVistos > 0 ? TriangleAlert : CircleCheck}
           iconClass={naoVistos > 0 ? "text-amber-500" : "text-emerald-500"}
         />
-        <KpiCard label="Últimas 24 horas" value={String(ultimas24h)} icon={Clock} iconClass="text-sky-500" />
-        <KpiCard label="Total registrado" value={String(total)} icon={TriangleAlert} iconClass="text-muted-foreground" />
+        <KpiCard
+          label="Últimas 24 horas"
+          value={String(ultimas24h)}
+          icon={Clock}
+          iconClass="text-sky-500"
+        />
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>{total} registro(s)</CardTitle>
-          <CardDescription>
-            O mais recente primeiro. Cada linha mostra a causa resumida — abra para ver a mensagem
-            inteira e a pilha.
-          </CardDescription>
+        <CardHeader className="gap-3">
+          <div>
+            <CardTitle>
+              {filtrando ? `${filtrados} de ${total} registro(s)` : `${total} registro(s)`}
+            </CardTitle>
+            <CardDescription>
+              O mais recente primeiro. Cada linha mostra a causa resumida — abra para ver a mensagem
+              inteira e a pilha.
+            </CardDescription>
+          </div>
+          <FiltrosErros contagem={contagem} total={totalDoEstado} />
         </CardHeader>
         <CardContent className="space-y-4">
           {erros.length === 0 ? (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
+            <p className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
               <CircleCheck className="size-4 text-emerald-500" />
-              Nenhum erro registrado. É o resultado que se quer aqui.
+              {filtrando
+                ? "Nenhum erro com esse filtro."
+                : "Nenhum erro registrado. É o resultado que se quer aqui."}
             </p>
           ) : (
             <ErrosLista
@@ -95,7 +153,7 @@ export default async function ErrosPage({ searchParams }: Props) {
             />
           )}
           <Pagination
-            total={total}
+            total={filtrados}
             page={page}
             pageSize={POR_PAGINA}
             basePath="/erros"

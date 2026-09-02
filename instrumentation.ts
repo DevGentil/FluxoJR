@@ -29,15 +29,23 @@ export async function onRequestError(
 
   try {
     const { prisma } = await import("@/lib/prisma");
+    const { classificarGravidade } = await import("@/lib/erro-gravidade");
     const erro = err as { message?: string; stack?: string; digest?: string };
+
+    const message = erro?.message?.slice(0, 2000) ?? String(err).slice(0, 2000);
+    const stack = erro?.stack?.slice(0, 8000) ?? null;
 
     await prisma.errorLog.create({
       data: {
-        message: erro?.message?.slice(0, 2000) ?? String(err).slice(0, 2000),
+        message,
         digest: erro?.digest ?? null,
-        stack: erro?.stack?.slice(0, 8000) ?? null,
+        stack,
         route: request.path?.slice(0, 500) ?? null,
         method: request.method ?? null,
+        // Classificado aqui, e não na leitura, para o filtro poder rodar no
+        // banco: filtrar em memória quebraria a paginação, que precisa
+        // contar o total antes de escolher a página.
+        severity: classificarGravidade(message, stack),
       },
     });
   } catch {

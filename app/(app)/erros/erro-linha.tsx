@@ -3,13 +3,14 @@
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { TableDisclosure } from "@/components/table-disclosure";
-import { CircleCheck } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DeleteButton } from "@/components/delete-button";
-import type { ActionState } from "@/lib/actions-utils";
+import { ChevronDown, ChevronRight, CircleCheck } from "lucide-react";
 import { marcarVisto } from "./actions";
 import { resumirErro } from "@/lib/erro-resumo";
+import { SeloGravidade } from "./selo-gravidade";
+import type { Gravidade } from "@/lib/erro-gravidade";
+import type { ActionState } from "@/lib/actions-utils";
 
 export interface Erro {
   id: string;
@@ -20,6 +21,7 @@ export interface Erro {
   route: string | null;
   method: string | null;
   seen: boolean;
+  severity: Gravidade;
 }
 
 function quando(at: Date) {
@@ -35,18 +37,20 @@ interface Props {
 
 /** Uma ocorrência: uma linha fechada, tudo ao abrir.
  *
- * Fechada, mostra o RESUMO — a causa em uma linha — e nada mais. A
- * mensagem crua do Prisma tem quinze linhas e a lista virava um paredão
- * onde não se distinguia um erro do outro.
+ * O layout é GRID e não flex por um motivo prático: em grid as colunas de
+ * seleção, selo e ações têm largura própria e o resumo fica com o resto,
+ * então os botões ficam no mesmo lugar em qualquer largura de tela. Com
+ * flex, o texto empurrava a lixeira para fora e era preciso rolar de lado
+ * para alcançá-la.
  *
- * Aberta, mostra a mensagem inteira e depois a pilha. Antes só a pilha
- * aparecia, então o texto completo do erro não existia em lugar nenhum
- * da tela. */
+ * A rota saiu da linha fechada. Era a informação menos útil para decidir
+ * se o erro importa, e a mais longa — continua visível ao abrir. */
 export function ErroLinha({ erro, selecionado, aoSelecionar, aoExcluir }: Props) {
   const [aberto, setAberto] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const resumo = resumirErro(erro.message);
+  const Seta = aberto ? ChevronDown : ChevronRight;
 
   function marcar() {
     startTransition(async () => {
@@ -56,52 +60,41 @@ export function ErroLinha({ erro, selecionado, aoSelecionar, aoExcluir }: Props)
   }
 
   return (
-    <div className={`py-1.5 ${erro.seen ? "opacity-50" : ""}`}>
-      <div className="flex items-center gap-3">
+    <div className={erro.seen ? "opacity-60" : ""}>
+      <div className="grid grid-cols-[auto_auto_1fr_auto] items-center gap-x-2 py-1">
         <Checkbox
           checked={selecionado}
           onCheckedChange={aoSelecionar}
           aria-label={`Selecionar o erro de ${quando(erro.at)}`}
         />
-        <div className="min-w-0 flex-1">
-          <TableDisclosure
-            open={aberto}
-            onToggle={() => setAberto((v) => !v)}
-            label={`o erro de ${quando(erro.at)}`}
-          >
-            {/* Data e rota na MESMA linha do resumo: eram uma segunda linha
-                por registro, e com 25 por página isso dobrava a altura da
-                tabela sem acrescentar nada que não coubesse aqui. */}
-            <span className="flex min-w-0 items-baseline gap-2 text-sm">
-              <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
-                {quando(erro.at)}
-              </span>
-              {/* `min-w-0` junto do `truncate`: item de flex não encolhe
-                  abaixo do próprio conteúdo sem isso, e o resumo longo
-                  empurrava a página inteira para o lado. */}
-              <span className="min-w-0 truncate">{resumo}</span>
-            </span>
-          </TableDisclosure>
-        </div>
 
-        {/* Sem `shrink-0`: a rota cede espaço quando a tela aperta, em vez
-            de empurrar a página para o lado. Ela é a informação menos
-            importante da linha e já aparece inteira ao abrir. */}
-        {erro.route && (
-          <span className="hidden min-w-0 truncate font-mono text-xs text-muted-foreground sm:block sm:max-w-[16rem]">
-            {erro.route}
+        <SeloGravidade gravidade={erro.severity} />
+
+        {/* O botão ocupa a coluna inteira do texto: a área de clique para
+            abrir é a linha toda, não só a setinha. */}
+        <button
+          type="button"
+          onClick={() => setAberto((v) => !v)}
+          aria-expanded={aberto}
+          className="flex min-w-0 items-center gap-1.5 text-left"
+        >
+          <Seta className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
+            {quando(erro.at)}
           </span>
-        )}
+          <span className="min-w-0 truncate text-sm">{resumo}</span>
+        </button>
 
-        <div className="flex shrink-0 items-center">
+        <div className="flex items-center">
           {!erro.seen && (
             <Button
               size="sm"
               variant="ghost"
-              className="h-7 px-2"
+              className="size-7 p-0"
               onClick={marcar}
               disabled={pending}
               aria-label="Marcar como visto"
+              title="Marcar como visto"
             >
               <CircleCheck className="size-4" />
             </Button>
@@ -116,11 +109,11 @@ export function ErroLinha({ erro, selecionado, aoSelecionar, aoExcluir }: Props)
       </div>
 
       {aberto && (
-        <div className="mt-2 ml-[22px] space-y-3 pb-2">
+        <div className="mb-2 ml-6 space-y-3">
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span className="tabular-nums">{quando(erro.at)}</span>
             {erro.route && (
-              <span className="font-mono">
+              <span className="font-mono break-all">
                 {erro.method} {erro.route}
               </span>
             )}
@@ -130,7 +123,7 @@ export function ErroLinha({ erro, selecionado, aoSelecionar, aoExcluir }: Props)
 
           <div>
             <p className="mb-1 text-xs font-medium">Mensagem completa</p>
-            <pre className="max-h-64 overflow-auto rounded-lg bg-muted/50 p-3 text-[11px] leading-relaxed whitespace-pre-wrap break-words">
+            <pre className="max-h-64 overflow-auto rounded-lg bg-muted/50 p-3 text-[11px] leading-relaxed break-words whitespace-pre-wrap">
               {erro.message}
             </pre>
           </div>

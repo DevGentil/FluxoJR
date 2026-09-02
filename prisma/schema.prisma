@@ -558,6 +558,12 @@ model DoctorDailyLine {
 /// Erro que estourou em producao, capturado pelo hook `onRequestError` do
 /// Next. Existe para responder "o sistema quebrou para alguem?" sem depender
 /// de a pessoa avisar — que ate aqui era a unica forma de descobrir.
+enum ErrorSeverity {
+  CRITICO
+  ERRO
+  AVISO
+}
+
 model ErrorLog {
   id      String   @id @default(cuid())
   at      DateTime @default(now())
@@ -571,9 +577,14 @@ model ErrorLog {
   /// Marcado quando alguem da holding le. O aviso no Dashboard conta os nao
   /// vistos — erro que ninguem olhou e erro que ninguem tratou.
   seen    Boolean  @default(false)
+  /// Quao grave, do ponto de vista de quem vai agir: o sistema esta fora,
+  /// uma operacao falhou, ou funcionou como devia. Classificada na hora de
+  /// gravar por `lib/erro-gravidade.ts`.
+  severity ErrorSeverity @default(ERRO)
 
   @@index([at])
   @@index([seen])
+  @@index([severity])
 }
 
 /// Quem alterou o que, e quando.
