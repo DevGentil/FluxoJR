@@ -10,7 +10,7 @@ import { KpiCard } from "@/components/kpi-card";
 
 import { MonthlyChart } from "./monthly-chart";
 import { AgingChart } from "./aging-chart";
-import { TrendingUp, TrendingDown, Wallet, AlertTriangle, Bug } from "lucide-react";
+import { TrendingUp, TrendingDown, Wallet, AlertTriangle, Bug, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { contaAtual } from "@/lib/access";
 
@@ -117,18 +117,29 @@ export default async function DashboardPage() {
         <p className="text-muted-foreground text-sm">Visão geral do fluxo de caixa — {scopeLabel}.</p>
       </div>
 
+      {/* O aviso sempre levou para a tela de erros, mas nada dizia isso: sem
+          seta e sem verbo, ele parecia um recado e não um caminho. Quem lia
+          entendia "existem erros" e não "clique para ver quais". */}
       {errosNaoVistos > 0 && (
         <Link
           href="/erros"
-          className="flex items-center gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/5 px-4 py-2.5 text-sm transition-colors hover:bg-amber-500/10"
+          aria-label={`Ver os ${errosNaoVistos} erros novos do sistema`}
+          className="group flex items-center gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/5 px-4 py-2.5 text-sm transition-colors hover:bg-amber-500/10 focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none"
         >
           <Bug className="size-4 shrink-0 text-amber-500" />
-          <span>
+          <span className="min-w-0 flex-1">
             <span className="font-medium">
               {errosNaoVistos} {errosNaoVistos === 1 ? "erro novo" : "erros novos"} no sistema
             </span>
             <span className="text-muted-foreground"> — alguém pode ter esbarrado numa tela quebrada.</span>
           </span>
+          {/* O verbo sai em tela estreita; a seta fica, porque é ela que diz
+              que isto leva a algum lugar. */}
+          <span className="ml-2 hidden shrink-0 items-center gap-1 font-medium text-amber-600 sm:flex dark:text-amber-500">
+            Ver erros
+            <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+          </span>
+          <ArrowRight className="size-4 shrink-0 text-amber-600 sm:hidden dark:text-amber-500" />
         </Link>
       )}
 
