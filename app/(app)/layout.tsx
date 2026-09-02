@@ -1,5 +1,4 @@
 import {
-  Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
@@ -8,6 +7,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { SidebarAutoRecolher } from "@/components/sidebar-auto-recolher";
+import { SidebarExpansivel } from "@/components/sidebar-expansivel";
 import { NavLinks } from "@/components/nav-links";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -70,17 +70,23 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <SidebarProvider>
       <SidebarAutoRecolher />
-      <Sidebar collapsible="icon">
+      <SidebarExpansivel>
         <SidebarHeader>
-          <div className="flex items-center gap-2 px-2 py-1.5">
+          <div className="flex items-center gap-2 px-2 py-1.5 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center">
             <JRHoldingMark showWordmark={false} className="size-6 shrink-0" sizes="24px" />
-            <span className="font-semibold truncate">FluxoJR</span>
+            <span className="truncate font-semibold group-data-[collapsible=icon]:hidden">FluxoJR</span>
           </div>
-          <CompanySwitcher
-            groups={gruposVisiveis}
-            ungroupedCompanies={ungroupedCompanies}
-            currentValue={currentValue}
-          />
+          {/* O seletor de empresa sai na barra de icones: ele e um campo de
+              largura inteira, e espremido em 48px transbordava a barra e
+              cobria o primeiro item do menu — era o que atrapalhava o
+              clique no Dashboard. Volta assim que o menu abre. */}
+          <div className="group-data-[collapsible=icon]:hidden">
+            <CompanySwitcher
+              groups={gruposVisiveis}
+              ungroupedCompanies={ungroupedCompanies}
+              currentValue={currentValue}
+            />
+          </div>
         </SidebarHeader>
         <SidebarContent>
           <NavLinks modulos={modulos} />
@@ -88,14 +94,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {isSupabaseConfigured && (
           <SidebarFooter>
             <form action={logout}>
-              <Button variant="ghost" size="sm" className="w-full justify-start" type="submit">
+              {/* Recolhido, sobra so o icone centrado: com o rotulo o botao
+                  vazava para fora da barra de 48px. */}
+              <Button
+                variant="ghost"
+                size="sm"
+                type="submit"
+                title="Sair"
+                className="w-full justify-start group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+              >
                 <LogOut />
-                Sair
+                <span className="group-data-[collapsible=icon]:hidden">Sair</span>
               </Button>
             </form>
           </SidebarFooter>
         )}
-      </Sidebar>
+      </SidebarExpansivel>
       <SidebarInset>
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger />
