@@ -5,10 +5,13 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { TableDisclosure } from "@/components/table-disclosure";
 import { CircleCheck } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DeleteButton } from "@/components/delete-button";
+import type { ActionState } from "@/lib/actions-utils";
 import { marcarVisto } from "./actions";
 import { resumirErro } from "@/lib/erro-resumo";
 
-interface Erro {
+export interface Erro {
   id: string;
   at: Date;
   message: string;
@@ -23,6 +26,13 @@ function quando(at: Date) {
   return at.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
+interface Props {
+  erro: Erro;
+  selecionado: boolean;
+  aoSelecionar: () => void;
+  aoExcluir: () => Promise<ActionState>;
+}
+
 /** Uma ocorrência: uma linha fechada, tudo ao abrir.
  *
  * Fechada, mostra o RESUMO — a causa em uma linha — e nada mais. A
@@ -32,7 +42,7 @@ function quando(at: Date) {
  * Aberta, mostra a mensagem inteira e depois a pilha. Antes só a pilha
  * aparecia, então o texto completo do erro não existia em lugar nenhum
  * da tela. */
-export function ErroLinha({ erro }: { erro: Erro }) {
+export function ErroLinha({ erro, selecionado, aoSelecionar, aoExcluir }: Props) {
   const [aberto, setAberto] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -48,6 +58,11 @@ export function ErroLinha({ erro }: { erro: Erro }) {
   return (
     <div className={`py-1.5 ${erro.seen ? "opacity-50" : ""}`}>
       <div className="flex items-center gap-3">
+        <Checkbox
+          checked={selecionado}
+          onCheckedChange={aoSelecionar}
+          aria-label={`Selecionar o erro de ${quando(erro.at)}`}
+        />
         <div className="min-w-0 flex-1">
           <TableDisclosure
             open={aberto}
@@ -61,29 +76,43 @@ export function ErroLinha({ erro }: { erro: Erro }) {
               <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
                 {quando(erro.at)}
               </span>
-              <span className="truncate">{resumo}</span>
+              {/* `min-w-0` junto do `truncate`: item de flex não encolhe
+                  abaixo do próprio conteúdo sem isso, e o resumo longo
+                  empurrava a página inteira para o lado. */}
+              <span className="min-w-0 truncate">{resumo}</span>
             </span>
           </TableDisclosure>
         </div>
 
+        {/* Sem `shrink-0`: a rota cede espaço quando a tela aperta, em vez
+            de empurrar a página para o lado. Ela é a informação menos
+            importante da linha e já aparece inteira ao abrir. */}
         {erro.route && (
-          <span className="hidden shrink-0 truncate font-mono text-xs text-muted-foreground sm:block sm:max-w-[16rem]">
+          <span className="hidden min-w-0 truncate font-mono text-xs text-muted-foreground sm:block sm:max-w-[16rem]">
             {erro.route}
           </span>
         )}
 
-        {!erro.seen && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 shrink-0 px-2"
-            onClick={marcar}
-            disabled={pending}
-            aria-label="Marcar como visto"
-          >
-            <CircleCheck className="size-4" />
-          </Button>
-        )}
+        <div className="flex shrink-0 items-center">
+          {!erro.seen && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              onClick={marcar}
+              disabled={pending}
+              aria-label="Marcar como visto"
+            >
+              <CircleCheck className="size-4" />
+            </Button>
+          )}
+          <DeleteButton
+            action={aoExcluir}
+            title="Apagar este registro?"
+            description="Some com esta ocorrência. Não pode ser desfeito."
+            confirmLabel="Apagar"
+          />
+        </div>
       </div>
 
       {aberto && (

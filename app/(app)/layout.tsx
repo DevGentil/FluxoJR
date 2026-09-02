@@ -101,7 +101,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <span className="text-sm text-muted-foreground flex-1">{scopeLabel}</span>
           <ThemeToggle />
         </header>
-        <main className="flex-1 p-4 md:p-6">
+        {/* `min-w-0`: sem isso, conteúdo que não quebra linha — uma rota
+            longa, uma tabela larga — soma na largura mínima do main e
+            empurra a página inteira para o lado, criando rolagem
+            horizontal no sistema todo em vez de ficar contido na tela
+            que o gerou. */}
+        <main className="min-w-0 flex-1 p-4 md:p-6">
           {podeVerModulo ? children : <SemAcesso modulo={MODULE_LABELS[modulo!]} />}
         </main>
       </SidebarInset>

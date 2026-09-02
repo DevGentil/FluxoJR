@@ -1,12 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { contaAtual } from "@/lib/access";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { KpiCard } from "@/components/kpi-card";
 import { Pagination } from "@/components/pagination";
 import { CircleCheck, TriangleAlert, Clock } from "lucide-react";
-import { marcarTodosVistos } from "./actions";
-import { ErroLinha } from "./erro-linha";
+import { contarParaLimpeza } from "./actions";
+import { ErrosLista } from "./erros-lista";
 
 interface Props {
   searchParams: Promise<{ page?: string }>;
@@ -39,7 +38,7 @@ export default async function ErrosPage({ searchParams }: Props) {
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
 
-  const [total, naoVistos, ultimas24h, erros] = await Promise.all([
+  const [total, naoVistos, ultimas24h, erros, limpeza] = await Promise.all([
     prisma.errorLog.count(),
     prisma.errorLog.count({ where: { seen: false } }),
     prisma.errorLog.count({ where: { at: { gte: desdeOntem() } } }),
@@ -48,6 +47,7 @@ export default async function ErrosPage({ searchParams }: Props) {
       skip: (page - 1) * POR_PAGINA,
       take: POR_PAGINA,
     }),
+    contarParaLimpeza(),
   ]);
 
   return (
@@ -73,22 +73,12 @@ export default async function ErrosPage({ searchParams }: Props) {
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>{total} registro(s)</CardTitle>
-            <CardDescription>
-              O mais recente primeiro. Cada linha mostra a causa resumida — abra para ver a mensagem
-              inteira e a pilha.
-            </CardDescription>
-          </div>
-          {naoVistos > 0 && (
-            <form action={marcarTodosVistos}>
-              <Button type="submit" size="sm" variant="secondary">
-                <CircleCheck className="size-4" />
-                Marcar todos como vistos
-              </Button>
-            </form>
-          )}
+        <CardHeader>
+          <CardTitle>{total} registro(s)</CardTitle>
+          <CardDescription>
+            O mais recente primeiro. Cada linha mostra a causa resumida — abra para ver a mensagem
+            inteira e a pilha.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {erros.length === 0 ? (
@@ -97,23 +87,12 @@ export default async function ErrosPage({ searchParams }: Props) {
               Nenhum erro registrado. É o resultado que se quer aqui.
             </p>
           ) : (
-            <div className="divide-y">
-              {erros.map((e) => (
-                <ErroLinha
-                  key={e.id}
-                  erro={{
-                    id: e.id,
-                    at: e.at,
-                    message: e.message,
-                    digest: e.digest,
-                    stack: e.stack,
-                    route: e.route,
-                    method: e.method,
-                    seen: e.seen,
-                  }}
-                />
-              ))}
-            </div>
+            <ErrosLista
+              erros={erros}
+              antigos={limpeza.antigos}
+              total={limpeza.total}
+              naoVistos={naoVistos}
+            />
           )}
           <Pagination
             total={total}
