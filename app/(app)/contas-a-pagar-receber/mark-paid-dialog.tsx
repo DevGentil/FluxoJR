@@ -48,9 +48,23 @@ export function MarkPaidDialog({ entryId, type, accounts, defaultAccountId }: Pr
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm" variant="outline" />}>
+      {/* O rótulo aparece onde há espaço e some antes de espremer o resto
+          da linha — em tela estreita o ícone e o `title` bastam, e é
+          preferível ao texto empurrando os outros botões para fora. */}
+      <DialogTrigger
+        render={
+          <Button
+            size="sm"
+            variant="outline"
+            title={type === "PAYABLE" ? "Marcar como pago" : "Marcar como recebido"}
+            aria-label={type === "PAYABLE" ? "Marcar como pago" : "Marcar como recebido"}
+          />
+        }
+      >
         <CheckCircle2 className="size-4" />
-        {type === "PAYABLE" ? "Marcar como pago" : "Marcar como recebido"}
+        <span className="hidden xl:inline">
+          {type === "PAYABLE" ? "Marcar como pago" : "Marcar como recebido"}
+        </span>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

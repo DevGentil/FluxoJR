@@ -177,6 +177,10 @@ export default async function TransacoesPage({ searchParams }: Props) {
         // binário de cada anexo aqui carregaria megabytes por página para
         // desenhar um nome de arquivo.
         documents: { select: { id: true, fileName: true, size: true }, orderBy: { createdAt: "asc" } },
+        // A transacao do fechamento e um resumo do dia; o detalhe (cada
+        // sangria, cada pagamento) fica no fechamento. Sem este vinculo a
+        // pessoa via "Caixa do dia" e nao tinha como abrir o que compoe.
+        cashClosing: { select: { id: true } },
       },
       orderBy,
       skip: (page - 1) * PAGE_SIZE,
@@ -360,6 +364,7 @@ export default async function TransacoesPage({ searchParams }: Props) {
               type: t.type as "INCOME" | "EXPENSE",
               amount: Number(t.amount),
               anexos: t.documents,
+              cashClosingId: t.cashClosing?.id ?? null,
             }))}
           />
           <Pagination

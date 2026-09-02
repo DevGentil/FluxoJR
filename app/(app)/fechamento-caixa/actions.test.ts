@@ -27,7 +27,7 @@ function baseInput(accountId: string, overrides: Partial<CashClosingInput> = {})
 }
 
 describe("createCashClosing", () => {
-  it("cria o fechamento e gera uma unica Transaction com o total de sangrias", async () => {
+  it("gera uma unica Transaction com o LIQUIDO: sangrias menos pagamentos", async () => {
     const { account } = await seedAccount();
 
     const result = await createCashClosing(baseInput(account.id));
@@ -42,7 +42,11 @@ describe("createCashClosing", () => {
     const transactions = await testPrisma.transaction.findMany();
     expect(transactions).toHaveLength(1);
     expect(transactions[0]).toMatchObject({ type: "INCOME", accountId: account.id });
-    expect(Number(transactions[0].amount)).toBe(2837); // 1097 + 1740
+    // 1097 + 1740 de sangria − 1300 de pagamento. O pagamento em dinheiro
+    // saiu do caixa; conta-lo como entrada inflava a receita no Dashboard,
+    // nos Relatorios e no Balanco.
+    expect(Number(transactions[0].amount)).toBe(1537);
+    expect(transactions[0].description).toMatch(/^Caixa do dia/);
 
     const category = await testPrisma.category.findFirstOrThrow({ where: { name: "Sangria Caixa" } });
     expect(transactions[0].categoryId).toBe(category.id);
@@ -92,7 +96,7 @@ describe("createCashClosing", () => {
 });
 
 describe("updateCashClosing", () => {
-  it("atualiza o total de sangrias sem duplicar a Transaction vinculada", async () => {
+  it("atualiza o liquido sem duplicar a Transaction vinculada", async () => {
     const { account } = await seedAccount();
     await createCashClosing(baseInput(account.id));
     const closing = await testPrisma.cashClosing.findFirstOrThrow();
@@ -105,7 +109,8 @@ describe("updateCashClosing", () => {
     expect(result.error).toBeUndefined();
     await expect(testPrisma.transaction.count()).resolves.toBe(1);
     const transaction = await testPrisma.transaction.findFirstOrThrow();
-    expect(Number(transaction.amount)).toBe(5000);
+    // 5000 de sangria − 1300 do pagamento que o baseInput mantem.
+    expect(Number(transaction.amount)).toBe(3700);
   });
 });
 
@@ -188,5 +193,46 @@ describe("anexos do fechamento", () => {
     await deleteCashClosing(fechamento.id);
 
     await expect(testPrisma.document.count()).resolves.toBe(0);
+  });
+});
+
+describe("o valor que chega em Transações", () => {
+  it("dia sem pagamento nenhum posta a sangria inteira", async () => {
+    const { account } = await seedAccount();
+
+    await createCashClosing(
+      baseInput(account.id, { sangrias: [{ label: "CX 1", amount: 900 }], pagamentos: [] })
+    );
+
+    const t = await testPrisma.transaction.findFirstOrThrow();
+    expect(Number(t.amount)).toBe(900);
+  });
+
+  it("pagamento maior que a sangria posta valor negativo, e não zero", async () => {
+    // Dia em que saiu mais dinheiro do que entrou existe. Zerar ou usar o
+    // módulo esconderia a saída no razão e o caixa nunca fecharia.
+    const { account } = await seedAccount();
+
+    await createCashClosing(
+      baseInput(account.id, {
+        sangrias: [{ label: "CX 1", amount: 100 }],
+        pagamentos: [{ label: "Fornecedor", amount: 400 }],
+      })
+    );
+
+    const t = await testPrisma.transaction.findFirstOrThrow();
+    expect(Number(t.amount)).toBe(-300);
+  });
+
+  it("a transação aponta de volta para o fechamento que a gerou", async () => {
+    // É o que faz o botão "ver detalhes" existir em Transações: sem o
+    // vínculo, a linha "Caixa do dia" seria um número sem origem.
+    const { account } = await seedAccount();
+    await createCashClosing(baseInput(account.id));
+
+    const t = await testPrisma.transaction.findFirstOrThrow({ include: { cashClosing: true } });
+    expect(t.cashClosing).not.toBeNull();
+    const fechamento = await testPrisma.cashClosing.findFirstOrThrow();
+    expect(t.cashClosing?.id).toBe(fechamento.id);
   });
 });

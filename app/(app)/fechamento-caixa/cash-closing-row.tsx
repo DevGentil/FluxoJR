@@ -27,10 +27,17 @@ function computeTotals(closing: CashClosingRowData) {
 interface Props {
   closing: CashClosingRowData;
   actions?: ReactNode;
+  /** Abre o detalhe assim que a tela carrega.
+   *
+   * E como o atalho vindo de Transacoes chega aqui: a pessoa clicou em
+   * "ver o fechamento deste dia" querendo o detalhe, nao a lista. Faze-la
+   * procurar a linha certa depois de ja ter apontado qual e seria pedir o
+   * mesmo clique duas vezes. */
+  abrirDetalhe?: boolean;
 }
 
-export function CashClosingRow({ closing, actions }: Props) {
-  const [open, setOpen] = useState(false);
+export function CashClosingRow({ closing, actions, abrirDetalhe = false }: Props) {
+  const [open, setOpen] = useState(abrirDetalhe);
   const { totalSangrias, totalPagamentos, valorCaixa, diferenca } = computeTotals(closing);
 
   return (

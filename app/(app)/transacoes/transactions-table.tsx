@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { Fragment, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -17,7 +19,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Receipt, Trash2 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { TransactionFormDialog } from "./transaction-form-dialog";
 import { DeleteButton } from "@/components/delete-button";
@@ -45,6 +47,8 @@ interface TransactionRow {
   type: "INCOME" | "EXPENSE";
   amount: number;
   anexos: AnexoSalvo[];
+  /** Preenchido quando a transação nasceu de um fechamento de caixa. */
+  cashClosingId: string | null;
 }
 
 interface Props {
@@ -165,7 +169,7 @@ export function TransactionsTable({ transactions, accounts, categories, supplier
             <TableHead>Fornecedor</TableHead>
             <TableHead>Origem</TableHead>
             <TableHead className="text-right">Valor</TableHead>
-            <TableHead className="w-24" />
+            <TableHead className="w-36" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -255,6 +259,23 @@ export function TransactionsTable({ transactions, accounts, categories, supplier
                           <TableCell>
                             <div className="flex justify-end gap-1">
                               <AnexosPopover anexos={t.anexos} titulo={t.description} />
+                              {/* A transação do fechamento é o resumo do
+                                  dia; cada sangria e cada pagamento ficam
+                                  no fechamento. Sem este atalho a pessoa
+                                  lia "Caixa do dia" e não tinha como abrir
+                                  o que compõe o número. */}
+                              {t.cashClosingId && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title="Ver o fechamento de caixa deste dia"
+                                  aria-label="Ver o fechamento de caixa deste dia"
+                                  nativeButton={false}
+                                  render={<Link href={`/fechamento-caixa?ver=${t.cashClosingId}`} />}
+                                >
+                                  <Receipt className="size-4" />
+                                </Button>
+                              )}
                               <TransactionFormDialog
                                 accounts={accounts}
                                 categories={categories}

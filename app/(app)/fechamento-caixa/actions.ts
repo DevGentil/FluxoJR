@@ -47,6 +47,26 @@ function revalidateAll() {
   revalidatePath("/balanco");
 }
 
+/** O que de fato entrou no caixa: sangrias menos os pagamentos em
+ * dinheiro do dia.
+ *
+ * Antes só o total das sangrias virava transação, e os pagamentos ficavam
+ * apenas como detalhe do fechamento. O efeito era a entrada aparecer
+ * maior do que foi — dinheiro que saiu pela porta contava como receita no
+ * Dashboard, nos Relatórios e no Balanço.
+ *
+ * As linhas individuais continuam só no fechamento: o razão principal
+ * quer o líquido do dia, não quinze lançamentos de fornecedor. */
+function valorDoCaixa(input: CashClosingInput) {
+  const sangrias = input.sangrias.reduce((s, l) => s + l.amount, 0);
+  const pagamentos = input.pagamentos.reduce((s, l) => s + l.amount, 0);
+  return sangrias - pagamentos;
+}
+
+function descricaoDoCaixa(data: string) {
+  return "Caixa do dia — " + data.split("-").reverse().join("/");
+}
+
 async function getOrCreateSangriaCategory(companyId: string) {
   const existing = await prisma.category.findFirst({
     where: { companyId, name: SANGRIA_CATEGORY_NAME, type: "INCOME" },
@@ -73,7 +93,7 @@ export async function createCashClosing(input: CashClosingInput): Promise<{ erro
     });
     if (existing) return { error: "Já existe um fechamento cadastrado para esse dia. Edite o existente." };
 
-    const totalSangrias = input.sangrias.reduce((s, l) => s + l.amount, 0);
+    const liquido = valorDoCaixa(input);
     const category = await getOrCreateSangriaCategory(companyId);
     const dateObj = parseDateOnly(input.date);
 
@@ -86,9 +106,9 @@ export async function createCashClosing(input: CashClosingInput): Promise<{ erro
       const transaction = await tx.transaction.create({
         data: {
           date: dateObj,
-          amount: totalSangrias,
+          amount: liquido,
           type: "INCOME",
-          description: `Sangrias do caixa — ${input.date.split("-").reverse().join("/")}`,
+          description: descricaoDoCaixa(input.date),
           companyId,
           accountId: input.accountId,
           categoryId: category.id,
@@ -144,9 +164,9 @@ export async function updateCashClosing(id: string, input: CashClosingInput): Pr
       return { error: "Já existe outro fechamento cadastrado para esse dia." };
     }
 
-    const totalSangrias = input.sangrias.reduce((s, l) => s + l.amount, 0);
+    const liquido = valorDoCaixa(input);
     const category = await getOrCreateSangriaCategory(companyId);
-    const description = `Sangrias do caixa — ${input.date.split("-").reverse().join("/")}`;
+    const description = descricaoDoCaixa(input.date);
     const anexos = await validarAnexos(input.anexos ?? []);
 
     await prisma.$transaction(async (tx) => {
@@ -156,13 +176,13 @@ export async function updateCashClosing(id: string, input: CashClosingInput): Pr
       if (transactionId) {
         await tx.transaction.update({
           where: { id: transactionId },
-          data: { date: dateObj, amount: totalSangrias, accountId: input.accountId, categoryId: category.id, description },
+          data: { date: dateObj, amount: liquido, accountId: input.accountId, categoryId: category.id, description },
         });
       } else {
         const transaction = await tx.transaction.create({
           data: {
             date: dateObj,
-            amount: totalSangrias,
+            amount: liquido,
             type: "INCOME",
             description,
             companyId,

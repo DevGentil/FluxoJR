@@ -66,31 +66,41 @@ async function EntriesTable({ companyId, type }: { companyId: string; type: "PAY
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Vencimento</TableHead>
+              <TableHead className="whitespace-nowrap">Vencimento</TableHead>
               <TableHead>Descrição</TableHead>
-              <TableHead>Categoria</TableHead>
-              <TableHead>Fornecedor</TableHead>
+              {/* Categoria e fornecedor saem em tela estreita — mas nao
+                  somem: viram uma segunda linha sob a descricao. Esconder
+                  coluna e perder informacao; aqui ela so muda de lugar. */}
+              <TableHead className="hidden lg:table-cell">Categoria</TableHead>
+              <TableHead className="hidden lg:table-cell">Fornecedor</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="text-right">Valor</TableHead>
-              <TableHead className="w-72" />
+              <TableHead className="text-right whitespace-nowrap">Valor</TableHead>
+              <TableHead className="w-36" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {entries.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                   Nenhum lançamento cadastrado ainda.
                 </TableCell>
               </TableRow>
             )}
             {entries.map((entry) => (
               <TableRow key={entry.id}>
-                <TableCell>{formatDate(entry.dueDate)}</TableCell>
-                <TableCell className="max-w-64 truncate">{entry.description}</TableCell>
-                <TableCell>{entry.category?.name ?? "—"}</TableCell>
-                <TableCell>{entry.supplier?.name ?? "—"}</TableCell>
+                <TableCell className="whitespace-nowrap">{formatDate(entry.dueDate)}</TableCell>
+                <TableCell className="max-w-64">
+                  <div className="truncate">{entry.description}</div>
+                  {(entry.category || entry.supplier) && (
+                    <div className="truncate text-xs text-muted-foreground lg:hidden">
+                      {[entry.category?.name, entry.supplier?.name].filter(Boolean).join(" · ")}
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell className="hidden lg:table-cell">{entry.category?.name ?? "—"}</TableCell>
+                <TableCell className="hidden lg:table-cell">{entry.supplier?.name ?? "—"}</TableCell>
                 <TableCell>{statusBadge(entry.status, entry.dueDate)}</TableCell>
-                <TableCell className="text-right tabular-nums font-medium">
+                <TableCell className="text-right font-medium tabular-nums whitespace-nowrap">
                   {formatCurrency(Number(entry.amount))}
                 </TableCell>
                 <TableCell>

@@ -17,7 +17,14 @@ function toLines(lines: { id: string; type: string; label: string; amount: unkno
     .map((l) => ({ id: l.id, label: l.label, amount: Number(l.amount) }));
 }
 
-export default async function FechamentoCaixaPage() {
+interface Props {
+  /** `?ver=<id>` abre o detalhe daquele fechamento direto — e por onde o
+   * atalho vindo de Transacoes chega. */
+  searchParams: Promise<{ ver?: string }>;
+}
+
+export default async function FechamentoCaixaPage({ searchParams }: Props) {
+  const { ver } = await searchParams;
   const scope = await getActiveScope();
   const scopeLabel = await getScopeLabel(scope);
 
@@ -93,6 +100,7 @@ export default async function FechamentoCaixaPage() {
                     <CashClosingRow
                       key={closing.id}
                       closing={rowData}
+                      abrirDetalhe={closing.id === ver}
                       actions={
                         <>
                           <AnexosPopover
