@@ -42,7 +42,18 @@ export function CashClosingRow({ closing, actions, abrirDetalhe = false }: Props
 
   return (
     <>
-      <TableRow className="cursor-pointer" onClick={() => setOpen(true)}>
+      {/* Clique na linha abre o detalhe, MENOS quando vem da coluna de
+          ações. Antes a célula chamava `stopPropagation`, e isso atrapalha
+          a detecção de clique-fora dos diálogos que moram nela: o de
+          anexos abria e fechava sozinho. Aqui a linha ignora o clique pela
+          origem, sem interromper o evento no caminho. */}
+      <TableRow
+        className="cursor-pointer"
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest("[data-acoes]")) return;
+          setOpen(true);
+        }}
+      >
         <TableCell className="font-medium">{formatDate(closing.date)}</TableCell>
         <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
           {formatCurrency(totalSangrias)}
@@ -56,7 +67,7 @@ export function CashClosingRow({ closing, actions, abrirDetalhe = false }: Props
           <DiferencaValue diferenca={diferenca} />
         </TableCell>
         {actions && (
-          <TableCell onClick={(e) => e.stopPropagation()}>
+          <TableCell data-acoes>
             <div className="flex justify-end gap-1">{actions}</div>
           </TableCell>
         )}
