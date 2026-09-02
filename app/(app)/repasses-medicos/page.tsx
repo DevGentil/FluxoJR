@@ -15,10 +15,11 @@ import { KpiCard } from "@/components/kpi-card";
 import { DailyEntryFormDialog } from "./daily-entry-form-dialog";
 import { DailyEntriesTable, type DailyEntryRow } from "./daily-entries-table";
 import { FilaAprovacao, type RepassePendente, type RepasseAprovado } from "./fila-aprovacao";
+import { POR_PAGINA_COMPACTA, lerPagina } from "@/lib/paginacao";
 import { Wallet, CalendarCheck, CircleCheck, CircleDashed } from "lucide-react";
 
 interface Props {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; pend?: string; apr?: string }>;
 }
 
 /** Custo do período separado entre o que já saiu do caixa e o que ainda
@@ -173,7 +174,8 @@ async function ConsolidatedSummary({
 }
 
 export default async function RepassesMedicosPage({ searchParams }: Props) {
-  const range = parseMonthRange(await searchParams);
+  const params = await searchParams;
+  const range = parseMonthRange(params);
 
   const scope = await getActiveScope();
   if (scope.type !== "company") {
@@ -273,12 +275,29 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
     (a, b) => a.mes.localeCompare(b.mes) || a.doctorName.localeCompare(b.doctorName, "pt-BR")
   );
 
-  const payouts = await prisma.doctorPayout.findMany({
-    where: { companyId: scope.companyId },
-    include: { doctor: { select: { name: true } } },
-    orderBy: [{ month: "desc" }, { approvedAt: "desc" }],
-    take: 50,
-  });
+  // A fila é agrupada por médico e mês, o que só existe depois de somar os
+  // dias em memória — então ela também é cortada aqui. Os dias já vieram
+  // para os KPIs; o corte é da exibição, não da consulta.
+  const paginaPendentes = lerPagina(params.pend);
+  const pendentesDaPagina = pendentes.slice(
+    (paginaPendentes - 1) * POR_PAGINA_COMPACTA,
+    paginaPendentes * POR_PAGINA_COMPACTA
+  );
+
+  // Antes esta lista trazia os 50 mais recentes e não dizia que havia mais.
+  // Um corte silencioso numa lista de dinheiro aprovado é pior do que uma
+  // lista longa: some sem avisar.
+  const paginaAprovados = lerPagina(params.apr);
+  const [totalAprovados, payouts] = await Promise.all([
+    prisma.doctorPayout.count({ where: { companyId: scope.companyId } }),
+    prisma.doctorPayout.findMany({
+      where: { companyId: scope.companyId },
+      include: { doctor: { select: { name: true } } },
+      orderBy: [{ month: "desc" }, { approvedAt: "desc" }, { id: "asc" }],
+      skip: (paginaAprovados - 1) * POR_PAGINA_COMPACTA,
+      take: POR_PAGINA_COMPACTA,
+    }),
+  ]);
   const aprovados: RepasseAprovado[] = payouts.map((p) => {
     const [ano, m] = p.month.toISOString().slice(0, 7).split("-");
     return {
@@ -305,9 +324,14 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
       <PaymentKpis entries={entryRows} />
 
       <FilaAprovacao
-        pendentes={pendentes}
+        pendentes={pendentesDaPagina}
         aprovados={aprovados}
         podeAprovar={can(acesso, "repasses-medicos", "aprovar")}
+        totalPendentes={pendentes.length}
+        totalAprovados={totalAprovados}
+        paginaPendentes={paginaPendentes}
+        paginaAprovados={paginaAprovados}
+        params={params}
       />
 
       <Card>

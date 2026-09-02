@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CheckCircle2, RotateCcw } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
+import { Pagination } from "@/components/pagination";
+import { POR_PAGINA_COMPACTA } from "@/lib/paginacao";
 import { aprovarRepasse, reabrirRepasse } from "./payout-actions";
 
 export interface RepassePendente {
@@ -42,6 +44,14 @@ interface Props {
   pendentes: RepassePendente[];
   aprovados: RepasseAprovado[];
   podeAprovar: boolean;
+  /** Totais do filtro inteiro — as listas acima já vêm cortadas na
+   * página, e contá-las daria sempre no máximo dez. */
+  totalPendentes: number;
+  totalAprovados: number;
+  paginaPendentes: number;
+  paginaAprovados: number;
+  /** Período e o resto da URL, preservados na troca de página. */
+  params: Record<string, string | undefined>;
 }
 
 function BotaoConfirmar({
@@ -99,8 +109,17 @@ function BotaoConfirmar({
  * porque quem aprova não está procurando um dia: está perguntando "o que
  * está esperando por mim?". Agrupada por médico e mês, que é a unidade em
  * que o dinheiro sai — um pagamento por médico por mês. */
-export function FilaAprovacao({ pendentes, aprovados, podeAprovar }: Props) {
-  if (pendentes.length === 0 && aprovados.length === 0) return null;
+export function FilaAprovacao({
+  pendentes,
+  aprovados,
+  podeAprovar,
+  totalPendentes,
+  totalAprovados,
+  paginaPendentes,
+  paginaAprovados,
+  params,
+}: Props) {
+  if (totalPendentes === 0 && totalAprovados === 0) return null;
 
   return (
     <Card>
@@ -114,9 +133,9 @@ export function FilaAprovacao({ pendentes, aprovados, podeAprovar }: Props) {
       <CardContent className="space-y-6">
         <div>
           <p className="mb-2 text-sm font-medium">
-            Aguardando aprovação {pendentes.length > 0 && `(${pendentes.length})`}
+            Aguardando aprovação {totalPendentes > 0 && `(${totalPendentes})`}
           </p>
-          {pendentes.length === 0 ? (
+          {totalPendentes === 0 ? (
             <p className="text-sm text-muted-foreground">Nada pendente.</p>
           ) : (
             <Table>
@@ -155,9 +174,18 @@ export function FilaAprovacao({ pendentes, aprovados, podeAprovar }: Props) {
               </TableBody>
             </Table>
           )}
+          <Pagination
+            total={totalPendentes}
+            page={paginaPendentes}
+            pageSize={POR_PAGINA_COMPACTA}
+            basePath="/repasses-medicos"
+            params={params}
+            paramName="pend"
+            rotulo="na fila"
+          />
         </div>
 
-        {aprovados.length > 0 && (
+        {totalAprovados > 0 && (
           <div>
             <p className="mb-2 text-sm font-medium">Aprovados</p>
             <Table>
@@ -196,6 +224,15 @@ export function FilaAprovacao({ pendentes, aprovados, podeAprovar }: Props) {
                 ))}
               </TableBody>
             </Table>
+            <Pagination
+              total={totalAprovados}
+              page={paginaAprovados}
+              pageSize={POR_PAGINA_COMPACTA}
+              basePath="/repasses-medicos"
+              params={params}
+              paramName="apr"
+              rotulo="aprovados"
+            />
           </div>
         )}
       </CardContent>

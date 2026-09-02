@@ -21,6 +21,8 @@ import { AccountFormDialog } from "./account-form-dialog";
 import { DeleteButton } from "@/components/delete-button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { deleteAccount } from "./actions";
+import { Pagination } from "@/components/pagination";
+import { POR_PAGINA, lerPagina } from "@/lib/paginacao";
 
 async function ConsolidatedAccounts({ companyIds, scopeLabel }: { companyIds: string[]; scopeLabel: string }) {
   const accounts =
@@ -118,18 +120,33 @@ async function ConsolidatedAccounts({ companyIds, scopeLabel }: { companyIds: st
   );
 }
 
-export default async function ContasBancariasPage() {
+interface Props {
+  searchParams: Promise<{ page?: string }>;
+}
+
+export default async function ContasBancariasPage({ searchParams }: Props) {
+  const page = lerPagina((await searchParams).page);
   const scope = await getActiveScope();
   if (scope.type !== "company") {
     const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
     return <ConsolidatedAccounts companyIds={companyIds} scopeLabel={scopeLabel} />;
   }
 
-  const accounts = await prisma.account.findMany({
-    where: { companyId: scope.companyId },
-    orderBy: { createdAt: "asc" },
-  });
+  const where = { companyId: scope.companyId };
+  const [total, accounts] = await Promise.all([
+    prisma.account.count({ where }),
+    prisma.account.findMany({
+      where,
+      // Ordem de cadastro, com o id desempatando contas criadas no mesmo
+      // instante pela importação.
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      skip: (page - 1) * POR_PAGINA,
+      take: POR_PAGINA,
+    }),
+  ]);
 
+  // Um saldo é uma consulta por conta. Paginar não é só conforto de leitura
+  // aqui: limita quantas dessas consultas a tela dispara de uma vez.
   const balances = await Promise.all(accounts.map((a) => getAccountBalance(a.id)));
 
   return (
@@ -144,7 +161,7 @@ export default async function ContasBancariasPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Contas cadastradas</CardTitle>
+          <CardTitle>{total} conta(s) cadastrada(s)</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
@@ -187,6 +204,14 @@ export default async function ContasBancariasPage() {
               ))}
             </TableBody>
           </Table>
+          <Pagination
+            total={total}
+            page={page}
+            pageSize={POR_PAGINA}
+            basePath="/contas-bancarias"
+            params={{}}
+            rotulo="contas"
+          />
         </CardContent>
       </Card>
     </div>

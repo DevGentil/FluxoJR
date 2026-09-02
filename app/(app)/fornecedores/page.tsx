@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SupplierFormDialog } from "./supplier-form-dialog";
 import { FiltrosTabela } from "@/components/filtros-tabela";
+import { Pagination } from "@/components/pagination";
+import { POR_PAGINA, lerPagina } from "@/lib/paginacao";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { DeleteButton } from "@/components/delete-button";
 import { deleteSupplier } from "./actions";
@@ -104,7 +106,7 @@ async function ConsolidatedSuppliers({ companyIds, scopeLabel }: { companyIds: s
 }
 
 interface Props {
-  searchParams: Promise<{ q?: string; doc?: string; contato?: string }>;
+  searchParams: Promise<{ q?: string; doc?: string; contato?: string; page?: string }>;
 }
 
 export default async function FornecedoresPage({ searchParams }: Props) {
@@ -132,7 +134,17 @@ export default async function FornecedoresPage({ searchParams }: Props) {
   if (params.doc === "__sem__") where.document = null;
   if (params.contato === "__sem__") where.AND = [{ phone: null }, { email: null }];
 
-  const suppliers = await prisma.supplier.findMany({ where, orderBy: { name: "asc" } });
+  const page = lerPagina(params.page);
+
+  const [total, suppliers] = await Promise.all([
+    prisma.supplier.count({ where }),
+    prisma.supplier.findMany({
+      where,
+      orderBy: { name: "asc" },
+      skip: (page - 1) * POR_PAGINA,
+      take: POR_PAGINA,
+    }),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -170,7 +182,7 @@ export default async function FornecedoresPage({ searchParams }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle>{suppliers.length} fornecedor(es)</CardTitle>
+          <CardTitle>{total} fornecedor(es)</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
@@ -210,6 +222,14 @@ export default async function FornecedoresPage({ searchParams }: Props) {
               ))}
             </TableBody>
           </Table>
+          <Pagination
+            total={total}
+            page={page}
+            pageSize={POR_PAGINA}
+            basePath="/fornecedores"
+            params={params}
+            rotulo="fornecedores"
+          />
         </CardContent>
       </Card>
     </div>

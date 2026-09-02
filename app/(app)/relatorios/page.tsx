@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { formatCurrency, formatDate, formatBytes } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Pagination } from "@/components/pagination";
+import { POR_PAGINA, lerPagina } from "@/lib/paginacao";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
@@ -26,6 +28,8 @@ interface Props {
     sdir?: string;
     csort?: string;
     cdir?: string;
+    /** Página da lista de DREs realizados. */
+    page?: string;
   }>;
 }
 
@@ -278,16 +282,34 @@ function CompanyComparisonTable({ rows, sort }: { rows: ReportRow[]; sort: Sort<
  * para um mês específico, guardados como referência ao lado do DRE que o
  * sistema calcula automaticamente. Só existe no escopo de uma empresa —
  * cada arquivo pertence a uma unidade específica. */
-async function DreReportsSection({ companyId }: { companyId: string }) {
-  const reports = await prisma.dreReport.findMany({
-    where: { companyId },
-    orderBy: { competencia: "desc" },
-  });
+async function DreReportsSection({
+  companyId,
+  page,
+  params,
+}: {
+  companyId: string;
+  page: number;
+  /** O resto da URL — período e ordenação das outras tabelas da tela.
+   * Sem isso, virar a página dos DREs jogaria o relatório inteiro de volta
+   * para o período padrão. */
+  params: Record<string, string | undefined>;
+}) {
+  const where = { companyId };
+  const [total, reports] = await Promise.all([
+    prisma.dreReport.count({ where }),
+    prisma.dreReport.findMany({
+      where,
+      // Competência desce; o id desempata dois arquivos do mesmo mês.
+      orderBy: [{ competencia: "desc" }, { id: "asc" }],
+      skip: (page - 1) * POR_PAGINA,
+      take: POR_PAGINA,
+    }),
+  ]);
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>DREs realizados</CardTitle>
+        <CardTitle>{total} DRE(s) realizado(s)</CardTitle>
         <DreReportFormDialog />
       </CardHeader>
       <CardContent>
@@ -337,6 +359,14 @@ async function DreReportsSection({ companyId }: { companyId: string }) {
             ))}
           </TableBody>
         </Table>
+        <Pagination
+          total={total}
+          page={page}
+          pageSize={POR_PAGINA}
+          basePath="/relatorios"
+          params={params}
+          rotulo="DREs"
+        />
       </CardContent>
     </Card>
   );
@@ -574,7 +604,9 @@ export default async function RelatoriosPage({ searchParams }: Props) {
             />
           </div>
 
-          {scope.type === "company" && <DreReportsSection companyId={scope.companyId} />}
+          {scope.type === "company" && (
+            <DreReportsSection companyId={scope.companyId} page={lerPagina(params.page)} params={params} />
+          )}
         </>
       )}
     </div>

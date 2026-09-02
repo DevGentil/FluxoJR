@@ -13,6 +13,8 @@ import { DeleteButton } from "@/components/delete-button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { deleteScheduledEntry } from "./actions";
 import { FiltrosTabela } from "@/components/filtros-tabela";
+import { Pagination } from "@/components/pagination";
+import { POR_PAGINA, lerPagina } from "@/lib/paginacao";
 import { accessFor } from "@/lib/access";
 import { can } from "@/lib/permissions";
 import { parseDateOnly, startOfDay } from "@/lib/date-only";
@@ -41,7 +43,21 @@ interface FiltroEntradas {
   supplierId?: string;
   de?: string;
   ate?: string;
+  /** Uma página por aba. As duas listas dividem o mesmo endereço, então um
+   * `page` só faria A Receber pular junto com A Pagar — e a pessoa veria a
+   * página trocar numa tabela que ela nem estava olhando. */
+  pp?: string;
+  pr?: string;
+  /** Qual aba abrir. A navegação entre páginas recarrega a tela, e sem isso
+   * ela voltaria sempre para A Pagar. */
+  aba?: string;
 }
+
+/** Cada aba carrega o próprio parâmetro de página e o próprio nome de aba. */
+const ABA = {
+  PAYABLE: { paramName: "pp", valor: "payable" },
+  RECEIVABLE: { paramName: "pr", valor: "receivable" },
+} as const;
 
 async function EntriesTable({
   companyId,
@@ -78,7 +94,11 @@ async function EntriesTable({
     };
   }
 
-  const [entries, accounts, categories, suppliers] = await Promise.all([
+  const { paramName, valor: aba } = ABA[type];
+  const page = lerPagina(filtro[paramName]);
+
+  const [total, entries, accounts, categories, suppliers] = await Promise.all([
+    prisma.scheduledEntry.count({ where }),
     prisma.scheduledEntry.findMany({
       where,
       include: {
@@ -88,7 +108,12 @@ async function EntriesTable({
         // Sem o `content`: a tela usa só o nome e o tamanho.
         documents: { select: { id: true, fileName: true, size: true }, orderBy: { createdAt: "asc" } },
       },
-      orderBy: { dueDate: "asc" },
+      // Vencimento e o id juntos: só a data empata entre lançamentos do
+      // mesmo dia, e empate sem desempate faz a mesma linha aparecer em duas
+      // páginas — ou em nenhuma.
+      orderBy: [{ dueDate: "asc" }, { id: "asc" }],
+      skip: (page - 1) * POR_PAGINA,
+      take: POR_PAGINA,
     }),
     prisma.account.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
     prisma.category.findMany({ where: { companyId }, orderBy: { name: "asc" } }),
@@ -102,7 +127,7 @@ async function EntriesTable({
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>{entries.length} lançamentos</CardTitle>
+        <CardTitle>{total} lançamentos</CardTitle>
         <ScheduledFormDialog
           accounts={accountOptions}
           categories={categoryOptions}
@@ -130,7 +155,7 @@ async function EntriesTable({
             {entries.length === 0 && (
               <TableRow>
                 <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                  Nenhum lançamento cadastrado ainda.
+                  Nenhum lançamento com esse filtro.
                 </TableCell>
               </TableRow>
             )}
@@ -186,6 +211,15 @@ async function EntriesTable({
             ))}
           </TableBody>
         </Table>
+        <Pagination
+          total={total}
+          page={page}
+          pageSize={POR_PAGINA}
+          basePath="/contas-a-pagar-receber"
+          params={{ ...(filtro as Record<string, string | undefined>), aba }}
+          paramName={paramName}
+          rotulo="lançamentos"
+        />
       </CardContent>
     </Card>
   );
@@ -341,7 +375,7 @@ async function ConsolidatedEntries({ companyIds, scopeLabel }: { companyIds: str
 }
 
 interface Props {
-  searchParams: Promise<FiltroEntradas & { aba?: string }>;
+  searchParams: Promise<FiltroEntradas>;
 }
 
 export default async function ContasAPagarReceberPage({ searchParams }: Props) {
@@ -407,7 +441,7 @@ export default async function ContasAPagarReceberPage({ searchParams }: Props) {
         ]}
       />
 
-      <Tabs defaultValue="payable">
+      <Tabs defaultValue={params.aba === "receivable" ? "receivable" : "payable"}>
         <TabsList>
           <TabsTrigger value="payable">A Pagar</TabsTrigger>
           <TabsTrigger value="receivable">A Receber</TabsTrigger>

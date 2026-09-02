@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import { contaAtual } from "@/lib/access";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
 import { formatDate } from "@/lib/format";
@@ -10,6 +11,8 @@ import { DeleteButton } from "@/components/delete-button";
 import { ShieldCheck, Users, Building2, KeyRound } from "lucide-react";
 import { ContaFormDialog } from "./conta-form-dialog";
 import { SenhaDialog } from "./senha-dialog";
+import { Pagination } from "@/components/pagination";
+import { POR_PAGINA, lerPagina } from "@/lib/paginacao";
 import { desativarConta } from "./actions";
 
 /** Contas de acesso ao sistema.
@@ -17,7 +20,12 @@ import { desativarConta } from "./actions";
  * Quem enxerga esta tela: holding e gestor. O gestor só vê as contas das
  * unidades em que ele é gestor — listar uma conta que ele não pode editar
  * só produziria um erro depois do clique. */
-export default async function ContasPage() {
+interface Props {
+  searchParams: Promise<{ page?: string }>;
+}
+
+export default async function ContasPage({ searchParams }: Props) {
+  const page = lerPagina((await searchParams).page);
   const conta = await contaAtual();
   if (!conta) return null;
 
@@ -36,16 +44,27 @@ export default async function ContasPage() {
     );
   }
 
-  const [contas, empresas] = await Promise.all([
+  const where: Prisma.AppUserWhereInput = unidadesQueAdministra
+    ? { holding: false, access: { some: { companyId: { in: unidadesQueAdministra } } } }
+    : {};
+
+  const [total, ativas, pendentes, contas, empresas] = await Promise.all([
+    // Os três números do topo são do cadastro inteiro, não da página: um
+    // painel que dissesse "12 contas ativas" só porque a página mostra 12
+    // seria pior do que não ter painel.
+    prisma.appUser.count({ where }),
+    prisma.appUser.count({ where: { ...where, active: true } }),
+    prisma.appUser.count({ where: { ...where, active: true, senhaProvisoria: true } }),
     prisma.appUser.findMany({
-      where: unidadesQueAdministra
-        ? { holding: false, access: { some: { companyId: { in: unidadesQueAdministra } } } }
-        : {},
+      where,
       include: {
         access: { include: { company: { select: { id: true, name: true } } } },
         createdBy: { select: { name: true } },
       },
-      orderBy: [{ active: "desc" }, { name: "asc" }],
+      // Ativas primeiro, nome depois; o id desempata homônimos.
+      orderBy: [{ active: "desc" }, { name: "asc" }, { id: "asc" }],
+      skip: (page - 1) * POR_PAGINA,
+      take: POR_PAGINA,
     }),
     prisma.company.findMany({
       where: unidadesQueAdministra ? { id: { in: unidadesQueAdministra } } : {},
@@ -54,8 +73,6 @@ export default async function ContasPage() {
     }),
   ]);
 
-  const ativas = contas.filter((c) => c.active).length;
-  const pendentes = contas.filter((c) => c.active && c.senhaProvisoria).length;
 
   const empresaOptions = empresas.map((e) => ({ id: e.id, name: e.name }));
 
@@ -89,7 +106,7 @@ export default async function ContasPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>{contas.length} conta(s)</CardTitle>
+            <CardTitle>{total} conta(s)</CardTitle>
             <CardDescription>
               Contas desativadas não entram no sistema, mas ficam na lista para preservar o registro de
               quem criou o quê.
@@ -187,6 +204,14 @@ export default async function ContasPage() {
               ))}
             </TableBody>
           </Table>
+          <Pagination
+            total={total}
+            page={page}
+            pageSize={POR_PAGINA}
+            basePath="/contas"
+            params={{}}
+            rotulo="contas"
+          />
         </CardContent>
       </Card>
     </div>

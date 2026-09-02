@@ -10,6 +10,8 @@ import { AnexosPopover } from "@/components/anexos-popover";
 import { deleteCashClosing } from "./actions";
 import { AcoesFechamento } from "./acoes-fechamento";
 import { FiltrosTabela } from "@/components/filtros-tabela";
+import { Pagination } from "@/components/pagination";
+import { POR_PAGINA, lerPagina, paginaDoIndice } from "@/lib/paginacao";
 import { formatCurrency } from "@/lib/format";
 import { accessFor } from "@/lib/access";
 import { can } from "@/lib/permissions";
@@ -24,6 +26,84 @@ function toLines(lines: { id: string; type: string; label: string; amount: unkno
     .map((l) => ({ id: l.id, label: l.label, amount: Number(l.amount) }));
 }
 
+const INCLUDE_FECHAMENTO = {
+  lines: true,
+  account: true,
+  // Sem o `content`: a tela usa so o nome e o tamanho, e trazer o binario de
+  // cada anexo carregaria megabytes para desenhar um nome de arquivo.
+  documents: { select: { id: true, fileName: true, size: true }, orderBy: { createdAt: "asc" } },
+} satisfies Prisma.CashClosingInclude;
+
+type FechamentoCompleto = Prisma.CashClosingGetPayload<{ include: typeof INCLUDE_FECHAMENTO }>;
+
+/** Data mais recente primeiro, id como desempate. Sem o desempate, dois
+ * fechamentos do mesmo dia trocam de lugar entre uma consulta e outra — e aí
+ * um deles aparece em duas páginas e o outro em nenhuma. */
+const ORDEM: Prisma.CashClosingOrderByWithRelationInput[] = [{ date: "desc" }, { id: "asc" }];
+
+function temDiferenca(closing: FechamentoCompleto) {
+  const sangrias = toLines(closing.lines, "SANGRIA").reduce((a, l) => a + l.amount, 0);
+  const pagamentos = toLines(closing.lines, "PAGAMENTO").reduce((a, l) => a + l.amount, 0);
+  return Math.abs(Number(closing.countedCash) - (sangrias - pagamentos)) > 0.004;
+}
+
+/** Em que página cai o fechamento `id`, dentro deste filtro e desta ordem.
+ *
+ * Duas contagens em vez de trazer a lista inteira só para achar um índice: o
+ * "vem antes" da ordem (data desc, id asc) vira exatamente este OR. */
+async function paginaDoFechamento(where: Prisma.CashClosingWhereInput, id: string) {
+  const alvo = await prisma.cashClosing.findFirst({ where: { ...where, id }, select: { date: true } });
+  if (!alvo) return null;
+  const anteriores = await prisma.cashClosing.count({
+    where: {
+      ...where,
+      OR: [{ date: { gt: alvo.date } }, { date: alvo.date, id: { lt: id } }],
+    },
+  });
+  return paginaDoIndice(anteriores);
+}
+
+/** A página pedida, o total que bate com o filtro e a página realmente
+ * aberta — que nem sempre é a que veio na URL. */
+async function carregarFechamentos(
+  where: Prisma.CashClosingWhereInput,
+  params: { page?: string; ver?: string; diferenca?: string },
+): Promise<{ visiveis: FechamentoCompleto[]; total: number; page: number }> {
+  // "Só com diferença" é contado − (sangrias − pagamentos): depende das
+  // linhas, que só existem depois de trazer o fechamento. Reproduzir a conta
+  // em SQL exigiria uma view só para um filtro pontual — então este é o único
+  // caminho que ainda corta em memória, e por isso o único que traz a lista
+  // inteira do filtro antes de cortar.
+  if (params.diferenca === "1") {
+    const todos = (
+      await prisma.cashClosing.findMany({ where, include: INCLUDE_FECHAMENTO, orderBy: ORDEM })
+    ).filter(temDiferenca);
+    const indice = params.ver ? todos.findIndex((c) => c.id === params.ver) : -1;
+    const page = params.page === undefined && indice >= 0 ? paginaDoIndice(indice) : lerPagina(params.page);
+    const inicio = (page - 1) * POR_PAGINA;
+    return { visiveis: todos.slice(inicio, inicio + POR_PAGINA), total: todos.length, page };
+  }
+
+  // O atalho que vem de Transações aponta para um fechamento, não para uma
+  // página. Sem procurar onde ele caiu, o atalho abriria a página 1 e o
+  // fechamento pedido ficaria três páginas adiante, sem pista de que existe.
+  const paginaDoAtalho =
+    params.page === undefined && params.ver ? await paginaDoFechamento(where, params.ver) : null;
+  const page = paginaDoAtalho ?? lerPagina(params.page);
+
+  const [total, visiveis] = await Promise.all([
+    prisma.cashClosing.count({ where }),
+    prisma.cashClosing.findMany({
+      where,
+      include: INCLUDE_FECHAMENTO,
+      orderBy: ORDEM,
+      skip: (page - 1) * POR_PAGINA,
+      take: POR_PAGINA,
+    }),
+  ]);
+  return { visiveis, total, page };
+}
+
 interface Props {
   /** `?ver=<id>` abre o detalhe daquele fechamento direto — e por onde o
    * atalho vindo de Transacoes chega. */
@@ -34,6 +114,7 @@ interface Props {
     status?: string;
     accountId?: string;
     diferenca?: string;
+    page?: string;
   }>;
 }
 
@@ -56,36 +137,13 @@ export default async function FechamentoCaixaPage({ searchParams }: Props) {
     if (params.status === "PENDENTE" || params.status === "APROVADO") where.status = params.status;
     if (params.accountId) where.accountId = params.accountId;
 
-    const [closings, accounts, acesso] = await Promise.all([
-      prisma.cashClosing.findMany({
-        where,
-        include: {
-          lines: true,
-          account: true,
-          // Sem o `content`: a tela usa so o nome e o tamanho, e trazer o
-          // binario de cada anexo carregaria megabytes para desenhar um
-          // nome de arquivo.
-          documents: { select: { id: true, fileName: true, size: true }, orderBy: { createdAt: "asc" } },
-        },
-        orderBy: { date: "desc" },
-      }),
+    const [{ visiveis, total, page }, accounts, acesso] = await Promise.all([
+      carregarFechamentos(where, params),
       prisma.account.findMany({ where: { companyId: scope.companyId }, orderBy: { name: "asc" } }),
       accessFor(scope.companyId),
     ]);
     const accountOptions = accounts.map((a) => ({ id: a.id, name: a.name }));
     const podeAprovar = can(acesso, "fechamento-caixa", "aprovar");
-
-    // "Só com diferença" fica em memória de propósito: a diferença é
-    // contado − (sangrias − pagamentos), e as linhas já vieram na consulta.
-    // Reproduzir isso em SQL exigiria uma view só para um filtro pontual.
-    const visiveis =
-      params.diferenca === "1"
-        ? closings.filter((c) => {
-            const s = toLines(c.lines, "SANGRIA").reduce((a, l) => a + l.amount, 0);
-            const p = toLines(c.lines, "PAGAMENTO").reduce((a, l) => a + l.amount, 0);
-            return Math.abs(Number(c.countedCash) - (s - p)) > 0.004;
-          })
-        : closings;
 
     return (
       <div className="space-y-6">
@@ -134,7 +192,7 @@ export default async function FechamentoCaixaPage({ searchParams }: Props) {
 
         <Card>
           <CardHeader>
-            <CardTitle>{visiveis.length} fechamento(s)</CardTitle>
+            <CardTitle>{total} fechamento(s)</CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
@@ -216,6 +274,17 @@ export default async function FechamentoCaixaPage({ searchParams }: Props) {
                 })}
               </TableBody>
             </Table>
+            <Pagination
+              total={total}
+              page={page}
+              pageSize={POR_PAGINA}
+              basePath="/fechamento-caixa"
+              // Sem o `ver`: ele é o atalho que trouxe a pessoa até aqui, e
+              // levá-lo adiante reabriria o detalhe toda vez que ela
+              // voltasse para esta página.
+              params={{ ...params, ver: undefined }}
+              rotulo="fechamentos"
+            />
           </CardContent>
         </Card>
       </div>

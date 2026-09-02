@@ -11,15 +11,27 @@ interface Props {
   basePath: string;
   /** Filtros atuais, preservados na troca de página. */
   params: Record<string, string | undefined>;
+  /** Nome do parâmetro de página na URL. Só precisa mudar quando a mesma
+   * tela pagina duas listas ao mesmo tempo — A Pagar e A Receber, por
+   * exemplo, que dividem o endereço e não podem dividir a página. */
+  paramName?: string;
+  /** Nome do que está sendo contado, para a linha "1–30 de 412 lançamentos".
+   * Sem ele a contagem é só um número solto. */
+  rotulo?: string;
 }
 
-function hrefFor(basePath: string, params: Record<string, string | undefined>, page: number) {
+function hrefFor(
+  basePath: string,
+  params: Record<string, string | undefined>,
+  page: number,
+  paramName: string,
+) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value) query.set(key, value);
+    if (key !== paramName && value) query.set(key, value);
   }
   // Página 1 não precisa aparecer na URL — mantém o endereço limpo.
-  if (page > 1) query.set("page", String(page));
+  if (page > 1) query.set(paramName, String(page));
   const qs = query.toString();
   return qs ? `${basePath}?${qs}` : basePath;
 }
@@ -27,7 +39,15 @@ function hrefFor(basePath: string, params: Record<string, string | undefined>, p
 /** Navegação entre páginas do servidor. Links de verdade (não botões com
  * estado), então a página atual fica no endereço: dá para compartilhar,
  * recarregar e voltar pelo botão do navegador sem perder o lugar. */
-export function Pagination({ total, page, pageSize, basePath, params }: Props) {
+export function Pagination({
+  total,
+  page,
+  pageSize,
+  basePath,
+  params,
+  paramName = "page",
+  rotulo,
+}: Props) {
   const lastPage = Math.max(1, Math.ceil(total / pageSize));
   if (total <= pageSize) return null;
 
@@ -38,6 +58,7 @@ export function Pagination({ total, page, pageSize, basePath, params }: Props) {
     <div className="flex items-center justify-between gap-4 pt-3">
       <p className="text-sm text-muted-foreground tabular-nums">
         {first}–{last} de {total}
+        {rotulo ? ` ${rotulo}` : ""}
       </p>
       <div className="flex items-center gap-2">
         {page > 1 ? (
@@ -45,7 +66,7 @@ export function Pagination({ total, page, pageSize, basePath, params }: Props) {
             size="sm"
             variant="outline"
             nativeButton={false}
-            render={<Link href={hrefFor(basePath, params, page - 1)} />}
+            render={<Link href={hrefFor(basePath, params, page - 1, paramName)} />}
           >
             <ChevronLeft className="size-4" />
             Anterior
@@ -64,7 +85,7 @@ export function Pagination({ total, page, pageSize, basePath, params }: Props) {
             size="sm"
             variant="outline"
             nativeButton={false}
-            render={<Link href={hrefFor(basePath, params, page + 1)} />}
+            render={<Link href={hrefFor(basePath, params, page + 1, paramName)} />}
           >
             Próxima
             <ChevronRight className="size-4" />

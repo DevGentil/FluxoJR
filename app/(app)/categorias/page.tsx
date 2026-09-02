@@ -5,6 +5,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { CategoryFormDialog } from "./category-form-dialog";
 import { FiltrosTabela } from "@/components/filtros-tabela";
+import { Pagination } from "@/components/pagination";
+import { POR_PAGINA, lerPagina } from "@/lib/paginacao";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { DeleteButton } from "@/components/delete-button";
 import { deleteCategory } from "./actions";
@@ -109,7 +111,7 @@ async function ConsolidatedCategories({ companyIds, scopeLabel }: { companyIds: 
 }
 
 interface Props {
-  searchParams: Promise<{ q?: string; tipo?: string; centro?: string }>;
+  searchParams: Promise<{ q?: string; tipo?: string; centro?: string; page?: string }>;
 }
 
 export default async function CategoriasPage({ searchParams }: Props) {
@@ -128,8 +130,19 @@ export default async function CategoriasPage({ searchParams }: Props) {
   if (params.centro === "__sem__") where.costCenter = null;
   else if (params.centro) where.costCenter = params.centro;
 
-  const [categories, centros] = await Promise.all([
-    prisma.category.findMany({ where, orderBy: [{ type: "asc" }, { name: "asc" }] }),
+  const page = lerPagina(params.page);
+
+  // O total vem de uma contagem no banco, não do tamanho da página: o título
+  // dizia "N categoria(s)" e passaria a dizer 30 em qualquer cadastro maior
+  // que isso — um número que descreve o corte, não o cadastro.
+  const [total, categories, centros] = await Promise.all([
+    prisma.category.count({ where }),
+    prisma.category.findMany({
+      where,
+      orderBy: [{ type: "asc" }, { name: "asc" }],
+      skip: (page - 1) * POR_PAGINA,
+      take: POR_PAGINA,
+    }),
     prisma.category.findMany({
       where: { companyId: scope.companyId, costCenter: { not: null } },
       select: { costCenter: true },
@@ -178,7 +191,7 @@ export default async function CategoriasPage({ searchParams }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle>{categories.length} categoria(s)</CardTitle>
+          <CardTitle>{total} categoria(s)</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
@@ -225,6 +238,14 @@ export default async function CategoriasPage({ searchParams }: Props) {
               ))}
             </TableBody>
           </Table>
+          <Pagination
+            total={total}
+            page={page}
+            pageSize={POR_PAGINA}
+            basePath="/categorias"
+            params={params}
+            rotulo="categorias"
+          />
         </CardContent>
       </Card>
     </div>

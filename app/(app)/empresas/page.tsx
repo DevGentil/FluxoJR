@@ -13,18 +13,34 @@ import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { deleteGroup, deleteCompany } from "./actions";
 import { deleteDocument } from "./documents-actions";
 import { Download } from "lucide-react";
+import { Pagination } from "@/components/pagination";
+import { POR_PAGINA, lerPagina } from "@/lib/paginacao";
 
-async function DocumentsSection({ scope }: { scope: Awaited<ReturnType<typeof getActiveScope>> }) {
+async function DocumentsSection({
+  scope,
+  page,
+}: {
+  scope: Awaited<ReturnType<typeof getActiveScope>>;
+  page: number;
+}) {
   if (scope.type === "company") {
-    const documents = await prisma.document.findMany({
-      where: { companyId: scope.companyId },
-      orderBy: { createdAt: "desc" },
-    });
+    const where = { companyId: scope.companyId };
+    const [total, documents] = await Promise.all([
+      prisma.document.count({ where }),
+      prisma.document.findMany({
+        where,
+        // Mais recente primeiro, id desempatando: dois arquivos enviados no
+        // mesmo segundo trocariam de lugar entre uma página e outra.
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        skip: (page - 1) * POR_PAGINA,
+        take: POR_PAGINA,
+      }),
+    ]);
 
     return (
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Documentos</CardTitle>
+          <CardTitle>{total} documento(s)</CardTitle>
           <DocumentFormDialog />
         </CardHeader>
         <CardContent>
@@ -72,6 +88,14 @@ async function DocumentsSection({ scope }: { scope: Awaited<ReturnType<typeof ge
               ))}
             </TableBody>
           </Table>
+          <Pagination
+            total={total}
+            page={page}
+            pageSize={POR_PAGINA}
+            basePath="/empresas"
+            params={{}}
+            rotulo="documentos"
+          />
         </CardContent>
       </Card>
     );
@@ -153,7 +177,12 @@ async function DocumentsSection({ scope }: { scope: Awaited<ReturnType<typeof ge
   );
 }
 
-export default async function EmpresasPage() {
+interface Props {
+  searchParams: Promise<{ page?: string }>;
+}
+
+export default async function EmpresasPage({ searchParams }: Props) {
+  const page = lerPagina((await searchParams).page);
   const scope = await getActiveScope();
   const scopeLabel = await getScopeLabel(scope);
 
@@ -307,7 +336,7 @@ export default async function EmpresasPage() {
         </CardContent>
       </Card>
 
-      <DocumentsSection scope={scope} />
+      <DocumentsSection scope={scope} page={page} />
     </div>
   );
 }
