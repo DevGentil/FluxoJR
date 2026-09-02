@@ -13,6 +13,8 @@ import { DeleteButton } from "@/components/delete-button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { deleteScheduledEntry } from "./actions";
 import { FiltrosTabela } from "@/components/filtros-tabela";
+import { accessFor } from "@/lib/access";
+import { can } from "@/lib/permissions";
 import { parseDateOnly, startOfDay } from "@/lib/date-only";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
@@ -50,6 +52,9 @@ async function EntriesTable({
   type: "PAYABLE" | "RECEIVABLE";
   filtro: FiltroEntradas;
 }) {
+  // Quem nao pode baixar nao ve o botao. A action recusa de qualquer forma
+  // — isto e a metade da tela, para nao oferecer o que vai dar erro.
+  const podeBaixar = can(await accessFor(companyId), "contas-a-pagar-receber", "aprovar");
   // Tudo no banco: a lista cresce todo mes, e filtrar em memoria depois de
   // buscar tudo para de funcionar exatamente quando o filtro passa a ser
   // necessario.
@@ -149,7 +154,7 @@ async function EntriesTable({
                 <TableCell>
                   <div className="flex justify-end gap-1">
                     <AnexosPopover anexos={entry.documents} titulo={entry.description} />
-                    {entry.status === "PENDING" && (
+                    {entry.status === "PENDING" && podeBaixar && (
                       <MarkPaidDialog
                         entryId={entry.id}
                         type={type}

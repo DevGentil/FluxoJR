@@ -130,11 +130,19 @@ describe("Gestor", () => {
     expect(can(GESTOR, "erros")).toBe(false);
   });
 
-  it("faz tudo que o Financeiro faz", () => {
+  it("faz tudo que o Financeiro faz, MENOS dar baixa", () => {
+    // A excecao e deliberada: baixar conta a pagar tira dinheiro da conta,
+    // e ficou restrito ao financeiro e a holding. O Gestor cadastra e
+    // edita a previsao, mas nao a liquida.
     for (const m of MODULES) {
-      if (can(FINANCEIRO, m, "aprovar")) expect(can(GESTOR, m, "aprovar")).toBe(true);
-      if (can(FINANCEIRO, m, "editar")) expect(can(GESTOR, m, "editar")).toBe(true);
+      if (m === "contas-a-pagar-receber") continue;
+      if (can(FINANCEIRO, m, "aprovar")) expect(can(GESTOR, m, "aprovar"), m).toBe(true);
+      if (can(FINANCEIRO, m, "editar")) expect(can(GESTOR, m, "editar"), m).toBe(true);
     }
+
+    expect(can(GESTOR, "contas-a-pagar-receber", "editar")).toBe(true);
+    expect(can(GESTOR, "contas-a-pagar-receber", "aprovar")).toBe(false);
+    expect(can(FINANCEIRO, "contas-a-pagar-receber", "aprovar")).toBe(true);
   });
 
   it("só a holding enxerga os erros do sistema", () => {
@@ -142,12 +150,13 @@ describe("Gestor", () => {
     for (const role of ROLES) expect(can(conta(role), "erros")).toBe(false);
   });
 
-  it("difere do Financeiro em Operação, contas e auditoria", () => {
-    // As três coisas que cabem a quem responde pela unidade e não a quem
-    // movimenta o dinheiro dela: a rentabilidade, quem tem acesso, e quem
-    // alterou o quê.
+  it("difere do Financeiro em quatro modulos, e cada um por um motivo", () => {
+    // Tres cabem a quem responde pela unidade e nao a quem movimenta o
+    // dinheiro dela: a rentabilidade, quem tem acesso, e quem alterou o
+    // que. O quarto vai na direcao contraria — dar baixa e do financeiro,
+    // nao de quem gere a unidade.
     const diferencas = MODULES.filter((m) => levelFor(GESTOR, m) !== levelFor(FINANCEIRO, m));
-    expect(diferencas).toEqual(["operacao", "contas", "auditoria"]);
+    expect(diferencas).toEqual(["contas-a-pagar-receber", "operacao", "contas", "auditoria"]);
   });
 
   it("enxerga a auditoria da unidade, mas não pode alterá-la", () => {
@@ -178,7 +187,7 @@ describe("a matriz inteira", () => {
     for (const role of ROLES) expect(can(conta(role), "dashboard")).toBe(true);
   });
 
-  it("aprovação existe em dois módulos, e só para quem confere", () => {
+  it("aprovação existe só onde move dinheiro, e só para quem confere", () => {
     // Esta trava existe para que dar "aprovar" a um módulo novo seja uma
     // decisão consciente, e não um efeito colateral de copiar uma linha da
     // matriz. Ela pegou a inclusão do fechamento de caixa — e o que se
@@ -186,7 +195,8 @@ describe("a matriz inteira", () => {
     const esperado: Record<Role, Module[]> = {
       OPERACIONAL: [],
       // O Operacional lança o dia; quem confere e libera é o financeiro.
-      FINANCEIRO: ["fechamento-caixa", "repasses-medicos"],
+      // Dar baixa é só do financeiro — o Gestor não aparece aqui.
+      FINANCEIRO: ["contas-a-pagar-receber", "fechamento-caixa", "repasses-medicos"],
       GESTOR: ["fechamento-caixa", "repasses-medicos"],
     };
 

@@ -8,6 +8,8 @@ import { requireUser } from "@/lib/auth";
 import { parseDateOnly, todayDateOnly } from "@/lib/date-only";
 import { runMutation, type ActionState } from "@/lib/actions-utils";
 import { lerAnexos } from "@/lib/anexos";
+import { auditar } from "@/lib/audit";
+import { formatCurrency } from "@/lib/format";
 
 const scheduledSchema = z.object({
   type: z.enum(["PAYABLE", "RECEIVABLE"]),
@@ -185,7 +187,10 @@ export async function markAsPaid(id: string, _prev: ActionState, formData: FormD
 
   return runMutation(async () => {
     await requireUser();
-    const companyId = await getActiveCompanyId("contas-a-pagar-receber");
+    // "aprovar", e não "editar": dar baixa é o ato que move dinheiro de
+    // verdade — vira transação e entra no resultado. Cadastrar a previsão
+    // continua sendo "editar"; só o financeiro e a holding baixam.
+    const companyId = await getActiveCompanyId("contas-a-pagar-receber", "aprovar");
 
     const [entry, account] = await Promise.all([
       prisma.scheduledEntry.findFirst({ where: { id, companyId } }),
@@ -235,8 +240,25 @@ export async function markAsPaid(id: string, _prev: ActionState, formData: FormD
       }
     });
 
+    // A baixa vira transação, e transação alimenta relatório e balanço. Sem
+    // revalidar os cinco, o número mudava no banco e a tela continuava
+    // mostrando o antigo até alguém recarregar na mão.
     revalidatePath("/contas-a-pagar-receber");
     revalidatePath("/transacoes");
     revalidatePath("/dashboard");
+    revalidatePath("/relatorios");
+    revalidatePath("/balanco");
+
+    await auditar({
+      companyId,
+      module: "contas-a-pagar-receber",
+      acao: "pagou",
+      entidade: entry.description,
+      resumo:
+        (entry.type === "RECEIVABLE" ? "recebimento de " : "pagamento de ") +
+        formatCurrency(Number(entry.amount)) +
+        " baixado",
+      registroId: id,
+    });
   });
 }

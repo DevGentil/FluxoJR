@@ -35,6 +35,7 @@ import { moduleOfPath } from "@/lib/permissions";
 import { contaAtual, companyIdsVisiveis, modulosVisiveis } from "@/lib/access";
 import { createDailyEntry } from "@/app/(app)/repasses-medicos/daily-entries-actions";
 import { createTransaction } from "@/app/(app)/transacoes/actions";
+import { markAsPaid } from "@/app/(app)/contas-a-pagar-receber/actions";
 import { parseDateOnly } from "@/lib/date-only";
 
 beforeEach(async () => {
@@ -308,5 +309,93 @@ describe("cookie de escopo forjado", () => {
     entrar("auth-holding", laguna.id);
 
     expect(await getActiveScope()).toEqual({ type: "company", companyId: laguna.id });
+  });
+});
+
+describe("quem pode dar baixa numa conta a pagar", () => {
+  async function cenarioBaixa(role: "OPERACIONAL" | "FINANCEIRO" | "GESTOR") {
+    const { contagem, conta } = await cenario();
+    await testPrisma.appUser.create({
+      data: {
+        authId: `auth-${role}`,
+        email: `${role.toLowerCase()}@teste.local`,
+        name: role,
+        senhaProvisoria: false,
+        access: { create: [{ companyId: contagem.id, role }] },
+      },
+    });
+    const entry = await testPrisma.scheduledEntry.create({
+      data: {
+        companyId: contagem.id,
+        type: "PAYABLE",
+        description: "Aluguel",
+        amount: 1000,
+        dueDate: parseDateOnly("2026-09-05"),
+        status: "PENDING",
+      },
+    });
+    entrar(`auth-${role}`, contagem.id);
+    const fd = new FormData();
+    fd.set("accountId", conta.id);
+    return { entry, fd };
+  }
+
+  it("o Financeiro baixa, e a transação nasce", async () => {
+    const { entry, fd } = await cenarioBaixa("FINANCEIRO");
+
+    const r = await markAsPaid(entry.id, undefined, fd);
+
+    expect(r?.error).toBeUndefined();
+    await expect(
+      testPrisma.scheduledEntry.findUniqueOrThrow({ where: { id: entry.id } })
+    ).resolves.toMatchObject({ status: "PAID" });
+    const t = await testPrisma.transaction.findFirstOrThrow();
+    expect(Number(t.amount)).toBe(1000);
+    expect(t.type).toBe("EXPENSE");
+  });
+
+  it("o Gestor NÃO baixa — e nada é gravado", async () => {
+    // Decisão explícita do Davi: baixar tira dinheiro da conta, e isso é do
+    // financeiro. O Gestor segue cadastrando e editando a previsão.
+    const { entry, fd } = await cenarioBaixa("GESTOR");
+
+    const r = await markAsPaid(entry.id, undefined, fd);
+
+    expect(r?.error).toMatch(/aprovar/);
+    await expect(
+      testPrisma.scheduledEntry.findUniqueOrThrow({ where: { id: entry.id } })
+    ).resolves.toMatchObject({ status: "PENDING" });
+    await expect(testPrisma.transaction.count()).resolves.toBe(0);
+  });
+
+  it("o Operacional não chega nem perto", async () => {
+    const { entry, fd } = await cenarioBaixa("OPERACIONAL");
+
+    const r = await markAsPaid(entry.id, undefined, fd);
+
+    expect(r?.error).toBeTruthy();
+    await expect(testPrisma.transaction.count()).resolves.toBe(0);
+  });
+
+  it("a holding baixa em qualquer unidade", async () => {
+    const { contagem, conta } = await cenario();
+    const entry = await testPrisma.scheduledEntry.create({
+      data: {
+        companyId: contagem.id,
+        type: "RECEIVABLE",
+        description: "Convênio",
+        amount: 500,
+        dueDate: parseDateOnly("2026-09-05"),
+        status: "PENDING",
+      },
+    });
+    entrar("auth-holding", contagem.id);
+    const fd = new FormData();
+    fd.set("accountId", conta.id);
+
+    expect((await markAsPaid(entry.id, undefined, fd))?.error).toBeUndefined();
+    const t = await testPrisma.transaction.findFirstOrThrow();
+    // Conta a RECEBER vira entrada; a pagar vira saída.
+    expect(t.type).toBe("INCOME");
   });
 });

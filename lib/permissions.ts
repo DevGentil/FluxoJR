@@ -112,7 +112,10 @@ const MATRIX: Record<Role, Record<Module, Level>> = {
     "repasses-medicos": "aprovar",
     medicos: "editar",
     transacoes: "editar",
-    "contas-a-pagar-receber": "editar",
+    // "aprovar" so aqui: dar baixa e o ato que tira dinheiro da conta, e
+    // ficou restrito ao financeiro e a holding por decisao explicita. O
+    // Gestor continua cadastrando e editando a previsao, mas nao baixa.
+    "contas-a-pagar-receber": "aprovar",
     // "editar" e nao "ver": o arquivo do DRE fechado pelo contador chega ao
     // financeiro, e e ele quem sobe.
     relatorios: "editar",
