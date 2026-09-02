@@ -13,6 +13,8 @@ import { AgingChart } from "./aging-chart";
 import { TrendingUp, TrendingDown, Wallet, AlertTriangle, Bug, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { contaAtual } from "@/lib/access";
+import { SEM_VENCIMENTOS, vencimentosProximos } from "@/lib/vencimentos";
+import type { ScheduledEntry } from "@/lib/generated/prisma/client";
 
 interface CompanyDueSummary {
   companyId: string;
@@ -56,21 +58,57 @@ async function getDueSummaryByCompany(companyIds: string[]): Promise<CompanyDueS
     .sort((a, b) => a.companyName.localeCompare(b.companyName));
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+/** Um dos dois blocos do "a vencer".
+ *
+ * O cabeçalho não é enfeite: as duas listas são ordenadas por vencimento cada
+ * uma, então no meio da lista as datas voltam para trás. Sem uma linha
+ * dizendo que ali começa outra natureza, isso parece defeito. */
+function GrupoVencimentos({
+  titulo,
+  entradas,
+  total,
+  aba,
+}: {
+  titulo: string;
+  entradas: ScheduledEntry[];
+  total: number;
+  aba: "payable" | "receivable";
+}) {
+  if (total === 0) return null;
+  const escondidos = total - entradas.length;
+  const cor = aba === "payable" ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400";
 
-/** Os vencimentos dos próximos 30 dias, para o bloco "a vencer" da visão de
- * uma empresa. Mora fora do componente porque lê o relógio: chamada de
- * dentro do corpo, a leitura tornaria o render impuro. */
-function getUpcomingEntries(companyIds: string[]) {
-  return prisma.scheduledEntry.findMany({
-    where: {
-      companyId: { in: companyIds },
-      status: { in: ["PENDING", "OVERDUE"] },
-      dueDate: { lte: new Date(Date.now() + 30 * DAY_MS) },
-    },
-    orderBy: { dueDate: "asc" },
-    take: 8,
-  });
+  return (
+    <div>
+      <p className="text-muted-foreground px-1 pb-1 text-[11px] font-medium tracking-wide uppercase">
+        {titulo} <span className="tabular-nums">({total})</span>
+      </p>
+      <ul className="divide-y">
+        {entradas.map((entry) => (
+          <li key={entry.id} className="flex items-center justify-between gap-3 py-3">
+            <div className="min-w-0">
+              <p className="truncate font-medium">{entry.description}</p>
+              <p className="text-muted-foreground text-sm">{formatDate(entry.dueDate)}</p>
+            </div>
+            {/* A cor carrega a natureza; o selo em cada linha seria repetir o
+                que o cabeçalho do grupo já disse cinco vezes. */}
+            <span className={`shrink-0 font-medium tabular-nums ${cor}`}>
+              {formatCurrency(Number(entry.amount))}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {escondidos > 0 && (
+        <Link
+          href={`/contas-a-pagar-receber?aba=${aba}`}
+          className="text-muted-foreground hover:text-foreground mt-2 inline-flex items-center gap-1 text-sm transition-colors"
+        >
+          e mais {escondidos} {escondidos === 1 ? "lançamento" : "lançamentos"}
+          <ArrowRight className="size-3.5" />
+        </Link>
+      )}
+    </div>
+  );
 }
 
 export default async function DashboardPage() {
@@ -81,7 +119,7 @@ export default async function DashboardPage() {
   const [balance, monthly, upcoming, dueSummary, aging] = await Promise.all([
     getConsolidatedBalance(companyIds),
     getMonthlySummary(companyIds, 6),
-    isConsolidated || companyIds.length === 0 ? [] : getUpcomingEntries(companyIds),
+    isConsolidated ? SEM_VENCIMENTOS : vencimentosProximos(companyIds),
     isConsolidated ? getDueSummaryByCompany(companyIds) : Promise.resolve([]),
     getAgingBuckets(companyIds),
   ]);
@@ -264,25 +302,25 @@ export default async function DashboardPage() {
             <CardTitle>Próximos vencimentos (30 dias)</CardTitle>
           </CardHeader>
           <CardContent>
-            {upcoming.length === 0 ? (
+            {upcoming.totalPagar + upcoming.totalReceber === 0 ? (
               <p className="text-sm text-muted-foreground py-4">Nenhum vencimento nos próximos 30 dias.</p>
             ) : (
-              <ul className="divide-y">
-                {upcoming.map((entry) => (
-                  <li key={entry.id} className="flex items-center justify-between py-3">
-                    <div>
-                      <p className="font-medium">{entry.description}</p>
-                      <p className="text-sm text-muted-foreground">{formatDate(entry.dueDate)}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={entry.type === "PAYABLE" ? "destructive" : "default"}>
-                        {entry.type === "PAYABLE" ? "A pagar" : "A receber"}
-                      </Badge>
-                      <span className="tabular-nums font-medium">{formatCurrency(Number(entry.amount))}</span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              // O que sai primeiro é o que compromete caixa: a pagar antes de
+              // a receber, cada bloco em ordem de vencimento.
+              <div className="space-y-5">
+                <GrupoVencimentos
+                  titulo="A pagar"
+                  entradas={upcoming.aPagar}
+                  total={upcoming.totalPagar}
+                  aba="payable"
+                />
+                <GrupoVencimentos
+                  titulo="A receber"
+                  entradas={upcoming.aReceber}
+                  total={upcoming.totalReceber}
+                  aba="receivable"
+                />
+              </div>
             )}
           </CardContent>
         </Card>
