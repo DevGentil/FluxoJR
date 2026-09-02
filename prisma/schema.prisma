@@ -74,6 +74,7 @@ model Company {
   importBatches      ImportBatch[]
   documents          Document[]
   cashClosings       CashClosing[]
+  doctorPayouts      DoctorPayout[]
   dreReports         DreReport[]
   doctors            Doctor[]
   serviceItems       ServiceItem[]
@@ -294,6 +295,8 @@ model Transaction {
   cashClosingId String?
   cashClosing   CashClosing? @relation(fields: [cashClosingId], references: [id], onDelete: Cascade)
 
+  doctorPayout DoctorPayout?
+
   @@index([companyId, date])
   @@index([accountId])
   @@index([cashClosingId])
@@ -417,6 +420,7 @@ model Doctor {
   serviceRates DoctorServiceRate[]
   dailyEntries DoctorDailyEntry[]
   documents    Document[]
+  payouts      DoctorPayout[]
 }
 
 // Categoria semantica do item, usada pelas metricas (conversao = exames
@@ -557,8 +561,47 @@ model DoctorDailyEntry {
 
   lines DoctorDailyLine[]
 
+  /// A que repasse aprovado este dia pertence. Nulo = ainda nao aprovado,
+  /// e portanto ainda nao alimenta o razao.
+  payoutId String?
+  payout   DoctorPayout? @relation(fields: [payoutId], references: [id], onDelete: SetNull)
+
   @@index([companyId, date])
   @@index([doctorId, date])
+  @@index([payoutId])
+}
+
+/// Repasse de um medico num mes, aprovado pelo financeiro.
+///
+/// A unidade e MEDICO x MES e nao o lancamento do dia, porque e assim que
+/// o dinheiro sai: um pagamento por medico por mes. Uma transacao por dia
+/// poria milhares de linhas no razao para representar um pagamento so.
+model DoctorPayout {
+  id             String   @id @default(cuid())
+  /// Primeiro dia do mes, meia-noite UTC (a convencao de data do sistema).
+  month          DateTime
+  amount         Decimal  @db.Decimal(14, 2)
+  approvedAt     DateTime @default(now())
+  /// Nome copiado: a aprovacao precisa continuar respondendo "quem
+  /// autorizou" depois que a conta sair.
+  approvedByName String?
+  approvedById   String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  doctorId String
+  doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  transactionId String?      @unique
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  entries DoctorDailyEntry[]
+
+  /// Sem `@@unique`: um dia esquecido lancado depois da aprovacao vira
+  /// pagamento complementar, com aprovacao propria.
+  @@index([companyId, doctorId, month])
+  @@index([companyId, month])
 }
 
 // Detalhe opcional de um lançamento diário: quantos de um item foram

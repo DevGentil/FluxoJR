@@ -14,6 +14,7 @@ import { MonthRangeFilter } from "@/components/month-range-filter";
 import { KpiCard } from "@/components/kpi-card";
 import { DailyEntryFormDialog } from "./daily-entry-form-dialog";
 import { DailyEntriesTable, type DailyEntryRow } from "./daily-entries-table";
+import { FilaAprovacao, type RepassePendente, type RepasseAprovado } from "./fila-aprovacao";
 import { Wallet, CalendarCheck, CircleCheck, CircleDashed } from "lucide-react";
 
 interface Props {
@@ -244,6 +245,51 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
     })),
   }));
 
+  // A fila do financeiro: o que ainda não virou despesa, agrupado por
+  // médico e mês — que é a unidade em que o dinheiro sai.
+  const pendentesPorChave = new Map<string, RepassePendente>();
+  for (const e of entries) {
+    if (e.payoutId) continue;
+    const mes = e.date.toISOString().slice(0, 7);
+    const chave = e.doctorId + "|" + mes;
+    const atual = pendentesPorChave.get(chave);
+    const valor = entryAmount(e);
+    if (atual) {
+      atual.dias += 1;
+      atual.total += valor;
+      continue;
+    }
+    const [ano, m] = mes.split("-");
+    pendentesPorChave.set(chave, {
+      doctorId: e.doctorId,
+      doctorName: e.doctor.name,
+      mes,
+      mesLabel: m + "/" + ano,
+      dias: 1,
+      total: valor,
+    });
+  }
+  const pendentes = [...pendentesPorChave.values()].sort(
+    (a, b) => a.mes.localeCompare(b.mes) || a.doctorName.localeCompare(b.doctorName, "pt-BR")
+  );
+
+  const payouts = await prisma.doctorPayout.findMany({
+    where: { companyId: scope.companyId },
+    include: { doctor: { select: { name: true } } },
+    orderBy: [{ month: "desc" }, { approvedAt: "desc" }],
+    take: 50,
+  });
+  const aprovados: RepasseAprovado[] = payouts.map((p) => {
+    const [ano, m] = p.month.toISOString().slice(0, 7).split("-");
+    return {
+      id: p.id,
+      doctorName: p.doctor.name,
+      mesLabel: m + "/" + ano,
+      total: Number(p.amount),
+      aprovadoPor: p.approvedByName,
+    };
+  });
+
   return (
     <div className="space-y-6">
       <div>
@@ -257,6 +303,12 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
       <MonthRangeFilter presets={monthPresets()} range={range} />
 
       <PaymentKpis entries={entryRows} />
+
+      <FilaAprovacao
+        pendentes={pendentes}
+        aprovados={aprovados}
+        podeAprovar={can(acesso, "repasses-medicos", "aprovar")}
+      />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">

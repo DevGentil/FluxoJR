@@ -126,6 +126,10 @@ export async function updateDailyEntry(id: string, input: DailyEntryInput): Prom
 
     const entry = await prisma.doctorDailyEntry.findFirst({ where: { id, companyId } });
     if (!entry) return { error: "Lançamento não encontrado." };
+    // Lancamento ja aprovado virou despesa no razao. Mexer nele por baixo
+    // deixaria a transacao do mes diferente da soma dos dias que a pessoa
+    // ve na tela — reabra o repasse antes.
+    if (entry.payoutId) return { error: "Repasse ja aprovado. Reabra antes de editar." };
 
     const doctor = await prisma.doctor.findFirst({ where: { id: input.doctorId, companyId } });
     if (!doctor) return { error: "Médico não encontrado." };
@@ -173,6 +177,7 @@ export async function deleteDailyEntry(id: string): Promise<{ error?: string }> 
       include: { doctor: { select: { name: true } }, lines: true },
     });
     if (!alvo) return { error: "Lançamento não encontrado." };
+    if (alvo.payoutId) return { error: "Repasse ja aprovado. Reabra antes de alterar." };
     await exigePeriodoAberto(companyId, alvo.date);
 
     const { count } = await prisma.doctorDailyEntry.deleteMany({ where: { id, companyId } });
@@ -205,6 +210,7 @@ export async function toggleDailyEntryPaid(id: string, paid: boolean): Promise<{
       include: { doctor: { select: { name: true } }, lines: true },
     });
     if (!alvo) return { error: "Lançamento não encontrado." };
+    if (alvo.payoutId) return { error: "Repasse ja aprovado. Reabra antes de alterar." };
     await exigePeriodoAberto(companyId, alvo.date);
 
     const { count } = await prisma.doctorDailyEntry.updateMany({ where: { id, companyId }, data: { paid } });
