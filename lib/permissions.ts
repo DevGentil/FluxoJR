@@ -106,7 +106,9 @@ const MATRIX: Record<Role, Record<Module, Level>> = {
   },
   FINANCEIRO: {
     dashboard: "ver",
-    "fechamento-caixa": "editar",
+    // "aprovar": o fechamento so vira receita e despesa depois que o
+    // financeiro confere. Quem lanca o dia (Operacional) para em "editar".
+    "fechamento-caixa": "aprovar",
     "repasses-medicos": "aprovar",
     medicos: "editar",
     transacoes: "editar",
@@ -126,7 +128,7 @@ const MATRIX: Record<Role, Record<Module, Level>> = {
   },
   GESTOR: {
     dashboard: "ver",
-    "fechamento-caixa": "editar",
+    "fechamento-caixa": "aprovar",
     "repasses-medicos": "aprovar",
     medicos: "editar",
     transacoes: "editar",

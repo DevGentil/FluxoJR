@@ -20,6 +20,9 @@ const COR_ACAO: Record<string, string> = {
   desativou: "text-destructive",
   pagou: "text-emerald-600 dark:text-emerald-400",
   aprovou: "text-emerald-600 dark:text-emerald-400",
+  // Ambar e nao vermelho: reabrir e correcao legitima, nao estrago — mas
+  // tira dinheiro do resultado, entao nao pode passar despercebido.
+  reabriu: "text-amber-600 dark:text-amber-400",
 };
 
 function quando(at: Date) {

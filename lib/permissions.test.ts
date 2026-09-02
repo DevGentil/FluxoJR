@@ -8,6 +8,7 @@ import {
   nivelAtinge,
   visibleModules,
   type Access,
+  type Module,
   type Role,
 } from "./permissions";
 
@@ -177,14 +178,30 @@ describe("a matriz inteira", () => {
     for (const role of ROLES) expect(can(conta(role), "dashboard")).toBe(true);
   });
 
-  it("ninguém além da holding aprova fora de repasse", () => {
-    // Hoje "aprovar" só existe para o aval do repasse. Se um dia outro
-    // módulo ganhar aprovação, este teste falha e obriga a decisão a ser
-    // consciente em vez de acidental.
+  it("aprovação existe em dois módulos, e só para quem confere", () => {
+    // Esta trava existe para que dar "aprovar" a um módulo novo seja uma
+    // decisão consciente, e não um efeito colateral de copiar uma linha da
+    // matriz. Ela pegou a inclusão do fechamento de caixa — e o que se
+    // espera de cada papel está escrito aqui de propósito.
+    const esperado: Record<Role, Module[]> = {
+      OPERACIONAL: [],
+      // O Operacional lança o dia; quem confere e libera é o financeiro.
+      FINANCEIRO: ["fechamento-caixa", "repasses-medicos"],
+      GESTOR: ["fechamento-caixa", "repasses-medicos"],
+    };
+
     for (const role of ROLES) {
       const aprovaveis = MODULES.filter((m) => levelFor(conta(role), m) === "aprovar");
-      expect(aprovaveis.every((m) => m === "repasses-medicos")).toBe(true);
+      expect([...aprovaveis].sort(), role).toEqual(esperado[role]);
     }
+  });
+
+  it("o Operacional lança o fechamento mas NÃO aprova", () => {
+    // A regra que separa os dois papéis: sem isso, quem digita o caixa
+    // também liberaria o próprio lançamento para o resultado.
+    expect(can(conta("OPERACIONAL"), "fechamento-caixa", "editar")).toBe(true);
+    expect(can(conta("OPERACIONAL"), "fechamento-caixa", "aprovar")).toBe(false);
+    expect(can(conta("FINANCEIRO"), "fechamento-caixa", "aprovar")).toBe(true);
   });
 });
 

@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { CategoryFormDialog } from "./category-form-dialog";
+import { FiltrosTabela } from "@/components/filtros-tabela";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import { DeleteButton } from "@/components/delete-button";
 import { deleteCategory } from "./actions";
 
@@ -106,17 +108,35 @@ async function ConsolidatedCategories({ companyIds, scopeLabel }: { companyIds: 
   );
 }
 
-export default async function CategoriasPage() {
+interface Props {
+  searchParams: Promise<{ q?: string; tipo?: string; centro?: string }>;
+}
+
+export default async function CategoriasPage({ searchParams }: Props) {
+  const params = await searchParams;
   const scope = await getActiveScope();
   if (scope.type !== "company") {
     const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
     return <ConsolidatedCategories companyIds={companyIds} scopeLabel={scopeLabel} />;
   }
 
-  const categories = await prisma.category.findMany({
-    where: { companyId: scope.companyId },
-    orderBy: [{ type: "asc" }, { name: "asc" }],
-  });
+  const where: Prisma.CategoryWhereInput = { companyId: scope.companyId };
+  if (params.q) where.name = { contains: params.q, mode: "insensitive" };
+  if (params.tipo === "INCOME" || params.tipo === "EXPENSE") where.type = params.tipo;
+  // "Sem centro de custo" e um filtro util de verdade: e assim que se acha
+  // o que ficou pela metade no cadastro.
+  if (params.centro === "__sem__") where.costCenter = null;
+  else if (params.centro) where.costCenter = params.centro;
+
+  const [categories, centros] = await Promise.all([
+    prisma.category.findMany({ where, orderBy: [{ type: "asc" }, { name: "asc" }] }),
+    prisma.category.findMany({
+      where: { companyId: scope.companyId, costCenter: { not: null } },
+      select: { costCenter: true },
+      distinct: ["costCenter"],
+      orderBy: { costCenter: "asc" },
+    }),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -128,9 +148,37 @@ export default async function CategoriasPage() {
         <CategoryFormDialog />
       </div>
 
+      <FiltrosTabela
+        basePath="/categorias"
+        valores={params as Record<string, string | undefined>}
+        campos={[
+          { tipo: "busca", name: "q", label: "Nome", placeholder: "Buscar..." },
+          {
+            tipo: "select",
+            name: "tipo",
+            label: "Tipo",
+            vazio: "Todos",
+            opcoes: [
+              { value: "INCOME", label: "Entrada" },
+              { value: "EXPENSE", label: "Saída" },
+            ],
+          },
+          {
+            tipo: "select",
+            name: "centro",
+            label: "Centro de custo",
+            vazio: "Todos",
+            opcoes: [
+              { value: "__sem__", label: "Sem centro de custo" },
+              ...centros.map((c) => ({ value: c.costCenter as string, label: c.costCenter as string })),
+            ],
+          },
+        ]}
+      />
+
       <Card>
         <CardHeader>
-          <CardTitle>Categorias cadastradas</CardTitle>
+          <CardTitle>{categories.length} categoria(s)</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>

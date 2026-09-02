@@ -14,6 +14,9 @@ import { CashClosingSummary, DiferencaValue, type CashClosingSummaryData } from 
 
 export interface CashClosingRowData extends CashClosingSummaryData {
   id: string;
+  aprovado: boolean;
+  /** Quem aprovou, quando houve. */
+  aprovadoPor?: string | null;
 }
 
 function computeTotals(closing: CashClosingRowData) {
@@ -54,7 +57,22 @@ export function CashClosingRow({ closing, actions, abrirDetalhe = false }: Props
           setOpen(true);
         }}
       >
-        <TableCell className="font-medium">{formatDate(closing.date)}</TableCell>
+        <TableCell className="font-medium whitespace-nowrap">{formatDate(closing.date)}</TableCell>
+        <TableCell>
+          {/* Selo com texto, e não só cor: "pendente" é a informação que
+              decide se alguém precisa agir, e cor sozinha não serve a quem
+              não a distingue. */}
+          <span
+            className={
+              closing.aprovado
+                ? "inline-block rounded bg-emerald-500/12 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-700 dark:text-emerald-400"
+                : "inline-block rounded bg-amber-500/12 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-700 dark:text-amber-400"
+            }
+            title={closing.aprovado && closing.aprovadoPor ? `Aprovado por ${closing.aprovadoPor}` : undefined}
+          >
+            {closing.aprovado ? "Aprovado" : "Pendente"}
+          </span>
+        </TableCell>
         <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
           {formatCurrency(totalSangrias)}
         </TableCell>

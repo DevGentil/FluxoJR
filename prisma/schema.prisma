@@ -33,6 +33,11 @@ enum ScheduledStatus {
   CANCELED
 }
 
+enum CashClosingStatus {
+  PENDENTE
+  APROVADO
+}
+
 enum CashClosingLineType {
   SANGRIA
   PAGAMENTO
@@ -102,6 +107,7 @@ model AppUser {
   updatedAt DateTime @updatedAt
 
   access UserAccess[]
+
 
   /// Quem cadastrou esta conta. Criar acesso e a operacao mais privilegiada
   /// do sistema, e ate o log de auditoria existir e o unico rastro dela.
@@ -282,11 +288,15 @@ model Transaction {
   importBatch   ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
 
   scheduledEntry ScheduledEntry?
-  cashClosing    CashClosing?
   documents      Document[]
+
+  /// Preenchido quando a transacao nasceu da aprovacao de um fechamento.
+  cashClosingId String?
+  cashClosing   CashClosing? @relation(fields: [cashClosingId], references: [id], onDelete: Cascade)
 
   @@index([companyId, date])
   @@index([accountId])
+  @@index([cashClosingId])
 }
 
 // Contas a pagar (PAYABLE) e a receber (RECEIVABLE) - lançamentos previstos.
@@ -355,8 +365,17 @@ model CashClosing {
   accountId String
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
-  transactionId String?      @unique
-  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  /// So vira dinheiro no razao depois que o financeiro aprova. Ate la o
+  /// fechamento existe, mostra a conferencia do dia e nao afeta nada.
+  status     CashClosingStatus @default(PENDENTE)
+  approvedAt DateTime?
+  /// Nome COPIADO, como em PeriodClosing: aprovacao que perde o responsavel
+  /// quando a conta sai deixa de responder "quem autorizou".
+  approvedByName String?
+  approvedById   String?
+
+  /// Duas na aprovacao: a receita das sangrias e a despesa dos pagamentos.
+  transactions Transaction[]
 
   lines     CashClosingLine[]
   documents Document[]

@@ -3,6 +3,8 @@ import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SupplierFormDialog } from "./supplier-form-dialog";
+import { FiltrosTabela } from "@/components/filtros-tabela";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import { DeleteButton } from "@/components/delete-button";
 import { deleteSupplier } from "./actions";
 
@@ -101,17 +103,36 @@ async function ConsolidatedSuppliers({ companyIds, scopeLabel }: { companyIds: s
   );
 }
 
-export default async function FornecedoresPage() {
+interface Props {
+  searchParams: Promise<{ q?: string; doc?: string; contato?: string }>;
+}
+
+export default async function FornecedoresPage({ searchParams }: Props) {
+  const params = await searchParams;
   const scope = await getActiveScope();
   if (scope.type !== "company") {
     const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
     return <ConsolidatedSuppliers companyIds={companyIds} scopeLabel={scopeLabel} />;
   }
 
-  const suppliers = await prisma.supplier.findMany({
-    where: { companyId: scope.companyId },
-    orderBy: { name: "asc" },
-  });
+  const where: Prisma.SupplierWhereInput = { companyId: scope.companyId };
+  // Uma busca so, atravessando nome, documento, telefone e e-mail: quem
+  // procura fornecedor tem na mao um pedaco de QUALQUER um deles, e obrigar
+  // a escolher a coluna certa antes de digitar e trabalho a toa.
+  if (params.q) {
+    where.OR = [
+      { name: { contains: params.q, mode: "insensitive" } },
+      { document: { contains: params.q, mode: "insensitive" } },
+      { phone: { contains: params.q, mode: "insensitive" } },
+      { email: { contains: params.q, mode: "insensitive" } },
+    ];
+  }
+  // Os dois abaixo acham o cadastro pela metade — o que trava a emissao de
+  // nota ou o contato na hora da cobranca.
+  if (params.doc === "__sem__") where.document = null;
+  if (params.contato === "__sem__") where.AND = [{ phone: null }, { email: null }];
+
+  const suppliers = await prisma.supplier.findMany({ where, orderBy: { name: "asc" } });
 
   return (
     <div className="space-y-6">
@@ -125,9 +146,31 @@ export default async function FornecedoresPage() {
         <SupplierFormDialog />
       </div>
 
+      <FiltrosTabela
+        basePath="/fornecedores"
+        valores={params as Record<string, string | undefined>}
+        campos={[
+          { tipo: "busca", name: "q", label: "Buscar", placeholder: "Nome, CNPJ, telefone..." },
+          {
+            tipo: "select",
+            name: "doc",
+            label: "Documento",
+            vazio: "Todos",
+            opcoes: [{ value: "__sem__", label: "Sem CNPJ/CPF" }],
+          },
+          {
+            tipo: "select",
+            name: "contato",
+            label: "Contato",
+            vazio: "Todos",
+            opcoes: [{ value: "__sem__", label: "Sem telefone nem e-mail" }],
+          },
+        ]}
+      />
+
       <Card>
         <CardHeader>
-          <CardTitle>Fornecedores cadastrados</CardTitle>
+          <CardTitle>{suppliers.length} fornecedor(es)</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>

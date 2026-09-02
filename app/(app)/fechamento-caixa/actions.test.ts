@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetDb, testPrisma } from "@/tests/helpers/db";
-import { createCashClosing, updateCashClosing, deleteCashClosing, type CashClosingInput } from "./actions";
+import {
+  aprovarFechamento,
+  createCashClosing,
+  deleteCashClosing,
+  reabrirFechamento,
+  updateCashClosing,
+  type CashClosingInput,
+} from "./actions";
 
 beforeEach(resetDb);
 
@@ -27,7 +34,7 @@ function baseInput(accountId: string, overrides: Partial<CashClosingInput> = {})
 }
 
 describe("createCashClosing", () => {
-  it("gera uma unica Transaction com o LIQUIDO: sangrias menos pagamentos", async () => {
+  it("nasce PENDENTE e nao lanca nada no razao", async () => {
     const { account } = await seedAccount();
 
     const result = await createCashClosing(baseInput(account.id));
@@ -39,18 +46,10 @@ describe("createCashClosing", () => {
     expect(closings[0].lines).toHaveLength(3);
     expect(Number(closings[0].countedCash)).toBe(8062.25);
 
-    const transactions = await testPrisma.transaction.findMany();
-    expect(transactions).toHaveLength(1);
-    expect(transactions[0]).toMatchObject({ type: "INCOME", accountId: account.id });
-    // 1097 + 1740 de sangria − 1300 de pagamento. O pagamento em dinheiro
-    // saiu do caixa; conta-lo como entrada inflava a receita no Dashboard,
-    // nos Relatorios e no Balanco.
-    expect(Number(transactions[0].amount)).toBe(1537);
-    expect(transactions[0].description).toMatch(/^Caixa do dia/);
-
-    const category = await testPrisma.category.findFirstOrThrow({ where: { name: "Sangria Caixa" } });
-    expect(transactions[0].categoryId).toBe(category.id);
-    expect(closings[0].transactionId).toBe(transactions[0].id);
+    // O dia foi conferido, mas quem decide que ele entra no resultado e o
+    // financeiro. Ate la nao existe lancamento nenhum.
+    expect(closings[0].status).toBe("PENDENTE");
+    await expect(testPrisma.transaction.count()).resolves.toBe(0);
   });
 
   it("nao cria duas categorias 'Sangria Caixa' em fechamentos diferentes", async () => {
@@ -58,6 +57,7 @@ describe("createCashClosing", () => {
 
     await createCashClosing(baseInput(account.id, { date: "2026-08-21" }));
     await createCashClosing(baseInput(account.id, { date: "2026-08-24" }));
+    for (const c of await testPrisma.cashClosing.findMany()) await aprovarFechamento(c.id);
 
     const categories = await testPrisma.category.findMany({ where: { name: "Sangria Caixa" } });
     expect(categories).toHaveLength(1);
@@ -96,7 +96,7 @@ describe("createCashClosing", () => {
 });
 
 describe("updateCashClosing", () => {
-  it("atualiza o liquido sem duplicar a Transaction vinculada", async () => {
+  it("altera as linhas enquanto esta pendente", async () => {
     const { account } = await seedAccount();
     await createCashClosing(baseInput(account.id));
     const closing = await testPrisma.cashClosing.findFirstOrThrow();
@@ -107,25 +107,44 @@ describe("updateCashClosing", () => {
     );
 
     expect(result.error).toBeUndefined();
-    await expect(testPrisma.transaction.count()).resolves.toBe(1);
-    const transaction = await testPrisma.transaction.findFirstOrThrow();
-    // 5000 de sangria − 1300 do pagamento que o baseInput mantem.
-    expect(Number(transaction.amount)).toBe(3700);
+    const linhas = await testPrisma.cashClosingLine.findMany({ where: { type: "SANGRIA" } });
+    expect(linhas.map((l) => Number(l.amount))).toEqual([5000]);
+  });
+
+  it("recusa editar depois de aprovado", async () => {
+    // Aprovado e numero que ja entrou no resultado. Editar por baixo
+    // deixaria a receita do Balanco diferente da soma das linhas na tela.
+    const { account } = await seedAccount();
+    await createCashClosing(baseInput(account.id));
+    const closing = await testPrisma.cashClosing.findFirstOrThrow();
+    await aprovarFechamento(closing.id);
+
+    const r = await updateCashClosing(closing.id, baseInput(account.id));
+    expect(r.error).toMatch(/Reabra antes de editar/);
   });
 });
 
 describe("deleteCashClosing", () => {
-  it("exclui o fechamento e a Transaction vinculada", async () => {
+  it("exclui o fechamento pendente", async () => {
     const { account } = await seedAccount();
     await createCashClosing(baseInput(account.id));
     const closing = await testPrisma.cashClosing.findFirstOrThrow();
-    const transactionId = closing.transactionId!;
 
     const result = await deleteCashClosing(closing.id);
 
     expect(result.error).toBeUndefined();
     await expect(testPrisma.cashClosing.count()).resolves.toBe(0);
-    await expect(testPrisma.transaction.findUnique({ where: { id: transactionId } })).resolves.toBeNull();
+  });
+
+  it("recusa excluir o que ja foi aprovado", async () => {
+    const { account } = await seedAccount();
+    await createCashClosing(baseInput(account.id));
+    const closing = await testPrisma.cashClosing.findFirstOrThrow();
+    await aprovarFechamento(closing.id);
+
+    const r = await deleteCashClosing(closing.id);
+    expect(r.error).toMatch(/Reabra antes de excluir/);
+    await expect(testPrisma.cashClosing.count()).resolves.toBe(1);
   });
 });
 
@@ -197,42 +216,172 @@ describe("anexos do fechamento", () => {
 });
 
 describe("o valor que chega em Transações", () => {
-  it("dia sem pagamento nenhum posta a sangria inteira", async () => {
+  it("posta os valores BRUTOS, sem compensar um com o outro", async () => {
+    // Sob a regra antiga isto virava um lançamento só, de 100 − 400 = −300.
+    // Agora o dia aparece como foi: entrou 100, saiu 400.
     const { account } = await seedAccount();
-
-    await createCashClosing(
-      baseInput(account.id, { sangrias: [{ label: "CX 1", amount: 900 }], pagamentos: [] })
-    );
-
-    const t = await testPrisma.transaction.findFirstOrThrow();
-    expect(Number(t.amount)).toBe(900);
-  });
-
-  it("pagamento maior que a sangria posta valor negativo, e não zero", async () => {
-    // Dia em que saiu mais dinheiro do que entrou existe. Zerar ou usar o
-    // módulo esconderia a saída no razão e o caixa nunca fecharia.
-    const { account } = await seedAccount();
-
     await createCashClosing(
       baseInput(account.id, {
         sangrias: [{ label: "CX 1", amount: 100 }],
         pagamentos: [{ label: "Fornecedor", amount: 400 }],
       })
     );
+    const closing = await testPrisma.cashClosing.findFirstOrThrow();
 
-    const t = await testPrisma.transaction.findFirstOrThrow();
-    expect(Number(t.amount)).toBe(-300);
+    await aprovarFechamento(closing.id);
+
+    const t = await testPrisma.transaction.findMany({ orderBy: { type: "asc" } });
+    // A ordem segue a declaracao do enum (INCOME antes de EXPENSE).
+    expect(t.map((x) => [x.type, Number(x.amount)])).toEqual([
+      ["INCOME", 100],
+      ["EXPENSE", 400],
+    ]);
   });
 
   it("a transação aponta de volta para o fechamento que a gerou", async () => {
     // É o que faz o botão "ver detalhes" existir em Transações: sem o
-    // vínculo, a linha "Caixa do dia" seria um número sem origem.
+    // vínculo, a linha do caixa seria um número sem origem.
     const { account } = await seedAccount();
     await createCashClosing(baseInput(account.id));
+    const closing = await testPrisma.cashClosing.findFirstOrThrow();
 
-    const t = await testPrisma.transaction.findFirstOrThrow({ include: { cashClosing: true } });
-    expect(t.cashClosing).not.toBeNull();
-    const fechamento = await testPrisma.cashClosing.findFirstOrThrow();
-    expect(t.cashClosing?.id).toBe(fechamento.id);
+    await aprovarFechamento(closing.id);
+
+    const t = await testPrisma.transaction.findMany();
+    expect(t.every((x) => x.cashClosingId === closing.id)).toBe(true);
+  });
+});
+
+describe("aprovação do financeiro", () => {
+  it("gera DUAS transações: sangria como receita, pagamento como despesa", async () => {
+    // O ponto da mudança. O líquido daria o mesmo saldo e mentiria no
+    // resultado: R$ 2.837 de sangria com R$ 1.300 de pagamento viraria
+    // R$ 1.537 de receita e nenhuma despesa, e a margem sairia melhor do
+    // que foi.
+    const { account } = await seedAccount();
+    await createCashClosing(baseInput(account.id));
+    const closing = await testPrisma.cashClosing.findFirstOrThrow();
+
+    const r = await aprovarFechamento(closing.id);
+
+    expect(r.error).toBeUndefined();
+    const transacoes = await testPrisma.transaction.findMany({ orderBy: { type: "asc" } });
+    expect(transacoes).toHaveLength(2);
+
+    const receita = transacoes.find((t) => t.type === "INCOME")!;
+    const despesa = transacoes.find((t) => t.type === "EXPENSE")!;
+    expect(Number(receita.amount)).toBe(2837); // 1097 + 1740
+    expect(Number(despesa.amount)).toBe(1300);
+    expect(receita.cashClosingId).toBe(closing.id);
+    expect(despesa.cashClosingId).toBe(closing.id);
+  });
+
+  it("cada uma na sua categoria, e do tipo certo", async () => {
+    // Receita e despesa na mesma categoria fariam o relatório mostrar um
+    // número que não é nem uma coisa nem outra.
+    const { account } = await seedAccount();
+    await createCashClosing(baseInput(account.id));
+    const closing = await testPrisma.cashClosing.findFirstOrThrow();
+
+    await aprovarFechamento(closing.id);
+
+    const categorias = await testPrisma.category.findMany({ orderBy: { name: "asc" } });
+    expect(categorias.map((c) => `${c.name}/${c.type}`)).toEqual([
+      "Pagamentos em Dinheiro/EXPENSE",
+      "Sangria Caixa/INCOME",
+    ]);
+  });
+
+  it("dia sem pagamento gera só a receita", async () => {
+    // Lançamento de zero polui a lista e não muda nada.
+    const { account } = await seedAccount();
+    await createCashClosing(baseInput(account.id, { pagamentos: [] }));
+    const closing = await testPrisma.cashClosing.findFirstOrThrow();
+
+    await aprovarFechamento(closing.id);
+
+    const transacoes = await testPrisma.transaction.findMany();
+    expect(transacoes).toHaveLength(1);
+    expect(transacoes[0].type).toBe("INCOME");
+  });
+
+  it("marca quem aprovou e quando", async () => {
+    const { account } = await seedAccount();
+    await createCashClosing(baseInput(account.id));
+    const closing = await testPrisma.cashClosing.findFirstOrThrow();
+
+    await aprovarFechamento(closing.id);
+
+    const salvo = await testPrisma.cashClosing.findUniqueOrThrow({ where: { id: closing.id } });
+    expect(salvo.status).toBe("APROVADO");
+    expect(salvo.approvedAt).not.toBeNull();
+  });
+
+  it("aprovar duas vezes não duplica o lançamento", async () => {
+    // Dois cliques no botão, ou dois aprovadores ao mesmo tempo, dobrariam
+    // a receita do dia.
+    const { account } = await seedAccount();
+    await createCashClosing(baseInput(account.id));
+    const closing = await testPrisma.cashClosing.findFirstOrThrow();
+
+    await aprovarFechamento(closing.id);
+    const segunda = await aprovarFechamento(closing.id);
+
+    expect(segunda.error).toMatch(/já foi aprovado/);
+    await expect(testPrisma.transaction.count()).resolves.toBe(2);
+  });
+});
+
+describe("reabrir o fechamento", () => {
+  it("tira os lançamentos do resultado e volta a PENDENTE", async () => {
+    const { account } = await seedAccount();
+    await createCashClosing(baseInput(account.id));
+    const closing = await testPrisma.cashClosing.findFirstOrThrow();
+    await aprovarFechamento(closing.id);
+
+    const r = await reabrirFechamento(closing.id);
+
+    expect(r.error).toBeUndefined();
+    await expect(testPrisma.transaction.count()).resolves.toBe(0);
+    const salvo = await testPrisma.cashClosing.findUniqueOrThrow({ where: { id: closing.id } });
+    expect(salvo.status).toBe("PENDENTE");
+    expect(salvo.approvedAt).toBeNull();
+  });
+
+  it("reabrir preserva as linhas e os anexos do dia", async () => {
+    // É o motivo de reabrir existir em vez de mandar excluir e refazer.
+    const { account } = await seedAccount();
+    const pdf = new File([new Uint8Array([1, 2])], "recibo.pdf", { type: "application/pdf" });
+    await createCashClosing(baseInput(account.id, { anexos: [pdf] }));
+    const closing = await testPrisma.cashClosing.findFirstOrThrow();
+    await aprovarFechamento(closing.id);
+
+    await reabrirFechamento(closing.id);
+
+    await expect(testPrisma.cashClosingLine.count()).resolves.toBe(3);
+    await expect(testPrisma.document.count()).resolves.toBe(1);
+  });
+
+  it("recusa reabrir o que ainda nem foi aprovado", async () => {
+    const { account } = await seedAccount();
+    await createCashClosing(baseInput(account.id));
+    const closing = await testPrisma.cashClosing.findFirstOrThrow();
+
+    const r = await reabrirFechamento(closing.id);
+    expect(r.error).toMatch(/ainda não foi aprovado/);
+  });
+
+  it("aprovar de novo depois de corrigir usa os valores novos", async () => {
+    const { account } = await seedAccount();
+    await createCashClosing(baseInput(account.id));
+    const closing = await testPrisma.cashClosing.findFirstOrThrow();
+    await aprovarFechamento(closing.id);
+    await reabrirFechamento(closing.id);
+
+    await updateCashClosing(closing.id, baseInput(account.id, { sangrias: [{ label: "CX 1", amount: 100 }] }));
+    await aprovarFechamento(closing.id);
+
+    const receita = await testPrisma.transaction.findFirstOrThrow({ where: { type: "INCOME" } });
+    expect(Number(receita.amount)).toBe(100);
   });
 });

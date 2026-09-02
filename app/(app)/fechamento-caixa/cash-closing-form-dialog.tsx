@@ -26,7 +26,7 @@ import { Plus, Trash2, Pencil } from "lucide-react";
 import { formatCurrency, toDateInputValue } from "@/lib/format";
 import { createCashClosing, removerAnexoFechamento, updateCashClosing } from "./actions";
 import { CampoAnexos, type AnexoSalvo } from "@/components/campo-anexos";
-import { CashClosingSummary, DiferencaValue, type CashClosingSummaryData } from "./cash-closing-summary";
+import { DiferencaValue } from "./cash-closing-summary";
 
 interface AccountOption {
   id: string;
@@ -62,7 +62,6 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [summary, setSummary] = useState<CashClosingSummaryData | null>(null);
   const nextId = useRef(0);
 
   const [date, setDate] = useState(closing ? toDateInputValue(closing.date) : toDateInputValue(new Date()));
@@ -105,7 +104,6 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
 
   function reset() {
     setError(null);
-    setSummary(null);
     if (!closing) {
       setDate(toDateInputValue(new Date()));
       setAccountId(accounts[0]?.id ?? "");
@@ -141,21 +139,12 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
         setError(result.error);
         return;
       }
-      if (closing) {
-        toast.success("Fechamento atualizado.");
-        setOpen(false);
-        reset();
-        return;
-      }
-      toast.success("Fechamento salvo.");
-      setSummary({
-        date,
-        accountName: accounts.find((a) => a.id === accountId)?.name ?? "",
-        countedCash: payload.countedCash,
-        notes: payload.notes ?? null,
-        sangrias: sangriaLines.map((l, i) => ({ id: `s${i}`, ...l })),
-        pagamentos: pagamentoLines.map((l, i) => ({ id: `p${i}`, ...l })),
-      });
+      // Fecha e pronto, sem resumo. Quem quiser conferir o que ficou
+      // gravado clica na linha — que e a mesma tela, com o dado ja salvo em
+      // vez de uma copia do que acabou de ser digitado.
+      toast.success(closing ? "Fechamento atualizado." : "Fechamento salvo. Aguardando aprovação do financeiro.");
+      setOpen(false);
+      reset();
     });
   }
 
@@ -221,27 +210,6 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
         </DialogTrigger>
       )}
       <DialogContent className="max-w-2xl">
-        {summary ? (
-          <>
-            <DialogHeader>
-              <DialogTitle>Fechamento salvo</DialogTitle>
-              <DialogDescription>Resumo do que foi lançado.</DialogDescription>
-            </DialogHeader>
-            <div className="max-h-[65vh] overflow-y-auto pr-1">
-              <CashClosingSummary data={summary} />
-            </div>
-            <DialogFooter>
-              <Button
-                onClick={() => {
-                  setOpen(false);
-                  reset();
-                }}
-              >
-                Fechar
-              </Button>
-            </DialogFooter>
-          </>
-        ) : (
           <>
             <DialogHeader>
               <DialogTitle>{closing ? "Editar fechamento de caixa" : "Novo fechamento de caixa"}</DialogTitle>
@@ -348,7 +316,6 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
               </Button>
             </DialogFooter>
           </>
-        )}
       </DialogContent>
     </Dialog>
   );

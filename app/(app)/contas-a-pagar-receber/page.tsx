@@ -12,6 +12,9 @@ import { ImportDialog } from "./import-dialog";
 import { DeleteButton } from "@/components/delete-button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { deleteScheduledEntry } from "./actions";
+import { FiltrosTabela } from "@/components/filtros-tabela";
+import { parseDateOnly, startOfDay } from "@/lib/date-only";
+import type { Prisma } from "@/lib/generated/prisma/client";
 
 function effectiveStatus(status: string, dueDate: Date) {
   return status === "PENDING" && dueDate < new Date() ? "OVERDUE" : status;
@@ -29,10 +32,50 @@ function statusBadge(status: string, dueDate: Date) {
   return <Badge variant={variant}>{label}</Badge>;
 }
 
-async function EntriesTable({ companyId, type }: { companyId: string; type: "PAYABLE" | "RECEIVABLE" }) {
+interface FiltroEntradas {
+  q?: string;
+  status?: string;
+  categoryId?: string;
+  supplierId?: string;
+  de?: string;
+  ate?: string;
+}
+
+async function EntriesTable({
+  companyId,
+  type,
+  filtro,
+}: {
+  companyId: string;
+  type: "PAYABLE" | "RECEIVABLE";
+  filtro: FiltroEntradas;
+}) {
+  // Tudo no banco: a lista cresce todo mes, e filtrar em memoria depois de
+  // buscar tudo para de funcionar exatamente quando o filtro passa a ser
+  // necessario.
+  const where: Prisma.ScheduledEntryWhereInput = { companyId, type };
+  if (filtro.q) where.description = { contains: filtro.q, mode: "insensitive" };
+  if (filtro.categoryId) where.categoryId = filtro.categoryId;
+  if (filtro.supplierId) where.supplierId = filtro.supplierId;
+  if (filtro.status === "PENDING" || filtro.status === "PAID") where.status = filtro.status;
+  if (filtro.status === "OVERDUE") {
+    // "Atrasado" nao e um status guardado: e pendente com vencimento no
+    // passado. A tela ja calcula assim no selo; o filtro segue a mesma
+    // regra para os dois nao divergirem.
+    where.status = "PENDING";
+    where.dueDate = { lt: startOfDay(new Date().toISOString().slice(0, 10)) };
+  }
+  if (filtro.de || filtro.ate) {
+    where.dueDate = {
+      ...(typeof where.dueDate === "object" && where.dueDate !== null ? where.dueDate : {}),
+      ...(filtro.de ? { gte: parseDateOnly(filtro.de) } : {}),
+      ...(filtro.ate ? { lte: parseDateOnly(filtro.ate) } : {}),
+    };
+  }
+
   const [entries, accounts, categories, suppliers] = await Promise.all([
     prisma.scheduledEntry.findMany({
-      where: { companyId, type },
+      where,
       include: {
         account: true,
         category: true,
@@ -292,7 +335,12 @@ async function ConsolidatedEntries({ companyIds, scopeLabel }: { companyIds: str
   );
 }
 
-export default async function ContasAPagarReceberPage() {
+interface Props {
+  searchParams: Promise<FiltroEntradas & { aba?: string }>;
+}
+
+export default async function ContasAPagarReceberPage({ searchParams }: Props) {
+  const params = await searchParams;
   const scope = await getActiveScope();
   if (scope.type !== "company") {
     const [companyIds, scopeLabel] = await Promise.all([resolveCompanyIds(scope), getScopeLabel(scope)]);
@@ -319,16 +367,51 @@ export default async function ContasAPagarReceberPage() {
         <ImportDialog accounts={importAccountOptions} categories={importCategoryOptions} suppliers={importSupplierOptions} />
       </div>
 
+      <FiltrosTabela
+        basePath="/contas-a-pagar-receber"
+        valores={params as Record<string, string | undefined>}
+        campos={[
+          { tipo: "busca", name: "q", label: "Descrição", placeholder: "Buscar..." },
+          {
+            tipo: "select",
+            name: "status",
+            label: "Situação",
+            vazio: "Todas",
+            opcoes: [
+              { value: "PENDING", label: "Pendente" },
+              { value: "OVERDUE", label: "Atrasado" },
+              { value: "PAID", label: "Baixado" },
+            ],
+          },
+          {
+            tipo: "select",
+            name: "categoryId",
+            label: "Categoria",
+            vazio: "Todas",
+            opcoes: importCategoryOptions.map((c) => ({ value: c.id, label: c.name })),
+          },
+          {
+            tipo: "select",
+            name: "supplierId",
+            label: "Fornecedor",
+            vazio: "Todos",
+            opcoes: importSupplierOptions.map((s) => ({ value: s.id, label: s.name })),
+          },
+          { tipo: "data", name: "de", label: "Vence de" },
+          { tipo: "data", name: "ate", label: "Vence até" },
+        ]}
+      />
+
       <Tabs defaultValue="payable">
         <TabsList>
           <TabsTrigger value="payable">A Pagar</TabsTrigger>
           <TabsTrigger value="receivable">A Receber</TabsTrigger>
         </TabsList>
         <TabsContent value="payable" className="mt-4">
-          <EntriesTable companyId={companyId} type="PAYABLE" />
+          <EntriesTable companyId={companyId} type="PAYABLE" filtro={params} />
         </TabsContent>
         <TabsContent value="receivable" className="mt-4">
-          <EntriesTable companyId={companyId} type="RECEIVABLE" />
+          <EntriesTable companyId={companyId} type="RECEIVABLE" filtro={params} />
         </TabsContent>
       </Tabs>
     </div>

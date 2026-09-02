@@ -18,7 +18,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
  * o texto pronto: se escrever o resumo dá trabalho, é sinal de que a ação
  * mexe em algo que merece registro. */
 
-export type AcaoAuditada = "criou" | "alterou" | "excluiu" | "aprovou" | "pagou" | "desativou";
+export type AcaoAuditada = "criou" | "alterou" | "excluiu" | "aprovou" | "reabriu" | "pagou" | "desativou";
 
 interface Evento {
   /** Ausente quando o evento é do sistema e não de uma unidade. */

@@ -8,7 +8,14 @@ import { CashClosingFormDialog } from "./cash-closing-form-dialog";
 import { CashClosingRow, type CashClosingRowData } from "./cash-closing-row";
 import { AnexosPopover } from "@/components/anexos-popover";
 import { deleteCashClosing } from "./actions";
+import { AcoesFechamento } from "./acoes-fechamento";
+import { FiltrosTabela } from "@/components/filtros-tabela";
+import { formatCurrency } from "@/lib/format";
+import { accessFor } from "@/lib/access";
+import { can } from "@/lib/permissions";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import { formatDate } from "@/lib/format";
+import { parseDateOnly } from "@/lib/date-only";
 
 function toLines(lines: { id: string; type: string; label: string; amount: unknown; order: number }[], type: "SANGRIA" | "PAGAMENTO") {
   return lines
@@ -20,18 +27,38 @@ function toLines(lines: { id: string; type: string; label: string; amount: unkno
 interface Props {
   /** `?ver=<id>` abre o detalhe daquele fechamento direto — e por onde o
    * atalho vindo de Transacoes chega. */
-  searchParams: Promise<{ ver?: string }>;
+  searchParams: Promise<{
+    ver?: string;
+    de?: string;
+    ate?: string;
+    status?: string;
+    accountId?: string;
+    diferenca?: string;
+  }>;
 }
 
 export default async function FechamentoCaixaPage({ searchParams }: Props) {
-  const { ver } = await searchParams;
+  const params = await searchParams;
+  const { ver } = params;
   const scope = await getActiveScope();
   const scopeLabel = await getScopeLabel(scope);
 
   if (scope.type === "company") {
-    const [closings, accounts] = await Promise.all([
+    // O filtro roda no BANCO. Filtrar em memória depois de buscar tudo
+    // funciona com um mês de fechamentos e para de funcionar com um ano.
+    const where: Prisma.CashClosingWhereInput = { companyId: scope.companyId };
+    if (params.de || params.ate) {
+      where.date = {
+        ...(params.de ? { gte: parseDateOnly(params.de) } : {}),
+        ...(params.ate ? { lte: parseDateOnly(params.ate) } : {}),
+      };
+    }
+    if (params.status === "PENDENTE" || params.status === "APROVADO") where.status = params.status;
+    if (params.accountId) where.accountId = params.accountId;
+
+    const [closings, accounts, acesso] = await Promise.all([
       prisma.cashClosing.findMany({
-        where: { companyId: scope.companyId },
+        where,
         include: {
           lines: true,
           account: true,
@@ -43,8 +70,22 @@ export default async function FechamentoCaixaPage({ searchParams }: Props) {
         orderBy: { date: "desc" },
       }),
       prisma.account.findMany({ where: { companyId: scope.companyId }, orderBy: { name: "asc" } }),
+      accessFor(scope.companyId),
     ]);
     const accountOptions = accounts.map((a) => ({ id: a.id, name: a.name }));
+    const podeAprovar = can(acesso, "fechamento-caixa", "aprovar");
+
+    // "Só com diferença" fica em memória de propósito: a diferença é
+    // contado − (sangrias − pagamentos), e as linhas já vieram na consulta.
+    // Reproduzir isso em SQL exigiria uma view só para um filtro pontual.
+    const visiveis =
+      params.diferenca === "1"
+        ? closings.filter((c) => {
+            const s = toLines(c.lines, "SANGRIA").reduce((a, l) => a + l.amount, 0);
+            const p = toLines(c.lines, "PAGAMENTO").reduce((a, l) => a + l.amount, 0);
+            return Math.abs(Number(c.countedCash) - (s - p)) > 0.004;
+          })
+        : closings;
 
     return (
       <div className="space-y-6">
@@ -58,15 +99,49 @@ export default async function FechamentoCaixaPage({ searchParams }: Props) {
           <CashClosingFormDialog accounts={accountOptions} />
         </div>
 
+        <FiltrosTabela
+          basePath="/fechamento-caixa"
+          valores={params as Record<string, string | undefined>}
+          campos={[
+            { tipo: "data", name: "de", label: "De" },
+            { tipo: "data", name: "ate", label: "Até" },
+            {
+              tipo: "select",
+              name: "status",
+              label: "Situação",
+              vazio: "Todas",
+              opcoes: [
+                { value: "PENDENTE", label: "Pendente" },
+                { value: "APROVADO", label: "Aprovado" },
+              ],
+            },
+            {
+              tipo: "select",
+              name: "accountId",
+              label: "Conta",
+              vazio: "Todas",
+              opcoes: accountOptions.map((a) => ({ value: a.id, label: a.name })),
+            },
+            {
+              tipo: "select",
+              name: "diferenca",
+              label: "Conferência",
+              vazio: "Todas",
+              opcoes: [{ value: "1", label: "Só com diferença" }],
+            },
+          ]}
+        />
+
         <Card>
           <CardHeader>
-            <CardTitle>{closings.length} fechamento(s)</CardTitle>
+            <CardTitle>{visiveis.length} fechamento(s)</CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Data</TableHead>
+                  <TableHead className="whitespace-nowrap">Data</TableHead>
+                  <TableHead>Situação</TableHead>
                   <TableHead className="text-right">Sangrias</TableHead>
                   <TableHead className="text-right">Pagamentos</TableHead>
                   <TableHead className="text-right">Valor do caixa</TableHead>
@@ -76,14 +151,14 @@ export default async function FechamentoCaixaPage({ searchParams }: Props) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {closings.length === 0 && (
+                {visiveis.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                      Nenhum fechamento cadastrado ainda.
+                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                      Nenhum fechamento com esse filtro.
                     </TableCell>
                   </TableRow>
                 )}
-                {closings.map((closing) => {
+                {visiveis.map((closing) => {
                   const countedCash = Number(closing.countedCash);
                   const sangrias = toLines(closing.lines, "SANGRIA");
                   const pagamentos = toLines(closing.lines, "PAGAMENTO");
@@ -95,6 +170,8 @@ export default async function FechamentoCaixaPage({ searchParams }: Props) {
                     notes: closing.notes,
                     sangrias,
                     pagamentos,
+                    aprovado: closing.status === "APROVADO",
+                    aprovadoPor: closing.approvedByName,
                   };
                   return (
                     <CashClosingRow
@@ -103,6 +180,13 @@ export default async function FechamentoCaixaPage({ searchParams }: Props) {
                       abrirDetalhe={closing.id === ver}
                       actions={
                         <>
+                          <AcoesFechamento
+                            id={closing.id}
+                            aprovado={closing.status === "APROVADO"}
+                            podeAprovar={podeAprovar}
+                            sangrias={formatCurrency(sangrias.reduce((a, l) => a + l.amount, 0))}
+                            pagamentos={formatCurrency(pagamentos.reduce((a, l) => a + l.amount, 0))}
+                          />
                           <AnexosPopover
                             anexos={closing.documents}
                             titulo={`Fechamento de ${formatDate(closing.date)}`}
@@ -123,7 +207,7 @@ export default async function FechamentoCaixaPage({ searchParams }: Props) {
                           <DeleteButton
                             action={deleteCashClosing.bind(null, closing.id)}
                             title={`Excluir fechamento de ${formatDate(closing.date)}?`}
-                            description="A transação de entrada gerada por esse fechamento também será excluída."
+                            description="Só é possível excluir fechamento pendente. Some com as linhas e os anexos do dia."
                           />
                         </>
                       }
