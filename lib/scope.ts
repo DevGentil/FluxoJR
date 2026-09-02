@@ -22,7 +22,13 @@ async function ensureAtLeastOneCompany() {
 
 /** Lê o escopo ativo (empresa/grupo/holding) do cookie, validando contra o
  * banco. Sem cookie válido, cai para a primeira empresa cadastrada. */
-export async function getActiveScope(): Promise<Scope> {
+/** `jaVisiveis` evita reconsultar quem já resolveu isso.
+ *
+ * Existe porque o `cache` do React só deduplica dentro de uma renderização:
+ * num route handler cada chamada refaz a sessão inteira, e a busca global
+ * pagava três vezes o mesmo caminho. Quem não passa nada continua com o
+ * comportamento de antes. */
+export async function getActiveScope(jaVisiveis?: string[]): Promise<Scope> {
   const store = await cookies();
   const raw = store.get(COOKIE_NAME)?.value;
 
@@ -31,7 +37,7 @@ export async function getActiveScope(): Promise<Scope> {
   // O cookie é dado do CLIENTE. Validar só que a empresa existe deixava
   // qualquer sessão editar o valor à mão e ler outra unidade nas telas que
   // resolvem a empresa pelo escopo. A empresa também precisa ser acessível.
-  const visiveis = await companyIdsVisiveis();
+  const visiveis = jaVisiveis ?? (await companyIdsVisiveis());
   const podeVer = new Set(visiveis);
 
   if (raw?.startsWith("group:")) {
@@ -81,9 +87,9 @@ export async function getActiveScope(): Promise<Scope> {
  * Relatórios, Operação — somavam unidades que aquela conta não pode ver.
  * Proteger só a escrita deixaria o número aberto para quem não deveria
  * enxergá-lo, que num sistema financeiro é metade do problema. */
-export async function resolveCompanyIds(scope: Scope): Promise<string[]> {
+export async function resolveCompanyIds(scope: Scope, jaVisiveis?: string[]): Promise<string[]> {
   const doEscopo = await companyIdsDoEscopo(scope);
-  const visiveis = await companyIdsVisiveis();
+  const visiveis = jaVisiveis ?? (await companyIdsVisiveis());
   const permitidas = new Set(visiveis);
   return doEscopo.filter((id) => permitidas.has(id));
 }

@@ -94,12 +94,11 @@ export async function accessFor(companyId: string): Promise<Access> {
   return accessOf(await contaAtual(), companyId);
 }
 
-/** As empresas que esta conta enxerga.
+/** As empresas que uma conta enxerga.
  *
- * Conta da holding vê todas — inclusive as que forem criadas depois, sem
- * ninguém precisar cadastrar acesso. */
-export async function companyIdsVisiveis(): Promise<string[]> {
-  const conta = await contaAtual();
+ * Recebe a conta em vez de buscá-la para poder ser reaproveitada por quem já
+ * tem uma em mãos — ver `companyIdsVisiveis`. */
+export async function companyIdsDaConta(conta: Conta | null): Promise<string[]> {
   if (!conta) return [];
   if (conta.holding) {
     const empresas = await prisma.company.findMany({ select: { id: true } });
@@ -107,6 +106,20 @@ export async function companyIdsVisiveis(): Promise<string[]> {
   }
   return [...conta.papeis.keys()];
 }
+
+/** As empresas que a sessão atual enxerga.
+ *
+ * Conta da holding vê todas — inclusive as que forem criadas depois, sem
+ * ninguém precisar cadastrar acesso.
+ *
+ * `cache` pelo mesmo motivo de `contaAtual`: numa página, `getActiveScope` e
+ * `resolveCompanyIds` perguntam isto em sequência. O `cache` do React vale
+ * dentro de uma renderização — num route handler ele NÃO deduplica, e é por
+ * isso que a busca global resolve a conta uma vez e passa adiante em vez de
+ * confiar nesta função. */
+export const companyIdsVisiveis = cache(async (): Promise<string[]> => {
+  return companyIdsDaConta(await contaAtual());
+});
 
 /** Os módulos que o menu deve mostrar, dado o escopo aberto.
  *

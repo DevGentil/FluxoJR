@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
-import { accessOf, contaAtual, companyIdsVisiveis, type Conta } from "@/lib/access";
+import { accessOf, contaAtual, companyIdsDaConta, type Conta } from "@/lib/access";
 import { can, type Module } from "@/lib/permissions";
 import { getActiveScope, resolveCompanyIds } from "@/lib/scope";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -154,34 +154,60 @@ interface Fonte {
   carregar(ids: string[]): Promise<ItemBusca[]>;
 }
 
-/** Os ids que casam com o termo, nesta fonte e nestas empresas.
+/** Onde cada fonte pode procurar nesta busca. */
+interface Frente {
+  fonte: Fonte;
+  empresas: string[];
+}
+
+/** Os ids que casam com o termo, de TODAS as fontes, numa consulta só.
+ *
+ * Uma consulta e não oito porque o banco é remoto: cada ida custa cerca de
+ * 200ms de rede, e oito idas enfileiradas transformavam a busca em segundos
+ * de espera a cada pausa na digitação. `UNION ALL` resolve isso sem abrir mão
+ * do corte por fonte — cada trecho mantém a própria ordem e o próprio limite.
  *
  * O SQL é montado com nomes de tabela e coluna vindos do registro acima —
  * constantes do código. Tudo o que vem de fora (termo, empresas, limite) vai
  * como parâmetro, nunca interpolado. */
 async function idsQueCasam(
-  fonte: Fonte,
+  frentes: Frente[],
   termo: string,
-  companyIds: string[],
   limite: number
-): Promise<string[]> {
+): Promise<Map<TipoBusca, string[]>> {
+  const porTipo = new Map<TipoBusca, string[]>();
+  if (frentes.length === 0) return porTipo;
+
   const alvo = alvoDoLike(termo);
-  const condicoes = Prisma.join(
-    fonte.alcance.colunas.map(
-      (coluna) => Prisma.sql`${colunaNormalizada(coluna)} LIKE ${alvo} ESCAPE '\\'`
-    ),
-    " OR "
+  const trechos = frentes.map(({ fonte, empresas }) => {
+    const condicoes = Prisma.join(
+      fonte.alcance.colunas.map(
+        (coluna) => Prisma.sql`${colunaNormalizada(coluna)} LIKE ${alvo} ESCAPE '\\'`
+      ),
+      " OR "
+    );
+    // O `::text` não é enfeite: sem ele o Postgres não sabe o tipo do
+    // parâmetro que nomeia a fonte e recusa a consulta inteira.
+    return Prisma.sql`
+      (SELECT ${fonte.tipo}::text AS tipo, "id"
+       FROM ${Prisma.raw(`"${fonte.alcance.tabela}"`)}
+       WHERE "companyId" IN (${Prisma.join(empresas)})
+         AND (${condicoes})
+       ORDER BY ${fonte.alcance.ordem}
+       LIMIT ${limite})
+    `;
+  });
+
+  const linhas = await prisma.$queryRaw<{ tipo: TipoBusca; id: string }[]>(
+    Prisma.join(trechos, " UNION ALL ")
   );
 
-  const linhas = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT "id"
-    FROM ${Prisma.raw(`"${fonte.alcance.tabela}"`)}
-    WHERE "companyId" IN (${Prisma.join(companyIds)})
-      AND (${condicoes})
-    ORDER BY ${fonte.alcance.ordem}
-    LIMIT ${limite}
-  `;
-  return linhas.map((l) => l.id);
+  for (const linha of linhas) {
+    const atual = porTipo.get(linha.tipo);
+    if (atual) atual.push(linha.id);
+    else porTipo.set(linha.tipo, [linha.id]);
+  }
+  return porTipo;
 }
 
 const FONTES: Fonte[] = [
@@ -434,7 +460,11 @@ function empresasPermitidas(conta: Conta | null, candidatas: string[], modulo: M
   return candidatas.filter((id) => can(accessOf(conta, id), modulo, "ver"));
 }
 
-/** Roda todas as fontes sobre um conjunto de empresas, em paralelo. */
+/** Roda todas as fontes sobre um conjunto de empresas.
+ *
+ * Duas etapas, e não uma por fonte: primeiro UMA consulta acha os ids de
+ * todas, depois só as fontes que acharam algo vão buscar as linhas. Numa
+ * busca típica isso é uma consulta mais duas ou três, em vez de dezesseis. */
 async function varrer(
   conta: Conta | null,
   termo: string,
@@ -443,12 +473,18 @@ async function varrer(
 ): Promise<GrupoBusca[]> {
   if (candidatas.length === 0) return [];
 
+  const frentes = FONTES.map((fonte) => ({
+    fonte,
+    empresas: empresasPermitidas(conta, candidatas, fonte.modulo),
+  })).filter((f) => f.empresas.length > 0);
+
+  const idsPorTipo = await idsQueCasam(frentes, termo, limite);
+  if (idsPorTipo.size === 0) return [];
+
   const grupos = await Promise.all(
-    FONTES.map(async (fonte) => {
-      const permitidas = empresasPermitidas(conta, candidatas, fonte.modulo);
-      if (permitidas.length === 0) return null;
-      const ids = await idsQueCasam(fonte, termo, permitidas, limite);
-      if (ids.length === 0) return null;
+    frentes.map(async ({ fonte }) => {
+      const ids = idsPorTipo.get(fonte.tipo);
+      if (!ids || ids.length === 0) return null;
       const itens = await fonte.carregar(ids);
       return itens.length > 0 ? { tipo: fonte.tipo, rotulo: fonte.rotulo, itens } : null;
     })
@@ -478,11 +514,15 @@ export async function buscarGlobal(entrada: string): Promise<RespostaBusca> {
   const termo = entrada.trim();
   if (termo.length < MINIMO) return { termo, grupos: [], total: 0, fora: [] };
 
-  const conta = await contaAtual();
+    const conta = await contaAtual();
   if (!conta) return { termo, grupos: [], total: 0, fora: [] };
 
-  const escopo = await getActiveScope();
-  const noEscopo = await resolveCompanyIds(escopo);
+  // Conta e empresas visíveis resolvidas UMA vez e passadas adiante. Deixar
+  // cada camada perguntar de novo custava três voltas ao Supabase Auth e três
+  // consultas de conta por busca — e a busca dispara a cada pausa na digitação.
+  const visiveis = await companyIdsDaConta(conta);
+  const escopo = await getActiveScope(visiveis);
+  const noEscopo = await resolveCompanyIds(escopo, visiveis);
   const grupos = await varrer(conta, termo, noEscopo, POR_FONTE);
   const total = grupos.reduce((soma, g) => soma + g.itens.length, 0);
 
@@ -495,7 +535,6 @@ export async function buscarGlobal(entrada: string): Promise<RespostaBusca> {
   // que a conta enxerga — a diferença entre "não existe" e "existe, mas não
   // onde você está olhando" é a diferença entre a busca ajudar e a busca
   // enganar.
-  const visiveis = await companyIdsVisiveis();
   const restantes = visiveis.filter((id) => !noEscopo.includes(id));
   if (restantes.length === 0) return { termo, grupos: [], total: 0, fora: [] };
 
