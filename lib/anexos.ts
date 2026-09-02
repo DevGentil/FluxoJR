@@ -35,9 +35,16 @@ export interface AnexoPronto {
  * Lança `Error` com mensagem para a pessoa — quem chama está dentro de
  * `runMutation`, que a transforma no aviso da tela. */
 export async function lerAnexos(formData: FormData, campo: string): Promise<AnexoPronto[]> {
-  const arquivos = formData
-    .getAll(campo)
-    .filter((v): v is File => v instanceof File && v.size > 0);
+  return validarAnexos(formData.getAll(campo));
+}
+
+/** A mesma validação, para quem não recebe `FormData`.
+ *
+ * O fechamento de caixa manda um objeto com as linhas do dia, não um
+ * formulário — e não pode ter uma segunda versão das regras de tamanho e
+ * tipo só por causa disso. */
+export async function validarAnexos(entrada: unknown[]): Promise<AnexoPronto[]> {
+  const arquivos = entrada.filter((v): v is File => v instanceof File && v.size > 0);
 
   if (arquivos.length === 0) return [];
   if (arquivos.length > MAX_ANEXOS) {

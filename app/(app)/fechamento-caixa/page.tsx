@@ -6,6 +6,7 @@ import { DeleteButton } from "@/components/delete-button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { CashClosingFormDialog } from "./cash-closing-form-dialog";
 import { CashClosingRow, type CashClosingRowData } from "./cash-closing-row";
+import { AnexosPopover } from "@/components/anexos-popover";
 import { deleteCashClosing } from "./actions";
 import { formatDate } from "@/lib/format";
 
@@ -24,7 +25,14 @@ export default async function FechamentoCaixaPage() {
     const [closings, accounts] = await Promise.all([
       prisma.cashClosing.findMany({
         where: { companyId: scope.companyId },
-        include: { lines: true, account: true },
+        include: {
+          lines: true,
+          account: true,
+          // Sem o `content`: a tela usa so o nome e o tamanho, e trazer o
+          // binario de cada anexo carregaria megabytes para desenhar um
+          // nome de arquivo.
+          documents: { select: { id: true, fileName: true, size: true }, orderBy: { createdAt: "asc" } },
+        },
         orderBy: { date: "desc" },
       }),
       prisma.account.findMany({ where: { companyId: scope.companyId }, orderBy: { name: "asc" } }),
@@ -87,6 +95,10 @@ export default async function FechamentoCaixaPage() {
                       closing={rowData}
                       actions={
                         <>
+                          <AnexosPopover
+                            anexos={closing.documents}
+                            titulo={`Fechamento de ${formatDate(closing.date)}`}
+                          />
                           <CashClosingFormDialog
                             accounts={accountOptions}
                             closing={{
@@ -97,6 +109,7 @@ export default async function FechamentoCaixaPage() {
                               notes: closing.notes,
                               sangrias,
                               pagamentos,
+                              anexos: closing.documents,
                             }}
                           />
                           <DeleteButton

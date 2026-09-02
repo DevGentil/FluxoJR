@@ -189,7 +189,7 @@ export function DailyEntryFormDialog({ doctors, entry, open: openProp, onOpenCha
         ) : (
           <DialogTrigger render={<Button />}>
             <Plus />
-            Lançar dia
+            Lançar repasse
           </DialogTrigger>
         ))}
       <DialogContent className="max-w-2xl">

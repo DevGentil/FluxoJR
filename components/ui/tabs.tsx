@@ -73,7 +73,11 @@ function TabsContent({ className, ...props }: TabsPrimitive.Panel.Props) {
   return (
     <TabsPrimitive.Panel
       data-slot="tabs-content"
-      className={cn("flex-1 text-sm outline-none", className)}
+      // `min-w-0`: como item de flex, o painel não encolhe abaixo do
+      // próprio conteúdo sem isso — uma tabela larga dentro dele empurrava
+      // a página inteira para o lado em vez de rolar dentro da própria
+      // caixa, que já tem `overflow-x-auto`.
+      className={cn("min-w-0 flex-1 text-sm outline-none", className)}
       {...props}
     />
   )

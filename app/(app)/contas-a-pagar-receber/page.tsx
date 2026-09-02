@@ -3,6 +3,7 @@ import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AnexosPopover } from "@/components/anexos-popover";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScheduledFormDialog } from "./scheduled-form-dialog";
@@ -94,6 +95,7 @@ async function EntriesTable({ companyId, type }: { companyId: string; type: "PAY
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-1">
+                    <AnexosPopover anexos={entry.documents} titulo={entry.description} />
                     {entry.status === "PENDING" && (
                       <MarkPaidDialog
                         entryId={entry.id}

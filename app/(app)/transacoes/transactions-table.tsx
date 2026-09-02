@@ -23,6 +23,7 @@ import { TransactionFormDialog } from "./transaction-form-dialog";
 import { DeleteButton } from "@/components/delete-button";
 import { deleteTransaction, deleteTransactions } from "./actions";
 import type { AnexoSalvo } from "@/components/campo-anexos";
+import { AnexosPopover } from "@/components/anexos-popover";
 
 interface Option {
   id: string;
@@ -253,6 +254,7 @@ export function TransactionsTable({ transactions, accounts, categories, supplier
                           </TableCell>
                           <TableCell>
                             <div className="flex justify-end gap-1">
+                              <AnexosPopover anexos={t.anexos} titulo={t.description} />
                               <TransactionFormDialog
                                 accounts={accounts}
                                 categories={categories}

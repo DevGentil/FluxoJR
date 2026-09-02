@@ -24,7 +24,8 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { formatCurrency, toDateInputValue } from "@/lib/format";
-import { createCashClosing, updateCashClosing } from "./actions";
+import { createCashClosing, removerAnexoFechamento, updateCashClosing } from "./actions";
+import { CampoAnexos, type AnexoSalvo } from "@/components/campo-anexos";
 import { CashClosingSummary, DiferencaValue, type CashClosingSummaryData } from "./cash-closing-summary";
 
 interface AccountOption {
@@ -48,6 +49,7 @@ interface Props {
     notes: string | null;
     sangrias: { id: string; label: string; amount: number }[];
     pagamentos: { id: string; label: string; amount: number }[];
+    anexos?: AnexoSalvo[];
   };
 }
 
@@ -71,6 +73,7 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
     toLines(closing?.sangrias).length > 0 ? toLines(closing?.sangrias) : [{ id: "s0", label: "", amount: "" }]
   );
   const [pagamentos, setPagamentos] = useState<Line[]>(toLines(closing?.pagamentos));
+  const [arquivos, setArquivos] = useState<File[]>([]);
 
   function newId(prefix: string) {
     nextId.current += 1;
@@ -110,6 +113,7 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
       setNotes("");
       setSangrias([{ id: "s0", label: "", amount: "" }]);
       setPagamentos([]);
+      setArquivos([]);
     }
   }
 
@@ -128,6 +132,7 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
       notes: notes || undefined,
       sangrias: sangriaLines,
       pagamentos: pagamentoLines,
+      anexos: arquivos,
     };
 
     startTransition(async () => {
@@ -297,6 +302,14 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
                   required
                 />
               </div>
+
+              {/* Logo abaixo dos pagamentos: e o pagamento em dinheiro que
+                  costuma vir com nota ou recibo na mao. */}
+              <CampoAnexos
+                existentes={closing?.anexos}
+                aoRemover={closing ? removerAnexoFechamento : undefined}
+                aoEscolherArquivos={setArquivos}
+              />
 
               <div className="space-y-2">
                 <Label htmlFor="notes">Observações (opcional)</Label>

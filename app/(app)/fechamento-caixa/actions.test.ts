@@ -123,3 +123,70 @@ describe("deleteCashClosing", () => {
     await expect(testPrisma.transaction.findUnique({ where: { id: transactionId } })).resolves.toBeNull();
   });
 });
+
+describe("anexos do fechamento", () => {
+  function recibo(nome = "recibo.pdf") {
+    return new File([new Uint8Array([7, 7, 7])], nome, { type: "application/pdf" });
+  }
+
+  it("grava o fechamento com a nota dos pagamentos", async () => {
+    const { company, account } = await seedAccount();
+
+    const r = await createCashClosing(
+      baseInput(account.id, {
+        pagamentos: [{ label: "Fornecedor X", amount: 50 }],
+        anexos: [recibo()],
+      })
+    );
+
+    expect(r.error).toBeUndefined();
+    const fechamento = await testPrisma.cashClosing.findFirstOrThrow({ include: { documents: true } });
+    expect(fechamento.documents.map((d) => d.fileName)).toEqual(["recibo.pdf"]);
+    // O anexo herda a empresa do fechamento, senão a rota de download o
+    // recusaria como "fora do escopo ativo".
+    expect(fechamento.documents[0].companyId).toBe(company.id);
+  });
+
+  it("salva sem anexo — continua opcional", async () => {
+    const { account } = await seedAccount();
+
+    expect((await createCashClosing(baseInput(account.id))).error).toBeUndefined();
+    await expect(testPrisma.document.count()).resolves.toBe(0);
+  });
+
+  it("anexo recusado impede o fechamento inteiro", async () => {
+    // Um fechamento que entra sem a nota que a pessoa acha que anexou é
+    // pior do que um erro na tela.
+    const { account } = await seedAccount();
+    const ruim = new File([new Uint8Array([0])], "planilha.xlsx", { type: "application/vnd.ms-excel" });
+
+    const r = await createCashClosing(baseInput(account.id, { anexos: [ruim] }));
+
+    expect(r.error).toMatch(/não é um tipo aceito/);
+    await expect(testPrisma.cashClosing.count()).resolves.toBe(0);
+    await expect(testPrisma.document.count()).resolves.toBe(0);
+  });
+
+  it("editar ACRESCENTA anexo em vez de trocar", async () => {
+    // As linhas do dia são recriadas do zero na edição; os anexos não
+    // podem seguir a mesma regra, senão corrigir um valor apagaria a nota.
+    const { account } = await seedAccount();
+    await createCashClosing(baseInput(account.id, { anexos: [recibo("primeiro.pdf")] }));
+    const fechamento = await testPrisma.cashClosing.findFirstOrThrow();
+
+    await updateCashClosing(fechamento.id, baseInput(account.id, { anexos: [recibo("segundo.pdf")] }));
+
+    const documentos = await testPrisma.document.findMany({ orderBy: { fileName: "asc" } });
+    expect(documentos.map((d) => d.fileName)).toEqual(["primeiro.pdf", "segundo.pdf"]);
+  });
+
+  it("excluir o fechamento leva os anexos junto", async () => {
+    const { account } = await seedAccount();
+    await createCashClosing(baseInput(account.id, { anexos: [recibo()] }));
+    const fechamento = await testPrisma.cashClosing.findFirstOrThrow();
+
+    await deleteCashClosing(fechamento.id);
+
+    await expect(testPrisma.document.count()).resolves.toBe(0);
+  });
+});

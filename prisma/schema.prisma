@@ -168,10 +168,14 @@ model Document {
   scheduledEntryId String?
   scheduledEntry   ScheduledEntry? @relation(fields: [scheduledEntryId], references: [id], onDelete: Cascade)
 
+  cashClosingId String?
+  cashClosing   CashClosing? @relation(fields: [cashClosingId], references: [id], onDelete: Cascade)
+
   @@index([companyId])
   @@index([doctorId])
   @@index([transactionId])
   @@index([scheduledEntryId])
+  @@index([cashClosingId])
 }
 
 // DRE realizado (fechado pelo contador/financeiro, ex: em Excel ou PDF) de
@@ -354,7 +358,8 @@ model CashClosing {
   transactionId String?      @unique
   transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
 
-  lines CashClosingLine[]
+  lines     CashClosingLine[]
+  documents Document[]
 
   @@unique([companyId, date])
 }

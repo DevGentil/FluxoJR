@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getActiveCompanyId } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { parseDateOnly } from "@/lib/date-only";
+import { validarAnexos } from "@/lib/anexos";
 
 const SANGRIA_CATEGORY_NAME = "Sangria Caixa";
 
@@ -20,6 +21,9 @@ export interface CashClosingInput {
   notes?: string;
   sangrias: CashClosingLineInput[];
   pagamentos: CashClosingLineInput[];
+  /** Nota ou recibo dos pagamentos em dinheiro do dia. Opcional: o
+   * fechamento nao pode ficar refem de ter o papel em maos. */
+  anexos?: File[];
 }
 
 function validate(input: CashClosingInput): string | null {
@@ -73,6 +77,11 @@ export async function createCashClosing(input: CashClosingInput): Promise<{ erro
     const category = await getOrCreateSangriaCategory(companyId);
     const dateObj = parseDateOnly(input.date);
 
+    // Lido antes da transacao: ler arquivos dentro dela seguraria a
+    // conexao do banco a toa, e anexo recusado deve barrar o fechamento
+    // antes de qualquer escrita.
+    const anexos = await validarAnexos(input.anexos ?? []);
+
     await prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.create({
         data: {
@@ -101,6 +110,7 @@ export async function createCashClosing(input: CashClosingInput): Promise<{ erro
               ...input.pagamentos.map((l, i) => ({ type: "PAGAMENTO" as const, label: l.label.trim(), amount: l.amount, order: i })),
             ],
           },
+          documents: { create: anexos.map((a) => ({ ...a, company: { connect: { id: companyId } } })) },
         },
       });
     });
@@ -137,6 +147,7 @@ export async function updateCashClosing(id: string, input: CashClosingInput): Pr
     const totalSangrias = input.sangrias.reduce((s, l) => s + l.amount, 0);
     const category = await getOrCreateSangriaCategory(companyId);
     const description = `Sangrias do caixa — ${input.date.split("-").reverse().join("/")}`;
+    const anexos = await validarAnexos(input.anexos ?? []);
 
     await prisma.$transaction(async (tx) => {
       await tx.cashClosingLine.deleteMany({ where: { cashClosingId: id } });
@@ -179,12 +190,38 @@ export async function updateCashClosing(id: string, input: CashClosingInput): Pr
           },
         },
       });
+
+      // As LINHAS sao recriadas do zero (sao a lista do dia inteiro), mas
+      // os anexos so ACRESCENTAM: quem corrigiu um valor nao pode perder a
+      // nota que ja estava ali.
+      if (anexos.length > 0) {
+        await tx.document.createMany({
+          data: anexos.map((a) => ({ ...a, companyId, cashClosingId: id })),
+        });
+      }
     });
 
     revalidateAll();
     return {};
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível salvar o fechamento." };
+  }
+}
+
+/** Remove um anexo do fechamento. O `companyId` no where impede que um id
+ * de outra unidade apague anexo alheio. */
+export async function removerAnexoFechamento(id: string): Promise<{ error?: string }> {
+  try {
+    await requireUser();
+    const companyId = await getActiveCompanyId("fechamento-caixa");
+    const { count } = await prisma.document.deleteMany({
+      where: { id, companyId, cashClosingId: { not: null } },
+    });
+    if (count === 0) return { error: "Anexo não encontrado." };
+    revalidateAll();
+    return {};
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível remover o anexo." };
   }
 }
 

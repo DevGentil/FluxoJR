@@ -19,6 +19,12 @@ interface Props {
   existentes?: AnexoSalvo[];
   /** Remove um anexo já gravado. Sem isto, os existentes ficam só de leitura. */
   aoRemover?: (id: string) => Promise<{ error?: string } | undefined>;
+  /** Avisa quais arquivos foram escolhidos.
+   *
+   * Só é preciso onde o diálogo não é um `<form>` — o fechamento de caixa
+   * monta um objeto com as linhas do dia e chama a action direto, então
+   * não há FormData para o `name="anexos"` viajar dentro. */
+  aoEscolherArquivos?: (arquivos: File[]) => void;
 }
 
 function formatarTamanho(bytes: number) {
@@ -32,7 +38,7 @@ function formatarTamanho(bytes: number) {
  * anexar é o passo acessório e não pode dar a impressão de ser obrigatório
  * para salvar. Por isso também o rótulo diz "opcional" em vez de deixar a
  * pessoa deduzir pela ausência do asterisco. */
-export function CampoAnexos({ existentes = [], aoRemover }: Props) {
+export function CampoAnexos({ existentes = [], aoRemover, aoEscolherArquivos }: Props) {
   const [selecionados, setSelecionados] = useState<File[]>([]);
   const [removidos, setRemovidos] = useState<string[]>([]);
 
@@ -45,7 +51,9 @@ export function CampoAnexos({ existentes = [], aoRemover }: Props) {
   const restantes = MAX_ANEXOS - visiveis.length;
 
   function aoEscolher(event: React.ChangeEvent<HTMLInputElement>) {
-    setSelecionados(Array.from(event.target.files ?? []));
+    const arquivos = Array.from(event.target.files ?? []);
+    setSelecionados(arquivos);
+    aoEscolherArquivos?.(arquivos);
   }
 
   return (
