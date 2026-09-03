@@ -1,4 +1,10 @@
-/* Demonstrativo de repasse — estilo do documento.
+/* A folha dos documentos que saem do sistema: demonstrativo de repasse, DRE
+ * e Balanço Executivo.
+ *
+ * Uma folha só para os três porque eles saem da mesma empresa e vão para as
+ * mesmas mãos — contador, diretoria, médico. Três estilos parecidos
+ * divergiriam no primeiro ajuste, e a papelada da holding passaria a ter três
+ * caras.
  *
  * CSS puro e não Tailwind: esta folha descreve um impresso, com medidas em
  * milímetros e regras de quebra de página, e é a única parte do sistema que
@@ -292,4 +298,189 @@ tfoot td {
   .topo { flex-direction: column; gap: 12px; }
   .titulo { text-align: left; }
   .identificacao { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ===================================================== DRE e Balanço ===== */
+
+/* O DRE agrupa por classificação financeira; a categoria financeira aparece
+   ao lado, mais fraca, porque é o guarda-chuva e não o assunto da tabela. */
+.grupo-dre h2 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.categoria-financeira {
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--tinta-3);
+  opacity: 0.85;
+}
+.col-data { width: 78px; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* --------------------------------------------------------- fecho do DRE */
+
+.fecho {
+  margin-top: 26px;
+  border: 1px solid var(--linha-forte);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.fecho-linha {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--linha);
+}
+.fecho-linha:last-child { border-bottom: none; }
+.fecho-linha span { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--tinta-2); }
+.fecho-linha strong { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.fecho-linha.resultado { background: var(--tinta); }
+.fecho-linha.resultado span { color: #fff; opacity: 0.75; }
+.fecho-linha.resultado strong { font-size: 20px; color: #fff; }
+.fecho-linha.resultado.prejuizo strong { color: #ff9d9d; }
+.fecho-linha.resultado.lucro strong { color: #86e0b4; }
+
+/* --------------------------------------------- indicadores do balanço */
+
+.indicadores { display: flex; flex-wrap: wrap; gap: 10px; }
+.indicador {
+  flex: 1 1 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid var(--linha);
+  border-radius: 3px;
+  /* O fio de cor no topo é a marca visual do balanço da holding. */
+  border-top: 3px solid var(--linha-forte);
+}
+.indicador.receita { border-top-color: #1c8f7b; }
+.indicador.despesa { border-top-color: #c0453f; }
+.ind-rotulo {
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+}
+.ind-valor { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ind-valor.negativo { color: #c0453f; }
+
+.nota { margin: 10px 0 0; font-size: 10.5px; color: var(--tinta-3); }
+.sub-rotulo {
+  margin: 16px 0 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+}
+
+/* ------------------------------------------------- posição de contas */
+
+.posicao {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 14px;
+  align-items: center;
+}
+.painel {
+  padding: 12px 14px;
+  border: 1px solid var(--linha);
+  border-radius: 3px;
+  background: #fafbfc;
+}
+.painel-titulo {
+  margin: 0 0 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+}
+.painel td { padding: 4px 0; border-bottom: none; font-size: 12px; }
+.painel tfoot td {
+  padding-top: 7px;
+  border-top: 1px solid var(--linha-forte);
+  font-size: 12.5px;
+}
+
+.fluxo-meio { text-align: center; padding: 0 4px; }
+.fluxo-meio .rotulo { display: block; margin-bottom: 2px; }
+.fluxo-valor { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fluxo-valor.negativo, .var-valor.negativo { color: #c0453f; }
+.fluxo-valor.positivo, .var-valor.positivo { color: #1c8f7b; }
+
+.variacoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.variacao {
+  flex: 1 1 130px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--linha);
+  border-radius: 3px;
+}
+.var-nome {
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+}
+.var-valor { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------ origem das receitas */
+
+.origens { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.origem-titulo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding-bottom: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--linha-forte);
+}
+.origem-titulo.receita { color: #1c8f7b; }
+.origem-titulo.despesa { color: #c0453f; }
+.origem-titulo span { font-variant-numeric: tabular-nums; letter-spacing: 0; }
+
+.origem-linha { margin-bottom: 9px; }
+.origem-topo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.origem-nome { min-width: 0; overflow-wrap: anywhere; }
+.barra-trilho {
+  height: 3px;
+  margin: 3px 0 2px;
+  border-radius: 2px;
+  background: var(--linha);
+}
+.barra-preenchida { height: 100%; border-radius: 2px; }
+.barra-preenchida.receita { background: #1c8f7b; }
+.barra-preenchida.despesa { background: #c0453f; }
+.origem-percent { font-size: 10px; color: var(--tinta-3); }
+
+@media print {
+  .grupo-dre, .fecho, .posicao, .origem-linha, .indicador, .variacao { break-inside: avoid; }
+  /* Sem isto o fecho do DRE e os indicadores saem sem fundo, e o resultado
+     vira texto branco em papel branco. */
+  .fecho-linha.resultado, .painel, .indicador { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .barra-preenchida, .barra-trilho { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+@media (max-width: 640px) {
+  .posicao { grid-template-columns: 1fr; }
+  .origens { grid-template-columns: 1fr; }
 }

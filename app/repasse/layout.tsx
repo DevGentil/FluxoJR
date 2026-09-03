@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import "./demonstrativo.css";
+import "../documento-impresso.css";
 
 export const metadata: Metadata = {
   title: "Demonstrativo de Repasse",

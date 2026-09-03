@@ -1,3 +1,6 @@
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { FileText } from "lucide-react";
 import { Fragment } from "react";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { getPeriodBalanceReport, type PeriodBalanceReport } from "@/lib/balance-report";
@@ -149,11 +152,29 @@ export default async function BalancoPage({ searchParams }: Props) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Balanço Executivo</h1>
-        <p className="text-muted-foreground text-sm">
-          Desempenho, posição de contas e origem de receitas/despesas — {scopeLabel}.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-semibold">Balanço Executivo</h1>
+          <p className="text-muted-foreground text-sm">
+            Desempenho, posição de contas e origem de receitas/despesas — {scopeLabel}.
+          </p>
+        </div>
+        {/* O documento leva o mesmo período que está na tela: quem filtrou a
+            semana quer o balanço daquela semana. */}
+        <Button
+          variant="outline"
+          nativeButton={false}
+          render={
+            <Link
+              href={`/documento/balanco?from=${range.from}&to=${range.to}`}
+              target="_blank"
+              rel="noopener"
+            />
+          }
+        >
+          <FileText className="size-4" />
+          Exportar em PDF
+        </Button>
       </div>
 
       <PeriodFilter basePath="/balanco" presets={presets} range={range} />

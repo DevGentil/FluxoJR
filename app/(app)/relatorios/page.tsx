@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getActiveScope, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
 import { formatCurrency, formatDate, formatBytes } from "@/lib/format";
@@ -15,7 +16,7 @@ import { deleteDreReport } from "./dre-reports-actions";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { SortableHead } from "@/components/sortable-head";
 import { parseSort, sortBy, type Sort } from "@/lib/sorting";
-import { Download } from "lucide-react";
+import { Download, FileText } from "lucide-react";
 
 interface Props {
   searchParams: Promise<{
@@ -536,13 +537,33 @@ export default async function RelatoriosPage({ searchParams }: Props) {
               : `DRE simplificado por categoria e centro de custo — ${scopeLabel}.`}
           </p>
         </div>
-        {!isConsolidated && (
-          <ExportCsvButton
-            headers={csvHeaders}
-            rows={csvRows}
-            fileName={`dre-${range.from}-a-${range.to}.csv`}
-          />
-        )}
+        <div className="flex flex-wrap gap-2">
+          {/* O DRE impresso é sempre de UMA competência: é assim que a
+              planilha é fechada e entregue ao contador. O filtro da tela
+              aceita qualquer intervalo, então o mês do documento é o mês em
+              que o período termina. */}
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={
+              <Link
+                href={`/documento/dre/${range.to.slice(0, 7)}`}
+                target="_blank"
+                rel="noopener"
+              />
+            }
+          >
+            <FileText className="size-4" />
+            DRE em PDF
+          </Button>
+          {!isConsolidated && (
+            <ExportCsvButton
+              headers={csvHeaders}
+              rows={csvRows}
+              fileName={`dre-${range.from}-a-${range.to}.csv`}
+            />
+          )}
+        </div>
       </div>
 
       <PeriodFilter basePath="/relatorios" presets={presets} range={range} />
