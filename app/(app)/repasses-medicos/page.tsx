@@ -196,7 +196,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
     podeReabrir(companyId),
   ]);
 
-  const [doctors, entries] = await Promise.all([
+  const [doctors, entries, accounts] = await Promise.all([
     prisma.doctor.findMany({
       where: { companyId },
       include: { serviceRates: { include: { serviceItem: { select: { name: true, payer: true } } } } },
@@ -210,6 +210,10 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
       },
       orderBy: [{ date: "desc" }, { doctor: { name: "asc" } }],
     }),
+    // Para a fila de aprovação perguntar de qual conta saiu o pagamento —
+    // sem isso toda aprovação caía sempre na primeira conta em ordem
+    // alfabética, e o extrato da conta certa nunca batia com o banco.
+    prisma.account.findMany({ where: { companyId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
 
   // O contrato vai junto para o diálogo mostrar os valores combinados na
@@ -409,6 +413,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
         paginaPendentes={paginaPendentes}
         paginaAprovados={paginaAprovados}
         params={params}
+        accounts={accounts}
       />
 
       <Card>

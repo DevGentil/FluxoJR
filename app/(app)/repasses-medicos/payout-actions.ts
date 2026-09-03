@@ -41,12 +41,11 @@ async function categoriaRepasse(companyId: string) {
   return prisma.category.create({ data: { companyId, name: CATEGORIA_REPASSE, type: "EXPENSE" } });
 }
 
-/** Em que conta o repasse sai.
+/** Em que conta o repasse sai quando a tela não manda uma escolha.
  *
- * Não há escolha na tela porque o repasse não é pago de uma conta
- * específica que a operação decida no ato — sai da conta corrente da
- * unidade. Pegar a primeira é uma simplificação consciente; quando a
- * unidade tiver mais de uma e isso importar, vira campo. */
+ * A tela sempre manda `accountId` hoje — este é só o resguardo de quem
+ * chamar a ação sem passar por ela (testes, por exemplo). Pegar a
+ * primeira em ordem alfabética é a mesma simplificação de antes. */
 async function contaPadrao(companyId: string) {
   return prisma.account.findFirst({ where: { companyId }, orderBy: { name: "asc" } });
 }
@@ -55,8 +54,12 @@ async function contaPadrao(companyId: string) {
  *
  * Só o que ainda não foi aprovado entra: se alguém lançar um dia esquecido
  * depois da aprovação, uma segunda aprovação cria um segundo repasse com a
- * diferença, em vez de duplicar o mês inteiro. */
-export async function aprovarRepasse(doctorId: string, mes: string): Promise<ActionState> {
+ * diferença, em vez de duplicar o mês inteiro.
+ *
+ * `accountId` é de qual conta bancária saiu o pagamento — quem aprova
+ * escolhe na tela, porque é isso que faz o extrato da conta bater com o
+ * banco depois. Sem ela, cai na conta padrão (primeira em ordem alfabética). */
+export async function aprovarRepasse(doctorId: string, mes: string, accountId?: string): Promise<ActionState> {
   return runMutation(async () => {
     await requireUser();
     const companyId = await getActiveCompanyId("repasses-medicos", "aprovar");
@@ -64,10 +67,16 @@ export async function aprovarRepasse(doctorId: string, mes: string): Promise<Act
 
     const [doctor, account] = await Promise.all([
       prisma.doctor.findFirst({ where: { id: doctorId, companyId }, select: { name: true } }),
-      contaPadrao(companyId),
+      accountId
+        ? prisma.account.findFirst({ where: { id: accountId, companyId } })
+        : contaPadrao(companyId),
     ]);
     if (!doctor) throw new Error("Médico não encontrado.");
-    if (!account) throw new Error("Cadastre uma conta bancária antes de aprovar repasses.");
+    if (!account) {
+      throw new Error(
+        accountId ? "Conta bancária inválida." : "Cadastre uma conta bancária antes de aprovar repasses."
+      );
+    }
 
     const pendentes = await prisma.doctorDailyEntry.findMany({
       where: {

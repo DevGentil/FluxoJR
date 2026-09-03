@@ -94,6 +94,37 @@ describe("aprovação do repasse", () => {
     expect(r?.error).toMatch(/Não há lançamentos pendentes/);
   });
 
+  it("usa a conta escolhida na aprovação, não a padrão", async () => {
+    // Sem accountId, o repasse sempre caía na primeira conta em ordem
+    // alfabética — o extrato daquela conta então não batia com o banco
+    // quando o pagamento saiu de outra.
+    const { company, doctor } = await cenario();
+    const outraConta = await testPrisma.account.create({
+      data: { companyId: company.id, name: "Zeta Poupança", type: "Poupança", initialBalance: 0 },
+    });
+    await lancar(doctor.id, "2026-08-10", 300);
+
+    const r = await aprovarRepasse(doctor.id, "2026-08", outraConta.id);
+
+    expect(r?.error).toBeUndefined();
+    const t = await testPrisma.transaction.findFirstOrThrow();
+    expect(t.accountId).toBe(outraConta.id);
+  });
+
+  it("recusa aprovar com conta de outra empresa", async () => {
+    const { doctor } = await cenario();
+    const outraEmpresa = await testPrisma.company.create({ data: { name: "Outra" } });
+    const contaAlheia = await testPrisma.account.create({
+      data: { companyId: outraEmpresa.id, name: "Conta Alheia", type: "Corrente", initialBalance: 0 },
+    });
+    await lancar(doctor.id, "2026-08-10", 300);
+
+    const r = await aprovarRepasse(doctor.id, "2026-08", contaAlheia.id);
+
+    expect(r?.error).toMatch(/Conta bancária inválida/);
+    await expect(testPrisma.transaction.count()).resolves.toBe(0);
+  });
+
   it("marca quem aprovou", async () => {
     const { doctor } = await cenario();
     await lancar(doctor.id, "2026-08-10", 300);

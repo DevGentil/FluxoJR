@@ -16,6 +16,17 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CheckCircle2, RotateCcw } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 import { Pagination } from "@/components/pagination";
@@ -24,6 +35,11 @@ import { aprovarRepasse, reabrirRepasse } from "./payout-actions";
 import { DetalheRepasse, type LinhaRepasse } from "@/components/detalhe-repasse";
 import Link from "next/link";
 import { useState } from "react";
+
+export interface ContaOption {
+  id: string;
+  name: string;
+}
 
 export interface RepassePendente {
   doctorId: string;
@@ -68,6 +84,8 @@ interface Props {
   paginaAprovados: number;
   /** Período e o resto da URL, preservados na troca de página. */
   params: Record<string, string | undefined>;
+  /** Contas da unidade, para escolher de onde saiu o pagamento ao aprovar. */
+  accounts: ContaOption[];
 }
 
 function BotaoConfirmar({
@@ -119,6 +137,93 @@ function BotaoConfirmar({
   );
 }
 
+/** Aprovar pede a conta bancária de onde saiu o pagamento — é ela que o
+ * lançamento leva para Transações, e é o que faz o extrato daquela conta
+ * bater com o banco depois. Por isso é diálogo comum, não o de confirmação
+ * simples: precisa de um campo antes de confirmar. */
+function BotaoAprovar({
+  doctorName,
+  mesLabel,
+  total,
+  dias,
+  accounts,
+  acao,
+}: {
+  doctorName: string;
+  mesLabel: string;
+  total: number;
+  dias: number;
+  accounts: ContaOption[];
+  acao: (accountId: string) => Promise<{ error?: string } | undefined>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
+  const [pending, startTransition] = useTransition();
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button size="sm" variant="outline" className="h-7" />}>
+        <CheckCircle2 className="size-3.5" />
+        Aprovar
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Aprovar o repasse de {doctorName}?</DialogTitle>
+          <DialogDescription>
+            {formatCurrency(total)} entram como despesa em {mesLabel}, somando {dias} dia(s) lançado(s).
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-2">
+          <Label htmlFor="conta-repasse">De qual conta saiu o pagamento</Label>
+          {accounts.length === 0 ? (
+            <p className="text-sm text-destructive">
+              Cadastre uma conta bancária antes de aprovar repasses.
+            </p>
+          ) : (
+            <Select
+              items={Object.fromEntries(accounts.map((a) => [a.id, a.name]))}
+              value={accountId}
+              onValueChange={(v) => setAccountId(v ?? "")}
+            >
+              <SelectTrigger id="conta-repasse" className="w-full">
+                <SelectValue placeholder="Selecione" />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button
+            disabled={pending || !accountId}
+            onClick={() =>
+              startTransition(async () => {
+                const r = await acao(accountId);
+                if (r?.error) toast.error(r.error);
+                else {
+                  // Sem fechar na mão: a linha aprovada some da fila sozinha
+                  // quando a página revalida, e desmontar o diálogo por fora
+                  // enquanto isso acontece é o que gerava o erro de DOM.
+                  toast.success("Repasse aprovado.");
+                }
+              })
+            }
+          >
+            Aprovar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /** A fila de aprovação do financeiro.
  *
  * Existe como lista própria, e não como botão no meio da tabela diária,
@@ -134,6 +239,7 @@ export function FilaAprovacao({
   paginaPendentes,
   paginaAprovados,
   params,
+  accounts,
 }: Props) {
   // Pendente e aprovado abrem o mesmo detalhe. O que muda é a frase do
   // subtítulo — "aguardando aprovação" ou "aprovado por Fulana".
@@ -196,11 +302,13 @@ export function FilaAprovacao({
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex justify-end">
                         {podeAprovar && (
-                          <BotaoConfirmar
-                            rotulo="Aprovar"
-                            titulo={`Aprovar o repasse de ${p.doctorName}?`}
-                            descricao={`${formatCurrency(p.total)} entram como despesa em ${p.mesLabel}, somando ${p.dias} dia(s) lançado(s).`}
-                            acao={() => aprovarRepasse(p.doctorId, p.mes)}
+                          <BotaoAprovar
+                            doctorName={p.doctorName}
+                            mesLabel={p.mesLabel}
+                            total={p.total}
+                            dias={p.dias}
+                            accounts={accounts}
+                            acao={(accountId) => aprovarRepasse(p.doctorId, p.mes, accountId)}
                           />
                         )}
                       </div>
