@@ -1,0 +1,295 @@
+/* Demonstrativo de repasse — estilo do documento.
+ *
+ * CSS puro e não Tailwind: esta folha descreve um impresso, com medidas em
+ * milímetros e regras de quebra de página, e é a única parte do sistema que
+ * precisa disso. Ler as regras de impressão juntas, num arquivo só, vale mais
+ * aqui do que espalhá-las em classes utilitárias.
+ *
+ * A paleta é a da marca: o dourado da JR Holding como único acento, sobre
+ * tinta quase preta e papel branco. Um documento que sai da empresa não é
+ * lugar para experimento de cor. */
+
+.documento {
+  --tinta: #16181d;
+  --tinta-2: #4b5158;
+  --tinta-3: #878d94;
+  --linha: #e2e5e9;
+  --linha-forte: #c8ccd2;
+  --dourado: #a67c2e;
+  --papel: #ffffff;
+  --fundo: #eceef1;
+
+  color-scheme: light;
+  background: var(--fundo);
+  color: var(--tinta);
+  min-height: 100vh;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* ---------------------------------------------------------------- a barra */
+
+.barra {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 210mm;
+  margin: 0 auto;
+  padding: 16px 8px 0;
+}
+
+.acao {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--linha-forte);
+  border-radius: 6px;
+  background: var(--papel);
+  color: var(--tinta-2);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+}
+.acao:hover { background: #f6f7f9; color: var(--tinta); }
+.acao:focus-visible { outline: 2px solid var(--dourado); outline-offset: 2px; }
+
+.acao.primaria {
+  background: var(--tinta);
+  border-color: var(--tinta);
+  color: #fff;
+}
+.acao.primaria:hover { background: #000; color: #fff; }
+
+/* ---------------------------------------------------------------- a folha */
+
+.pagina { padding: 0 8px 40px; }
+
+.folha {
+  max-width: 210mm;
+  margin: 16px auto 0;
+  padding: 18mm 16mm;
+  background: var(--papel);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.06);
+}
+
+/* -------------------------------------------------------------- cabeçalho */
+
+.topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 14px;
+  /* O fio dourado é o único traço de marca no documento. */
+  border-bottom: 2px solid var(--dourado);
+}
+
+.marca { display: flex; align-items: center; gap: 10px; }
+.empresa { margin: 0; font-weight: 600; font-size: 14px; }
+.cnpj { margin: 2px 0 0; font-size: 11px; color: var(--tinta-3); }
+
+.titulo { text-align: right; }
+.titulo h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.competencia {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--tinta-2);
+}
+/* Só a primeira letra: `capitalize` produzia "Agosto De 2026", que não é
+   português. Mesmo tratamento que a tabela de meses do sistema usa. */
+.competencia::first-letter { text-transform: uppercase; }
+
+/* ----------------------------------------------------------- identificação */
+
+.identificacao {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: #fafbfc;
+  border: 1px solid var(--linha);
+  border-radius: 4px;
+}
+.identificacao > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rotulo {
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+}
+.identificacao .valor { font-weight: 600; font-size: 13px; }
+.identificacao .valor.fechado { color: #2f6b4e; }
+.identificacao .valor.aberto { color: #a1651b; }
+
+/* ------------------------------------------------------------------ resumo */
+
+.resumo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+.cartao {
+  flex: 1 1 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 10px 12px;
+  border: 1px solid var(--linha);
+  border-left: 3px solid var(--dourado);
+  border-radius: 3px;
+}
+.cartao-rotulo {
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+}
+.cartao-qtd {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.cartao-valor { font-size: 12px; color: var(--tinta-2); font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------------ blocos */
+
+.bloco { margin-top: 22px; }
+.bloco h2 {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+}
+
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+  padding: 0 8px 6px;
+  border-bottom: 1px solid var(--linha-forte);
+}
+td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--linha);
+  vertical-align: top;
+}
+th:first-child, td:first-child { padding-left: 0; }
+th:last-child, td:last-child { padding-right: 0; }
+
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.suave { color: var(--tinta-2); }
+.nowrap { white-space: nowrap; }
+
+tfoot td {
+  border-bottom: none;
+  border-top: 1px solid var(--linha-forte);
+  font-weight: 600;
+  color: var(--tinta);
+}
+
+/* ------------------------------------------------------------------ aviso */
+
+.aviso {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: 1px solid #e8d9b8;
+  border-left: 3px solid #c9962f;
+  border-radius: 3px;
+  background: #fdfaf3;
+}
+.aviso p { margin: 0; font-size: 12px; }
+.aviso .explica { margin-top: 4px; color: var(--tinta-2); font-size: 11.5px; }
+
+/* ------------------------------------------------------------------ total */
+
+.total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 24px;
+  padding: 14px 16px;
+  background: var(--tinta);
+  color: #fff;
+  border-radius: 4px;
+}
+.total span { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; opacity: 0.75; }
+.total strong { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.vazio {
+  margin-top: 20px;
+  padding: 24px;
+  text-align: center;
+  color: var(--tinta-3);
+  border: 1px dashed var(--linha-forte);
+  border-radius: 4px;
+}
+
+/* ----------------------------------------------------------------- rodapé */
+
+.rodape {
+  margin-top: 26px;
+  padding-top: 12px;
+  border-top: 1px solid var(--linha);
+  color: var(--tinta-3);
+  font-size: 10.5px;
+}
+.rodape p { margin: 0 0 2px; }
+
+/* ------------------------------------------------------------- impressão */
+
+@media print {
+  /* A margem do papel vem da folha, não do navegador: assim o cabeçalho e o
+     rodapé automáticos do browser não brigam com os nossos. */
+  @page { size: A4; margin: 14mm; }
+
+  .documento { background: #fff; }
+  .pagina { padding: 0; }
+  .barra { display: none; }
+
+  .folha {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  /* Uma tabela partida entre duas páginas com o cabeçalho na primeira é o
+     defeito clássico do impresso; estas três regras são o que evita isso. */
+  .bloco, .aviso, .total, .cartao { break-inside: avoid; }
+  tr { break-inside: avoid; }
+  thead { display: table-header-group; }
+
+  /* Fundos sólidos só saem impressos se o navegador for autorizado. Sem
+     isto, o total sai como texto branco em papel branco. */
+  .total, .identificacao, .aviso {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* --------------------------------------------------------------- estreito */
+
+@media (max-width: 640px) {
+  .folha { padding: 14px; }
+  .topo { flex-direction: column; gap: 12px; }
+  .titulo { text-align: left; }
+  .identificacao { grid-template-columns: repeat(2, 1fr); }
+}

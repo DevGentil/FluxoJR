@@ -12,7 +12,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { KpiCard } from "@/components/kpi-card";
-import { ArrowLeft, CalendarCheck, CircleCheck, CircleDashed, Download, History, Wallet } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarCheck,
+  CircleCheck,
+  CircleDashed,
+  Download,
+  FileText,
+  History,
+  Wallet,
+} from "lucide-react";
 import { DeleteButton } from "@/components/delete-button";
 import { Pagination } from "@/components/pagination";
 import { SortableHead } from "@/components/sortable-head";
@@ -294,6 +303,7 @@ export default async function MedicoPage({ params, searchParams }: Props) {
                   >
                     Média por dia
                   </SortableHead>
+                  <TableHead className="w-44" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -308,6 +318,28 @@ export default async function MedicoPage({ params, searchParams }: Props) {
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
                       {formatCurrency(m.media)}
+                    </TableCell>
+                    <TableCell>
+                      {/* O demonstrativo abre em aba nova de propósito: ele é
+                          para imprimir ou salvar, e quem faz isso costuma
+                          voltar à ficha para o próximo mês. */}
+                      <div className="flex justify-end">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          nativeButton={false}
+                          render={
+                            <Link
+                              href={`/repasse/${doctor.id}/${m.mes}`}
+                              target="_blank"
+                              rel="noopener"
+                            />
+                          }
+                        >
+                          <FileText className="size-4" />
+                          Demonstrativo
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
