@@ -192,7 +192,7 @@ export function DailyEntryFormDialog({ doctors, entry, open: openProp, onOpenCha
             Lançar repasse
           </DialogTrigger>
         ))}
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{entry ? "Editar lançamento" : "Lançar dia de atendimento"}</DialogTitle>
           <DialogDescription>

@@ -186,7 +186,7 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
           Novo médico
         </DialogTrigger>
       )}
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{doctor ? "Editar médico" : "Novo médico"}</DialogTitle>
           <DialogDescription>

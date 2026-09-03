@@ -165,7 +165,7 @@ export function ImportDialog({ accounts, categories, suppliers }: Props) {
         <Upload />
         Importar
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Importar contas a pagar/receber</DialogTitle>
           <DialogDescription>

@@ -80,7 +80,7 @@ export function ServiceItemFormDialog({ serviceItem, groups = [] }: Props) {
           Novo item
         </DialogTrigger>
       )}
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{serviceItem ? "Editar item do catálogo" : "Novo item do catálogo"}</DialogTitle>
           <DialogDescription>

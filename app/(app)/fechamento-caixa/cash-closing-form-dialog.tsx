@@ -209,7 +209,7 @@ export function CashClosingFormDialog({ accounts, closing }: Props) {
           Novo fechamento
         </DialogTrigger>
       )}
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
           <>
             <DialogHeader>
               <DialogTitle>{closing ? "Editar fechamento de caixa" : "Novo fechamento de caixa"}</DialogTitle>

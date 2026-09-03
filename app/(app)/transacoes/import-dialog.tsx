@@ -155,7 +155,7 @@ export function ImportDialog({ accounts, categories }: Props) {
         <Upload />
         Importar
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Importar transações</DialogTitle>
           <DialogDescription>

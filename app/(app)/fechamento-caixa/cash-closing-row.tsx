@@ -92,7 +92,7 @@ export function CashClosingRow({ closing, actions, abrirDetalhe = false }: Props
       </TableRow>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Fechamento de {formatDate(closing.date)}</DialogTitle>
             <DialogDescription>
