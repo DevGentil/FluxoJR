@@ -45,9 +45,15 @@ export interface RepasseAprovado {
   id: string;
   doctorId: string;
   doctorName: string;
+  /** "2026-08" — para o demonstrativo do mês aprovado. */
+  mes: string;
   mesLabel: string;
   total: number;
   aprovadoPor: string | null;
+  dias: number;
+  linhas: LinhaRepasse[];
+  diasSemDetalhe: number;
+  valorSemDetalhe: number;
 }
 
 interface Props {
@@ -129,7 +135,9 @@ export function FilaAprovacao({
   paginaAprovados,
   params,
 }: Props) {
-  const [detalhando, setDetalhando] = useState<RepassePendente | null>(null);
+  // Pendente e aprovado abrem o mesmo detalhe. O que muda é a frase do
+  // subtítulo — "aguardando aprovação" ou "aprovado por Fulana".
+  const [detalhando, setDetalhando] = useState<RepassePendente | RepasseAprovado | null>(null);
 
   if (totalPendentes === 0 && totalAprovados === 0) return null;
 
@@ -228,10 +236,15 @@ export function FilaAprovacao({
               </TableHeader>
               <TableBody>
                 {aprovados.map((a) => (
-                  <TableRow key={a.id}>
+                  <TableRow
+                    key={a.id}
+                    className="cursor-pointer hover:bg-muted/30"
+                    onClick={() => setDetalhando(a)}
+                  >
                     <TableCell className="font-medium">
                       <Link
                         href={`/medicos/${a.doctorId}`}
+                        onClick={(e) => e.stopPropagation()}
                         className="hover:underline underline-offset-2"
                       >
                         {a.doctorName}
@@ -242,7 +255,7 @@ export function FilaAprovacao({
                     <TableCell className="text-right font-medium tabular-nums">
                       {formatCurrency(a.total)}
                     </TableCell>
-                    <TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex justify-end">
                         {podeAprovar && (
                           <BotaoConfirmar
@@ -280,7 +293,11 @@ export function FilaAprovacao({
           detalhando
             ? `${detalhando.mesLabel} · ${detalhando.dias} ${
                 detalhando.dias === 1 ? "dia lançado" : "dias lançados"
-              } · aguardando aprovação`
+              } · ${
+                "aprovadoPor" in detalhando
+                  ? `aprovado${detalhando.aprovadoPor ? ` por ${detalhando.aprovadoPor}` : ""}`
+                  : "aguardando aprovação"
+              }`
             : ""
         }
         linhas={detalhando?.linhas ?? []}

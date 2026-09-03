@@ -15,6 +15,7 @@ import { KpiCard } from "@/components/kpi-card";
 import { DailyEntryFormDialog } from "./daily-entry-form-dialog";
 import { DailyEntriesTable, type DailyEntryRow } from "./daily-entries-table";
 import { FilaAprovacao, type RepassePendente, type RepasseAprovado } from "./fila-aprovacao";
+import type { LinhaRepasse } from "@/components/detalhe-repasse";
 import { POR_PAGINA_COMPACTA, lerPagina } from "@/lib/paginacao";
 import { Wallet, CalendarCheck, CircleCheck, CircleDashed } from "lucide-react";
 
@@ -320,15 +321,68 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
       take: POR_PAGINA_COMPACTA,
     }),
   ]);
+  // Os dias de um repasse aprovado nem sempre estão entre os `entries` já
+  // carregados: aqueles seguem o filtro de período da tela, e a lista de
+  // aprovados não. Uma consulta só, restrita aos payouts desta página.
+  const diasAprovados =
+    payouts.length === 0
+      ? []
+      : await prisma.doctorDailyEntry.findMany({
+          where: { payoutId: { in: payouts.map((p) => p.id) } },
+          select: {
+            payoutId: true,
+            amount: true,
+            lines: {
+              select: {
+                quantity: true,
+                rate: true,
+                serviceItem: { select: { name: true, category: true } },
+              },
+            },
+          },
+        });
+
+  const detalhePorPayout = new Map<
+    string,
+    { dias: number; linhas: LinhaRepasse[]; diasSemDetalhe: number; valorSemDetalhe: number }
+  >();
+  for (const dia of diasAprovados) {
+    if (!dia.payoutId) continue;
+    const atual =
+      detalhePorPayout.get(dia.payoutId) ??
+      { dias: 0, linhas: [] as LinhaRepasse[], diasSemDetalhe: 0, valorSemDetalhe: 0 };
+    atual.dias += 1;
+    for (const l of dia.lines) {
+      atual.linhas.push({
+        serviceItemName: l.serviceItem.name,
+        categoria: l.serviceItem.category,
+        quantity: Number(l.quantity),
+        rate: Number(l.rate),
+      });
+    }
+    if (dia.lines.length === 0) {
+      atual.diasSemDetalhe += 1;
+      atual.valorSemDetalhe += Number(dia.amount ?? 0);
+    }
+    detalhePorPayout.set(dia.payoutId, atual);
+  }
+
   const aprovados: RepasseAprovado[] = payouts.map((p) => {
-    const [ano, m] = p.month.toISOString().slice(0, 7).split("-");
+    const mes = p.month.toISOString().slice(0, 7);
+    const [ano, m] = mes.split("-");
+    const detalhe = detalhePorPayout.get(p.id);
     return {
       id: p.id,
       doctorId: p.doctorId,
       doctorName: p.doctor.name,
+      mes,
       mesLabel: m + "/" + ano,
       total: Number(p.amount),
       aprovadoPor: p.approvedByName,
+      dias: detalhe?.dias ?? 0,
+      linhas: detalhe?.linhas ?? [],
+      diasSemDetalhe: detalhe?.diasSemDetalhe ?? 0,
+      valorSemDetalhe: detalhe?.valorSemDetalhe ?? 0,
     };
   });
 

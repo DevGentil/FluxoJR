@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DetalheRepasse, type LinhaRepasse } from "@/components/detalhe-repasse";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,7 +20,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { ChevronDown, ChevronRight, Receipt, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Receipt, Stethoscope, Trash2 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { TransactionFormDialog } from "./transaction-form-dialog";
 import { DeleteButton } from "@/components/delete-button";
@@ -49,6 +50,22 @@ interface TransactionRow {
   anexos: AnexoSalvo[];
   /** Preenchido quando a transação nasceu de um fechamento de caixa. */
   cashClosingId: string | null;
+  /** Preenchido quando a transação nasceu da aprovação de um repasse
+   * médico. É o que permite abrir, a partir do razão, o que compôs aquele
+   * pagamento — de outro jeito a linha diz "Repasse Médico" e não há como
+   * chegar aos dias e aos itens que somaram naquele valor. */
+  repasse: {
+    doctorId: string;
+    doctorName: string;
+    /** "2026-08" */
+    mes: string;
+    mesLabel: string;
+    dias: number;
+    linhas: LinhaRepasse[];
+    diasSemDetalhe: number;
+    valorSemDetalhe: number;
+    aprovadoPor: string | null;
+  } | null;
 }
 
 interface Props {
@@ -63,6 +80,7 @@ export function TransactionsTable({ transactions, accounts, categories, supplier
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
+  const [repasse, setRepasse] = useState<TransactionRow["repasse"]>(null);
 
   const allSelected = transactions.length > 0 && selected.size === transactions.length;
   const someSelected = selected.size > 0 && !allSelected;
@@ -264,6 +282,21 @@ export function TransactionsTable({ transactions, accounts, categories, supplier
                                   no fechamento. Sem este atalho a pessoa
                                   lia "Caixa do dia" e não tinha como abrir
                                   o que compõe o número. */}
+                              {/* Mesma ideia do fechamento: a transação é o
+                                  resumo do mês, e o detalhe de quantas
+                                  consultas e exames o compuseram fica no
+                                  repasse. */}
+                              {t.repasse && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title={`Ver o repasse de ${t.repasse.doctorName} em ${t.repasse.mesLabel}`}
+                                  aria-label={`Ver o repasse de ${t.repasse.doctorName} em ${t.repasse.mesLabel}`}
+                                  onClick={() => setRepasse(t.repasse)}
+                                >
+                                  <Stethoscope className="size-4" />
+                                </Button>
+                              )}
                               {t.cashClosingId && (
                                 <Button
                                   variant="ghost"
@@ -306,6 +339,24 @@ export function TransactionsTable({ transactions, accounts, categories, supplier
           ))}
         </TableBody>
       </Table>
+
+      <DetalheRepasse
+        aberto={repasse !== null}
+        onOpenChange={(v) => !v && setRepasse(null)}
+        titulo={repasse?.doctorName ?? ""}
+        subtitulo={
+          repasse
+            ? `${repasse.mesLabel} · ${repasse.dias} ${
+                repasse.dias === 1 ? "dia lançado" : "dias lançados"
+              }${repasse.aprovadoPor ? ` · aprovado por ${repasse.aprovadoPor}` : ""}`
+            : ""
+        }
+        linhas={repasse?.linhas ?? []}
+        total={repasse ? repasse.linhas.reduce((s, l) => s + l.quantity * l.rate, 0) + repasse.valorSemDetalhe : 0}
+        diasSemDetalhe={repasse?.diasSemDetalhe ?? 0}
+        valorSemDetalhe={repasse?.valorSemDetalhe ?? 0}
+        hrefDemonstrativo={repasse ? `/repasse/${repasse.doctorId}/${repasse.mes}` : undefined}
+      />
     </div>
   );
 }

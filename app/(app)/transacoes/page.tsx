@@ -40,6 +40,44 @@ const PAGE_SIZE = 50;
  * memória para montar o arquivo não escala. */
 const EXPORT_LIMIT = 10_000;
 
+/** Achata o repasse vinculado a uma transação no formato que o diálogo de
+ * detalhe espera. Os dias vêm junto da própria consulta das transações — não
+ * há consulta extra por linha. */
+function montarRepasse(payout: {
+  month: Date;
+  doctorId: string;
+  approvedByName: string | null;
+  doctor: { name: string };
+  entries: {
+    amount: Prisma.Decimal | null;
+    lines: { quantity: Prisma.Decimal; rate: Prisma.Decimal; serviceItem: { name: string; category: string } }[];
+  }[];
+}) {
+  const mes = payout.month.toISOString().slice(0, 7);
+  const [ano, m] = mes.split("-");
+  const linhas = payout.entries.flatMap((e) =>
+    e.lines.map((l) => ({
+      serviceItemName: l.serviceItem.name,
+      categoria: l.serviceItem.category,
+      quantity: Number(l.quantity),
+      rate: Number(l.rate),
+    }))
+  );
+  const semDetalhe = payout.entries.filter((e) => e.lines.length === 0);
+
+  return {
+    doctorId: payout.doctorId,
+    doctorName: payout.doctor.name,
+    mes,
+    mesLabel: m + "/" + ano,
+    dias: payout.entries.length,
+    linhas,
+    diasSemDetalhe: semDetalhe.length,
+    valorSemDetalhe: semDetalhe.reduce((s, e) => s + Number(e.amount ?? 0), 0),
+    aprovadoPor: payout.approvedByName,
+  };
+}
+
 async function ConsolidatedTransactionsSummary({
   companyIds,
   scopeLabel,
@@ -186,6 +224,28 @@ export default async function TransacoesPage({ searchParams }: Props) {
         // sangria, cada pagamento) fica no fechamento. Sem este vinculo a
         // pessoa via "Caixa do dia" e nao tinha como abrir o que compoe.
         cashClosing: { select: { id: true } },
+        // Mesma ideia para o repasse: a transacao e o resumo do mes de um
+        // medico, e os dias e itens que a compuseram ficam no repasse.
+        doctorPayout: {
+          select: {
+            month: true,
+            doctorId: true,
+            approvedByName: true,
+            doctor: { select: { name: true } },
+            entries: {
+              select: {
+                amount: true,
+                lines: {
+                  select: {
+                    quantity: true,
+                    rate: true,
+                    serviceItem: { select: { name: true, category: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       orderBy,
       skip: (page - 1) * PAGE_SIZE,
@@ -370,6 +430,7 @@ export default async function TransacoesPage({ searchParams }: Props) {
               amount: Number(t.amount),
               anexos: t.documents,
               cashClosingId: t.cashClosing?.id ?? null,
+              repasse: t.doctorPayout ? montarRepasse(t.doctorPayout) : null,
             }))}
           />
           <Pagination
