@@ -260,9 +260,24 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
     const chave = e.doctorId + "|" + mes;
     const atual = pendentesPorChave.get(chave);
     const valor = entryAmount(e);
+    // As linhas do dia vão junto: os lançamentos já estão carregados para
+    // somar a fila, então o detalhe do mês não custa consulta nenhuma.
+    const linhasDoDia = e.lines.map((l) => ({
+      serviceItemName: l.serviceItem.name,
+      categoria: l.serviceItem.category,
+      quantity: Number(l.quantity),
+      rate: Number(l.rate),
+    }));
+    const semDetalhe = e.lines.length === 0;
+
     if (atual) {
       atual.dias += 1;
       atual.total += valor;
+      atual.linhas.push(...linhasDoDia);
+      if (semDetalhe) {
+        atual.diasSemDetalhe += 1;
+        atual.valorSemDetalhe += valor;
+      }
       continue;
     }
     const [ano, m] = mes.split("-");
@@ -273,6 +288,9 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
       mesLabel: m + "/" + ano,
       dias: 1,
       total: valor,
+      linhas: linhasDoDia,
+      diasSemDetalhe: semDetalhe ? 1 : 0,
+      valorSemDetalhe: semDetalhe ? valor : 0,
     });
   }
   const pendentes = [...pendentesPorChave.values()].sort(
@@ -306,6 +324,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
     const [ano, m] = p.month.toISOString().slice(0, 7).split("-");
     return {
       id: p.id,
+      doctorId: p.doctorId,
       doctorName: p.doctor.name,
       mesLabel: m + "/" + ano,
       total: Number(p.amount),

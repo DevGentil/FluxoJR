@@ -109,10 +109,6 @@ export default async function DemonstrativoPage({ params }: Props) {
             <span className="valor">{doctor.name}</span>
           </div>
           <div>
-            <span className="rotulo">CRM</span>
-            <span className="valor">{doctor.document || "—"}</span>
-          </div>
-          <div>
             <span className="rotulo">Especialidade</span>
             <span className="valor">{doctor.specialty}</span>
           </div>

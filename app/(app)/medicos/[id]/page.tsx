@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getActiveScope, resolveCompanyIds } from "@/lib/scope";
-import { formatBytes, formatCurrency, formatDate, formatMonth, formatPercent } from "@/lib/format";
+import { formatBytes, formatCurrency, formatDate, formatPercent } from "@/lib/format";
 import { categoryLabel, payerLabel } from "@/lib/service-catalog";
 import { parseDateOnly, todayDateOnly, toMonthKey } from "@/lib/date-only";
 import { contractOn, previousVersions, scheduledVersions } from "@/lib/doctor-rates";
@@ -18,7 +18,6 @@ import {
   CircleCheck,
   CircleDashed,
   Download,
-  FileText,
   History,
   Wallet,
 } from "lucide-react";
@@ -28,6 +27,7 @@ import { SortableHead } from "@/components/sortable-head";
 import { parseSort, sortBy } from "@/lib/sorting";
 import { DoctorDocumentDialog } from "../doctor-document-dialog";
 import { DoctorEntriesFilter } from "../doctor-entries-filter";
+import { CorpoLancamentos, CorpoMeses, type MesDaFicha } from "./corpos-clicaveis";
 import { deleteDoctorDocument } from "../documents-actions";
 
 
@@ -75,7 +75,7 @@ export default async function MedicoPage({ params, searchParams }: Props) {
       company: { select: { name: true } },
       serviceRates: { include: { serviceItem: { select: { name: true, category: true, payer: true } } } },
       dailyEntries: {
-        include: { lines: { include: { serviceItem: { select: { name: true } } } } },
+        include: { lines: { include: { serviceItem: { select: { name: true, category: true } } } } },
         orderBy: { date: "desc" },
       },
       documents: {
@@ -98,6 +98,12 @@ export default async function MedicoPage({ params, searchParams }: Props) {
     notes: e.notes,
     valor: entryAmount(e),
     detalhe: e.lines.map((l) => `${Number(l.quantity)}× ${l.serviceItem.name}`).join(", "),
+    linhas: e.lines.map((l) => ({
+      serviceItemName: l.serviceItem.name,
+      categoria: l.serviceItem.category,
+      quantity: Number(l.quantity),
+      rate: Number(l.rate),
+    })),
   }));
 
   const total = lancamentos.reduce((s, l) => s + l.valor, 0);
@@ -105,16 +111,23 @@ export default async function MedicoPage({ params, searchParams }: Props) {
 
   // Mês a mês, do mais recente para o mais antigo — é como o repasse é
   // conferido e fechado.
-  const porMes = new Map<string, { dias: number; total: number }>();
+  const porMes = new Map<string, Omit<MesDaFicha, "media">>();
   for (const l of lancamentos) {
     const k = toMonthKey(l.date);
-    const atual = porMes.get(k) ?? { dias: 0, total: 0 };
-    porMes.set(k, { dias: atual.dias + 1, total: atual.total + l.valor });
+    const atual =
+      porMes.get(k) ??
+      { mes: k, dias: 0, total: 0, linhas: [], diasSemDetalhe: 0, valorSemDetalhe: 0 };
+    atual.dias += 1;
+    atual.total += l.valor;
+    atual.linhas.push(...l.linhas);
+    if (l.linhas.length === 0) {
+      atual.diasSemDetalhe += 1;
+      atual.valorSemDetalhe += l.valor;
+    }
+    porMes.set(k, atual);
   }
-  const mesesBrutos = [...porMes.entries()].map(([mes, v]) => ({
-    mes,
-    dias: v.dias,
-    total: v.total,
+  const mesesBrutos: MesDaFicha[] = [...porMes.values()].map((v) => ({
+    ...v,
     media: v.total / v.dias,
   }));
   const ordemMes = parseSort(
@@ -159,7 +172,6 @@ export default async function MedicoPage({ params, searchParams }: Props) {
         </div>
         <p className="text-muted-foreground text-sm">
           {doctor.specialty} · {doctor.company.name}
-          {doctor.document && ` · ${doctor.document}`}
           {doctor.paymentMethod && ` · ${doctor.paymentMethod}`}
         </p>
         {doctor.notes && <p className="text-muted-foreground text-sm italic">{doctor.notes}</p>}
@@ -306,44 +318,7 @@ export default async function MedicoPage({ params, searchParams }: Props) {
                   <TableHead className="w-44" />
                 </TableRow>
               </TableHeader>
-              <TableBody>
-                {meses.map((m) => (
-                  <TableRow key={m.mes}>
-                    <TableCell className="font-medium first-letter:uppercase">
-                      {formatMonth(m.mes)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{m.dias}</TableCell>
-                    <TableCell className="text-right tabular-nums font-medium">
-                      {formatCurrency(m.total)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {formatCurrency(m.media)}
-                    </TableCell>
-                    <TableCell>
-                      {/* O demonstrativo abre em aba nova de propósito: ele é
-                          para imprimir ou salvar, e quem faz isso costuma
-                          voltar à ficha para o próximo mês. */}
-                      <div className="flex justify-end">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          nativeButton={false}
-                          render={
-                            <Link
-                              href={`/repasse/${doctor.id}/${m.mes}`}
-                              target="_blank"
-                              rel="noopener"
-                            />
-                          }
-                        >
-                          <FileText className="size-4" />
-                          Demonstrativo
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
+              <CorpoMeses doctorId={doctor.id} doctorName={doctor.name} meses={meses} />
             </Table>
           </CardContent>
         </Card>
@@ -448,40 +423,7 @@ export default async function MedicoPage({ params, searchParams }: Props) {
                 </SortableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
-              {visiveis.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                    {lancamentos.length === 0
-                      ? "Nenhum dia lançado para esse médico ainda."
-                      : "Nenhum lançamento para esse filtro."}
-                  </TableCell>
-                </TableRow>
-              )}
-              {visiveis.map((l) => (
-                <TableRow key={l.id}>
-                  <TableCell className="tabular-nums">{formatDate(l.date)}</TableCell>
-                  <TableCell className="text-muted-foreground text-xs">
-                    {l.detalhe || (
-                      <Badge variant="outline" className="text-[10px] px-1 py-0">
-                        valor do dia
-                      </Badge>
-                    )}
-                    {l.notes && <span className="block text-[11px]">{l.notes}</span>}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums font-medium">
-                    {formatCurrency(l.valor)}
-                  </TableCell>
-                  <TableCell>
-                    {l.paid ? (
-                      <Badge variant="secondary">Pago</Badge>
-                    ) : (
-                      <span className="text-muted-foreground text-xs">Em aberto</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
+            <CorpoLancamentos doctorId={doctor.id} doctorName={doctor.name} lancamentos={visiveis} />
           </Table>
           <Pagination
             total={filtrados.length}

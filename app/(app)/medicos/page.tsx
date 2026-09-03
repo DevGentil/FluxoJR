@@ -38,7 +38,7 @@ interface Props {
 /** Colunas que aceitam ordenação. A lista é fechada de propósito: o campo
  * vem da URL, e sem ela daria para pedir ordem por uma coluna que a tela
  * não mostra. */
-const COLUNAS = ["nome", "especialidade", "crm", "contrato", "status"] as const;
+const COLUNAS = ["nome", "especialidade", "contrato", "status"] as const;
 type Coluna = (typeof COLUNAS)[number];
 
 /** Há quanto tempo o contrato foi conferido pela última vez. Valor antigo
@@ -220,7 +220,6 @@ export default async function MedicosPage({ searchParams }: Props) {
         id: true,
         name: true,
         specialty: true,
-        document: true,
         active: true,
         serviceRates: { select: { serviceItemId: true, validFrom: true, lastCheckedAt: true } },
       },
@@ -231,7 +230,7 @@ export default async function MedicosPage({ searchParams }: Props) {
 
   const busca = (params.q ?? "").trim().toLowerCase();
   const filtrados = resumo.filter((d) => {
-    if (busca && !`${d.name} ${d.document ?? ""}`.toLowerCase().includes(busca)) return false;
+    if (busca && !d.name.toLowerCase().includes(busca)) return false;
     if (params.especialidade && d.specialty !== params.especialidade) return false;
     if (params.status === "ativo" && !d.active) return false;
     if (params.status === "inativo" && d.active) return false;
@@ -246,7 +245,6 @@ export default async function MedicosPage({ searchParams }: Props) {
   const chave: Record<Coluna, (d: (typeof filtrados)[number]) => string | number | null> = {
     nome: (d) => d.name,
     especialidade: (d) => d.specialty,
-    crm: (d) => d.document,
     contrato: (d) => contractOn(d.serviceRates, hoje).length,
     status: (d) => Number(d.active),
   };
@@ -335,9 +333,6 @@ export default async function MedicosPage({ searchParams }: Props) {
                 <SortableHead field="especialidade" current={ordem}>
                   Especialização
                 </SortableHead>
-                <SortableHead field="crm" current={ordem}>
-                  CRM
-                </SortableHead>
                 <TableHead>Pagamento</TableHead>
                 <SortableHead field="contrato" first="desc" current={ordem}>
                   Contrato
@@ -374,7 +369,6 @@ export default async function MedicosPage({ searchParams }: Props) {
                       </Link>
                     </TableCell>
                     <TableCell>{d.specialty}</TableCell>
-                    <TableCell>{d.document || "—"}</TableCell>
                     <TableCell>{d.paymentMethod || "—"}</TableCell>
                     <TableCell className="text-sm">
                       <span className="text-muted-foreground">{contractSummary(vigentes)}</span>
@@ -408,7 +402,6 @@ export default async function MedicosPage({ searchParams }: Props) {
                             id: d.id,
                             name: d.name,
                             specialty: d.specialty,
-                            document: d.document,
                             paymentMethod: d.paymentMethod,
                             active: d.active,
                             notes: d.notes,

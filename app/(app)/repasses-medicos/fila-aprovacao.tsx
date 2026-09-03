@@ -21,6 +21,9 @@ import { formatCurrency } from "@/lib/format";
 import { Pagination } from "@/components/pagination";
 import { POR_PAGINA_COMPACTA } from "@/lib/paginacao";
 import { aprovarRepasse, reabrirRepasse } from "./payout-actions";
+import { DetalheRepasse, type LinhaRepasse } from "@/components/detalhe-repasse";
+import Link from "next/link";
+import { useState } from "react";
 
 export interface RepassePendente {
   doctorId: string;
@@ -30,10 +33,17 @@ export interface RepassePendente {
   mesLabel: string;
   dias: number;
   total: number;
+  /** O que compôs o mês, para o detalhe abrir sem uma segunda consulta: os
+   * dias já foram carregados para somar a fila. */
+  linhas: LinhaRepasse[];
+  /** Dias que entraram como valor fechado, sem itens. */
+  diasSemDetalhe: number;
+  valorSemDetalhe: number;
 }
 
 export interface RepasseAprovado {
   id: string;
+  doctorId: string;
   doctorName: string;
   mesLabel: string;
   total: number;
@@ -119,6 +129,8 @@ export function FilaAprovacao({
   paginaAprovados,
   params,
 }: Props) {
+  const [detalhando, setDetalhando] = useState<RepassePendente | null>(null);
+
   if (totalPendentes === 0 && totalAprovados === 0) return null;
 
   return (
@@ -150,14 +162,30 @@ export function FilaAprovacao({
               </TableHeader>
               <TableBody>
                 {pendentes.map((p) => (
-                  <TableRow key={`${p.doctorId}-${p.mes}`}>
-                    <TableCell className="font-medium">{p.doctorName}</TableCell>
+                  <TableRow
+                    key={`${p.doctorId}-${p.mes}`}
+                    // A linha abre o que compõe o mês. Quem aprova precisa
+                    // olhar o que está aprovando sem sair da fila.
+                    className="cursor-pointer hover:bg-muted/30"
+                    onClick={() => setDetalhando(p)}
+                  >
+                    <TableCell className="font-medium">
+                      {/* O nome leva à ficha do médico; a linha, ao detalhe do
+                          mês. Dois destinos, por isso o link não propaga. */}
+                      <Link
+                        href={`/medicos/${p.doctorId}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="hover:underline underline-offset-2"
+                      >
+                        {p.doctorName}
+                      </Link>
+                    </TableCell>
                     <TableCell className="whitespace-nowrap">{p.mesLabel}</TableCell>
                     <TableCell className="text-right tabular-nums">{p.dias}</TableCell>
                     <TableCell className="text-right font-medium tabular-nums">
                       {formatCurrency(p.total)}
                     </TableCell>
-                    <TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex justify-end">
                         {podeAprovar && (
                           <BotaoConfirmar
@@ -201,7 +229,14 @@ export function FilaAprovacao({
               <TableBody>
                 {aprovados.map((a) => (
                   <TableRow key={a.id}>
-                    <TableCell className="font-medium">{a.doctorName}</TableCell>
+                    <TableCell className="font-medium">
+                      <Link
+                        href={`/medicos/${a.doctorId}`}
+                        className="hover:underline underline-offset-2"
+                      >
+                        {a.doctorName}
+                      </Link>
+                    </TableCell>
                     <TableCell className="whitespace-nowrap">{a.mesLabel}</TableCell>
                     <TableCell className="text-muted-foreground">{a.aprovadoPor ?? "—"}</TableCell>
                     <TableCell className="text-right font-medium tabular-nums">
@@ -236,6 +271,27 @@ export function FilaAprovacao({
           </div>
         )}
       </CardContent>
+
+      <DetalheRepasse
+        aberto={detalhando !== null}
+        onOpenChange={(v) => !v && setDetalhando(null)}
+        titulo={detalhando?.doctorName ?? ""}
+        subtitulo={
+          detalhando
+            ? `${detalhando.mesLabel} · ${detalhando.dias} ${
+                detalhando.dias === 1 ? "dia lançado" : "dias lançados"
+              } · aguardando aprovação`
+            : ""
+        }
+        linhas={detalhando?.linhas ?? []}
+        total={detalhando?.total ?? 0}
+        diasSemDetalhe={detalhando?.diasSemDetalhe ?? 0}
+        valorSemDetalhe={detalhando?.valorSemDetalhe ?? 0}
+        unidade="atendimento"
+        hrefDemonstrativo={
+          detalhando ? `/repasse/${detalhando.doctorId}/${detalhando.mes}` : undefined
+        }
+      />
     </Card>
   );
 }

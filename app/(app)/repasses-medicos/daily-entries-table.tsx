@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { formatCurrency, formatDate, formatMonth, formatWeekday } from "@/lib/format";
 import { DailyEntryFormDialog, type DoctorOption } from "./daily-entry-form-dialog";
-import { DetalheLancamento } from "./detalhe-lancamento";
+import { DetalheRepasse } from "@/components/detalhe-repasse";
 import { deleteDailyEntry } from "./daily-entries-actions";
 import { PaidToggle } from "./paid-toggle";
 
@@ -388,7 +388,23 @@ export function DailyEntriesTable({
         />
       )}
 
-      <DetalheLancamento lancamento={detalhando} onOpenChange={(v) => !v && setDetalhando(null)} />
+      <DetalheRepasse
+        aberto={detalhando !== null}
+        onOpenChange={(v) => !v && setDetalhando(null)}
+        titulo={detalhando?.doctorName ?? ""}
+        subtitulo={
+          detalhando
+            ? `${formatDate(detalhando.date)} · ${formatWeekday(detalhando.date)} · ${
+                detalhando.paid ? "pago" : "em aberto"
+              }`
+            : ""
+        }
+        linhas={detalhando?.lines ?? []}
+        total={detalhando?.value ?? 0}
+        diasSemDetalhe={detalhando && detalhando.lines.length === 0 ? 1 : 0}
+        valorSemDetalhe={detalhando && detalhando.lines.length === 0 ? detalhando.value : 0}
+        notas={detalhando?.notes}
+      />
 
       <AlertDialog open={excluindo != null} onOpenChange={(v) => !v && setExcluindo(null)}>
         <AlertDialogContent>
