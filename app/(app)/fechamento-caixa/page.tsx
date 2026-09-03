@@ -10,6 +10,7 @@ import { AnexosPopover } from "@/components/anexos-popover";
 import { deleteCashClosing } from "./actions";
 import { AcoesFechamento } from "./acoes-fechamento";
 import { FiltrosTabela } from "@/components/filtros-tabela";
+import { AtalhosPeriodo } from "@/components/atalhos-periodo";
 import { Pagination } from "@/components/pagination";
 import { POR_PAGINA, lerPagina, paginaDoIndice } from "@/lib/paginacao";
 import { formatCurrency } from "@/lib/format";
@@ -160,6 +161,18 @@ export default async function FechamentoCaixaPage({ searchParams }: Props) {
         <FiltrosTabela
           basePath="/fechamento-caixa"
           valores={params as Record<string, string | undefined>}
+          atalhos={
+            <AtalhosPeriodo
+              basePath="/fechamento-caixa"
+              params={params as Record<string, string | undefined>}
+              campoDe="de"
+              campoAte="ate"
+              // `ver` e o atalho de Transacoes para abrir um fechamento
+              // especifico - trocar o periodo fecha esse detalhe, mesmo
+              // efeito que qualquer outro filtro desta tela ja tem.
+              excluir={["ver", "page"]}
+            />
+          }
           campos={[
             { tipo: "data", name: "de", label: "De" },
             { tipo: "data", name: "ate", label: "Até" },

@@ -13,6 +13,7 @@ import { DeleteButton } from "@/components/delete-button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { deleteScheduledEntry } from "./actions";
 import { FiltrosTabela } from "@/components/filtros-tabela";
+import { AtalhosPeriodo } from "@/components/atalhos-periodo";
 import { Pagination } from "@/components/pagination";
 import { POR_PAGINA, lerPagina } from "@/lib/paginacao";
 import { accessFor } from "@/lib/access";
@@ -409,6 +410,17 @@ export default async function ContasAPagarReceberPage({ searchParams }: Props) {
       <FiltrosTabela
         basePath="/contas-a-pagar-receber"
         valores={params as Record<string, string | undefined>}
+        atalhos={
+          <AtalhosPeriodo
+            basePath="/contas-a-pagar-receber"
+            params={params as Record<string, string | undefined>}
+            campoDe="de"
+            campoAte="ate"
+            // A página é por aba, não pelo período — trocar o período não
+            // deve fazer a pessoa "perder o lugar" na paginação.
+            excluir={["pp", "pr"]}
+          />
+        }
         campos={[
           { tipo: "busca", name: "q", label: "Descrição", placeholder: "Buscar..." },
           {

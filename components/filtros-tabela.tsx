@@ -27,6 +27,11 @@ interface Props {
   basePath: string;
   /** Fica ao lado dos botões — usado para "3 de 20" e afins. */
   resumo?: ReactNode;
+  /** Os atalhos de período (Hoje / Esta semana / Este mês / Mês passado),
+   * acima do formulário — normalmente um `<AtalhosPeriodo>`. Fica num slot,
+   * e não embutido aqui, porque esta barra não sabe (nem precisa saber)
+   * quais dois campos são o intervalo de data de cada tela. */
+  atalhos?: ReactNode;
 }
 
 const CLASSE_SELECT =
@@ -42,7 +47,7 @@ const CLASSE_SELECT =
  * Cada tela declara os campos que fazem sentido nela em vez de herdar uma
  * lista genérica: filtro que não corta nada é ruído ocupando a largura que
  * a tabela precisa. */
-export function FiltrosTabela({ campos, valores, basePath, resumo }: Props) {
+export function FiltrosTabela({ campos, valores, basePath, resumo, atalhos }: Props) {
   // A key remonta os campos quando o filtro muda. Sem ela, o mesmo input
   // recebe um `defaultValue` novo depois de montado, e o Base UI avisa que
   // o campo passou de não-controlado para controlado.
@@ -54,7 +59,8 @@ export function FiltrosTabela({ campos, valores, basePath, resumo }: Props) {
       <CardHeader className="pb-0">
         <CardTitle className="text-base">Filtros</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3">
+        {atalhos}
         <form key={chave} method="GET" className="flex flex-wrap items-end gap-3">
           {campos.map((campo) => (
             <div key={campo.name} className="space-y-1">
