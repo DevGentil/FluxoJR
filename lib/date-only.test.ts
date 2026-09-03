@@ -6,6 +6,7 @@ import {
   endOfDay,
   firstDayOfMonth,
   parseDateOnly,
+  presetRange,
   startOfMonth,
   startOfNextMonth,
   startOfWeek,
@@ -102,5 +103,60 @@ describe("aritmética de calendário", () => {
 
   it("acha o primeiro dia do mês", () => {
     expect(firstDayOfMonth("2026-08-28")).toBe("2026-08-01");
+  });
+});
+
+describe("presetRange", () => {
+  it("hoje é só o dia de hoje", () => {
+    expect(presetRange("today", new Date(2026, 7, 28))).toEqual({
+      from: "2026-08-28",
+      to: "2026-08-28",
+    });
+  });
+
+  it("esta semana começa na segunda-feira", () => {
+    // 28/08/2026 é uma sexta.
+    expect(presetRange("week", new Date(2026, 7, 28))).toEqual({
+      from: "2026-08-24",
+      to: "2026-08-28",
+    });
+  });
+
+  it("este mês começa no dia 1º", () => {
+    expect(presetRange("month", new Date(2026, 7, 28))).toEqual({
+      from: "2026-08-01",
+      to: "2026-08-28",
+    });
+  });
+
+  it("mês passado é o mês inteiro anterior, não até o mesmo dia", () => {
+    // Perguntado no dia 5 de setembro, "mês passado" é agosto inteiro — do
+    // dia 1º ao dia 31 — e não "de 5/08 a 5/09", que seria outra pergunta.
+    expect(presetRange("lastMonth", new Date(2026, 8, 5))).toEqual({
+      from: "2026-08-01",
+      to: "2026-08-31",
+    });
+  });
+
+  it("mês passado atravessa o ano em janeiro", () => {
+    expect(presetRange("lastMonth", new Date(2026, 0, 15))).toEqual({
+      from: "2025-12-01",
+      to: "2025-12-31",
+    });
+  });
+
+  it("mês passado respeita um fevereiro de 28 dias", () => {
+    // 2026 não é bissexto.
+    expect(presetRange("lastMonth", new Date(2026, 2, 10))).toEqual({
+      from: "2026-02-01",
+      to: "2026-02-28",
+    });
+  });
+
+  it("mês passado respeita um fevereiro bissexto", () => {
+    expect(presetRange("lastMonth", new Date(2024, 2, 10))).toEqual({
+      from: "2024-02-01",
+      to: "2024-02-29",
+    });
   });
 });

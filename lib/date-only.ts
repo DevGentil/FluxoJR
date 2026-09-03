@@ -89,3 +89,25 @@ export function startOfWeek(iso: string): string {
 export function firstDayOfMonth(iso: string): string {
   return `${iso.slice(0, 7)}-01`;
 }
+
+export type PeriodoPreset = "today" | "week" | "month" | "lastMonth";
+
+/** Os atalhos de período de Relatórios e Balanço — um lugar só, porque as
+ * duas telas tinham a mesma função copiada, e "mês passado" precisava entrar
+ * nas duas ao mesmo tempo.
+ *
+ * Sempre em datas de calendário, nunca passando pelo relógio local depois de
+ * calculado: fazer isso com `toISOString()` devolvia o dia seguinte depois
+ * das 21h no horário de Brasília, e "hoje" virava amanhã toda noite. */
+export function presetRange(kind: PeriodoPreset, now = new Date()): { from: string; to: string } {
+  const hoje = todayDateOnly(now);
+  if (kind === "today") return { from: hoje, to: hoje };
+  if (kind === "week") return { from: startOfWeek(hoje), to: hoje };
+  if (kind === "month") return { from: firstDayOfMonth(hoje), to: hoje };
+
+  // Mês passado: do primeiro ao último dia do mês anterior ao de hoje. O
+  // último dia é o dia anterior ao primeiro dia do mês atual — assim não
+  // precisa saber se o mês tem 28, 30 ou 31 dias.
+  const fimDoMesPassado = addDays(firstDayOfMonth(hoje), -1);
+  return { from: firstDayOfMonth(fimDoMesPassado), to: fimDoMesPassado };
+}

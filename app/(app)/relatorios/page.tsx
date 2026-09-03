@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, Table
 import { Button } from "@/components/ui/button";
 import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { PeriodFilter } from "@/components/period-filter";
-import { startOfDay, endOfDay, todayDateOnly, startOfWeek, firstDayOfMonth } from "@/lib/date-only";
+import { startOfDay, endOfDay, presetRange } from "@/lib/date-only";
 import { DeleteButton } from "@/components/delete-button";
 import { DreReportFormDialog } from "./dre-report-form-dialog";
 import { deleteDreReport } from "./dre-reports-actions";
@@ -44,16 +44,6 @@ interface ReportRow {
   tipo: "INCOME" | "EXPENSE";
   centroCusto: string;
   total: number;
-}
-
-/** Os atalhos de período trabalham em datas de calendário. Passar por
- * `toISOString()` sobre o relógio local devolvia o dia seguinte depois das
- * 21h no horário de Brasília, e "hoje" virava amanhã toda noite. */
-function presetRange(kind: "today" | "week" | "month") {
-  const to = todayDateOnly();
-  if (kind === "week") return { from: startOfWeek(to), to };
-  if (kind === "month") return { from: firstDayOfMonth(to), to };
-  return { from: to, to };
 }
 
 function defaultRange() {
@@ -457,6 +447,7 @@ export default async function RelatoriosPage({ searchParams }: Props) {
     { label: "Hoje", ...presetRange("today") },
     { label: "Esta semana", ...presetRange("week") },
     { label: "Este mês", ...presetRange("month") },
+    { label: "Mês passado", ...presetRange("lastMonth") },
   ];
 
   const transactions =

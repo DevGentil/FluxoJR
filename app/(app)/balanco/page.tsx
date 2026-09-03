@@ -11,20 +11,10 @@ import { SwitchToCompanyButton } from "@/components/switch-to-company-button";
 import { PeriodFilter } from "@/components/period-filter";
 import { ComparisonDashboard } from "./comparison-dashboard";
 import { getMonthlyTotals } from "@/lib/cashflow";
-import { startOfDay, endOfDay, todayDateOnly, startOfWeek, firstDayOfMonth } from "@/lib/date-only";
+import { startOfDay, endOfDay, presetRange } from "@/lib/date-only";
 
 interface Props {
   searchParams: Promise<{ from?: string; to?: string }>;
-}
-
-/** Os atalhos de período trabalham em datas de calendário. Passar por
- * `toISOString()` sobre o relógio local devolvia o dia seguinte depois das
- * 21h no horário de Brasília, e "hoje" virava amanhã toda noite. */
-function presetRange(kind: "today" | "week" | "month") {
-  const to = todayDateOnly();
-  if (kind === "today") return { from: to, to };
-  if (kind === "week") return { from: startOfWeek(to), to };
-  return { from: firstDayOfMonth(to), to };
 }
 
 function defaultRange() {
@@ -148,6 +138,7 @@ export default async function BalancoPage({ searchParams }: Props) {
     { label: "Hoje", ...presetRange("today") },
     { label: "Esta semana", ...presetRange("week") },
     { label: "Este mês", ...presetRange("month") },
+    { label: "Mês passado", ...presetRange("lastMonth") },
   ];
 
   return (
