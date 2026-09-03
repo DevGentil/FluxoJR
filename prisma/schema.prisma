@@ -407,7 +407,6 @@ model Doctor {
   id            String   @id @default(cuid())
   name          String
   specialty     String   @default("Geral")
-  document      String? // CRM
   paymentMethod String?
   active        Boolean  @default(true)
   notes         String?

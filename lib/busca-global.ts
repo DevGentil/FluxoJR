@@ -346,22 +346,20 @@ const FONTES: Fonte[] = [
     modulo: "medicos",
     alcance: {
       tabela: "Doctor",
-      colunas: ["name", "document", "specialty"],
+      colunas: ["name", "specialty"],
       ordem: Prisma.sql`"active" DESC, "name" ASC`,
     },
     async carregar(ids) {
       const linhas = await prisma.doctor.findMany({
         where: { id: { in: ids } },
-        select: { id: true, companyId: true, name: true, specialty: true, document: true, active: true },
+        select: { id: true, companyId: true, name: true, specialty: true, active: true },
         orderBy: [{ active: "desc" }, { name: "asc" }],
       });
       return linhas.map((d) => ({
         id: d.id,
         tipo: "medico" as const,
         titulo: d.name,
-        descricao: [d.specialty, d.document && `CRM ${d.document}`, !d.active && "Inativo"]
-          .filter(Boolean)
-          .join(" · "),
+        descricao: [d.specialty, !d.active && "Inativo"].filter(Boolean).join(" · "),
         detalhe: null,
         // Aqui existe ficha própria — o resultado leva direto a ela.
         href: `/medicos/${d.id}`,

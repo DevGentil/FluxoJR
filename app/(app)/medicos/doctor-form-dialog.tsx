@@ -52,7 +52,6 @@ interface Props {
     id: string;
     name: string;
     specialty: string;
-    document: string | null;
     paymentMethod: string | null;
     active: boolean;
     notes: string | null;
@@ -72,7 +71,6 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
 
   const [name, setName] = useState(doctor?.name ?? "");
   const [specialty, setSpecialty] = useState(doctor?.specialty ?? "");
-  const [document, setDocument] = useState(doctor?.document ?? "");
   const [paymentMethod, setPaymentMethod] = useState(doctor?.paymentMethod ?? "");
   const [active, setActive] = useState(doctor?.active ?? true);
   const [notes, setNotes] = useState(doctor?.notes ?? "");
@@ -132,7 +130,6 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
     if (!doctor) {
       setName("");
       setSpecialty("");
-      setDocument("");
       setPaymentMethod("");
       setActive(true);
       setNotes("");
@@ -145,7 +142,6 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
     const payload: DoctorInput = {
       name,
       specialty,
-      document: document || undefined,
       paymentMethod: paymentMethod || undefined,
       active,
       notes: notes || undefined,
@@ -218,10 +214,6 @@ export function DoctorFormDialog({ serviceItems, doctor }: Props) {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="document">CRM</Label>
-              <Input id="document" value={document} onChange={(e) => setDocument(e.target.value)} />
-            </div>
             <div className="space-y-2">
               <Label htmlFor="paymentMethod">Forma de pagamento</Label>
               <Input

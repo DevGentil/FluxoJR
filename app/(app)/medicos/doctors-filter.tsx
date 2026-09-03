@@ -52,7 +52,7 @@ export function DoctorsFilter({ especialidades }: { especialidades: string[] }) 
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             onBlur={() => aplicar({ q: busca })}
-            placeholder="Nome ou CRM..."
+            placeholder="Buscar por nome..."
             className="pl-8 w-56"
           />
         </div>

@@ -1,0 +1,12 @@
+-- O CRM sai do cadastro de medico.
+--
+-- Decisao do Davi em 03/09/2026: o campo nunca foi usado na operacao real
+-- (dos 91 medicos, 88 estavam com ele vazio; os 3 preenchidos eram do seed
+-- de demonstracao da AS Laguna). Manter uma coluna que ninguem preenche
+-- custa mais do que remove-la: ela aparece no formulario, na lista, na busca
+-- e no demonstrativo do medico, e cada uma dessas telas passa a ter um campo
+-- vazio que alguem um dia vai perguntar por que existe.
+--
+-- E dado pessoal do medico, entao remove-lo tambem encolhe o que o sistema
+-- guarda sem precisar (P2-17, LGPD).
+ALTER TABLE "Doctor" DROP COLUMN IF EXISTS "document";

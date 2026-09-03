@@ -27,7 +27,6 @@ export interface DoctorServiceRateInput {
 export interface DoctorInput {
   name: string;
   specialty: string;
-  document?: string;
   paymentMethod?: string;
   active: boolean;
   notes?: string;
@@ -66,7 +65,6 @@ export async function createDoctor(input: DoctorInput): Promise<{ error?: string
         companyId,
         name: input.name.trim(),
         specialty: input.specialty.trim(),
-        document: input.document?.trim() || null,
         paymentMethod: input.paymentMethod?.trim() || null,
         active: input.active,
         notes: input.notes?.trim() || null,
@@ -160,7 +158,6 @@ export async function updateDoctor(id: string, input: DoctorInput): Promise<{ er
         data: {
           name: input.name.trim(),
           specialty: input.specialty.trim(),
-          document: input.document?.trim() || null,
           paymentMethod: input.paymentMethod?.trim() || null,
           active: input.active,
           notes: input.notes?.trim() || null,

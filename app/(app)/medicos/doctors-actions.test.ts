@@ -22,7 +22,6 @@ function baseInput(serviceItemId: string, overrides: Partial<DoctorInput> = {}):
   return {
     name: "Dr. João Silva",
     specialty: "Clínico Geral",
-    document: "CRM 12345",
     paymentMethod: "PIX",
     active: true,
     serviceRates: [{ serviceItemId, rate: 45 }],
@@ -40,7 +39,7 @@ describe("createDoctor", () => {
     expect(result.error).toBeUndefined();
     const doctors = await testPrisma.doctor.findMany({ include: { serviceRates: true } });
     expect(doctors).toHaveLength(1);
-    expect(doctors[0]).toMatchObject({ name: "Dr. João Silva", document: "CRM 12345" });
+    expect(doctors[0]).toMatchObject({ name: "Dr. João Silva" });
     expect(doctors[0].serviceRates).toHaveLength(1);
     expect(Number(doctors[0].serviceRates[0].rate)).toBe(45);
   });
