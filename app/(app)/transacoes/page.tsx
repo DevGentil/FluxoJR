@@ -1,7 +1,8 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { startOfDay, endOfDay } from "@/lib/date-only";
 import { getActiveScope, getAllCompanies, resolveCompanyIds, getScopeLabel } from "@/lib/scope";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
 import { Pagination } from "@/components/pagination";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -12,7 +13,9 @@ import { TransactionFormDialog } from "./transaction-form-dialog";
 import { ImportDialog } from "./import-dialog";
 import { TransactionsTable } from "./transactions-table";
 import { OpenCompanyButton } from "@/components/open-company-button";
-import { ExportCsvButton } from "@/components/export-csv-button";
+import { ExportarTransacoesButton } from "@/components/exportar-transacoes-button";
+import { AtalhosPeriodo } from "@/components/atalhos-periodo";
+import { FileText } from "lucide-react";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 interface Props {
@@ -269,6 +272,13 @@ export default async function TransacoesPage({ searchParams }: Props) {
     }),
   ]);
 
+  // O PDF carrega o filtro inteiro da tela, menos a paginação.
+  const queryStringExtrato = new URLSearchParams(
+    Object.entries(params)
+      .filter(([chave, valor]) => chave !== "page" && valor)
+      .map(([chave, valor]) => [chave, valor as string])
+  ).toString();
+
   const accountOptions = accounts.map((a) => ({ id: a.id, name: a.name }));
   const categoryOptions = categories.map((c) => ({
     id: c.id,
@@ -285,19 +295,29 @@ export default async function TransacoesPage({ searchParams }: Props) {
           <h1 className="text-2xl font-semibold">Transações</h1>
           <p className="text-muted-foreground text-sm">Entradas e saídas lançadas manualmente ou importadas.</p>
         </div>
-        <div className="flex gap-2">
-          <ExportCsvButton
-            headers={["Data", "Conta", "Descrição", "Categoria", "Fornecedor", "Tipo", "Valor"]}
-            rows={exportRows.map((t) => [
-              formatDate(t.date),
-              t.account.name,
-              t.description,
-              t.category?.name ?? "",
-              t.supplier?.name ?? "",
-              t.type === "INCOME" ? "Entrada" : "Saída",
-              Number(t.amount),
-            ])}
-            fileName={`transacoes-${new Date().toISOString().slice(0, 10)}.csv`}
+        <div className="flex flex-wrap gap-2">
+          {/* O PDF leva o mesmo filtro que está na tela — os mesmos
+              parâmetros da URL, menos a página, que não faz sentido num
+              documento que traz tudo que o filtro encontrou. */}
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href={`/documento/transacoes?${queryStringExtrato}`} target="_blank" rel="noopener" />}
+          >
+            <FileText className="size-4" />
+            Extrato em PDF
+          </Button>
+          <ExportarTransacoesButton
+            linhas={exportRows.map((t) => ({
+              data: t.date,
+              conta: t.account.name,
+              descricao: t.description,
+              categoria: t.category?.name ?? "—",
+              fornecedor: t.supplier?.name ?? "—",
+              tipo: t.type as "INCOME" | "EXPENSE",
+              valor: Number(t.amount),
+            }))}
+            fileName={`Transacoes ${new Date().toISOString().slice(0, 10)}.xlsx`}
           />
           <ImportDialog accounts={accountOptions} categories={categoryOptions} />
           <TransactionFormDialog
@@ -313,7 +333,14 @@ export default async function TransacoesPage({ searchParams }: Props) {
         <CardHeader>
           <CardTitle className="text-base">Filtros</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          <AtalhosPeriodo
+            basePath="/transacoes"
+            params={params as Record<string, string | undefined>}
+            campoDe="from"
+            campoAte="to"
+            excluir={["page"]}
+          />
           {/* A key remonta os campos quando o filtro muda. Sem ela, o mesmo
               input recebe um `defaultValue` novo depois de montado, e o Base
               UI avisa que o campo mudou de não-controlado para controlado —
