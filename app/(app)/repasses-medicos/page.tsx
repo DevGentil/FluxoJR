@@ -203,7 +203,10 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
     }),
     prisma.doctorDailyEntry.findMany({
       where: { companyId, ...(dateWhere ? { date: dateWhere } : {}) },
-      include: { doctor: { select: { name: true } }, lines: { include: { serviceItem: { select: { name: true } } } } },
+      include: {
+        doctor: { select: { name: true } },
+        lines: { include: { serviceItem: { select: { name: true, category: true } } } },
+      },
       orderBy: [{ date: "desc" }, { doctor: { name: "asc" } }],
     }),
   ]);
@@ -242,6 +245,7 @@ export default async function RepassesMedicosPage({ searchParams }: Props) {
       id: l.id,
       serviceItemId: l.serviceItemId,
       serviceItemName: l.serviceItem.name,
+      categoria: l.serviceItem.category,
       quantity: Number(l.quantity),
       rate: Number(l.rate),
     })),

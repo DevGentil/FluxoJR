@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { formatCurrency, formatDate, formatMonth, formatWeekday } from "@/lib/format";
 import { DailyEntryFormDialog, type DoctorOption } from "./daily-entry-form-dialog";
+import { DetalheLancamento } from "./detalhe-lancamento";
 import { deleteDailyEntry } from "./daily-entries-actions";
 import { PaidToggle } from "./paid-toggle";
 
@@ -35,7 +36,16 @@ export interface DailyEntryRow {
   notes: string | null;
   /** Valor efetivo: o digitado ou a soma das linhas. */
   value: number;
-  lines: { id: string; serviceItemId: string; serviceItemName: string; quantity: number; rate: number }[];
+  lines: {
+    id: string;
+    serviceItemId: string;
+    serviceItemName: string;
+    /** Categoria do item no catálogo — é ela que separa consulta de exame no
+     * detalhe do dia. */
+    categoria: string;
+    quantity: number;
+    rate: number;
+  }[];
 }
 
 interface Props {
@@ -99,6 +109,7 @@ export function DailyEntriesTable({
   // a linha escolhida — montar um par por linha punha centenas de
   // componentes na árvore, cada um segurando a lista de médicos.
   const [editando, setEditando] = useState<DailyEntryRow | null>(null);
+  const [detalhando, setDetalhando] = useState<DailyEntryRow | null>(null);
   const [excluindo, setExcluindo] = useState<DailyEntryRow | null>(null);
   const [isDeleting, startDelete] = useTransition();
 
@@ -266,11 +277,20 @@ export function DailyEntriesTable({
 
                         {diaAberto &&
                           dia.rows.map((r) => (
-                            <TableRow key={r.id}>
+                            <TableRow
+                              key={r.id}
+                              // A linha inteira abre o detalhe do dia. O nome do
+                              // médico continua levando à ficha dele — dois
+                              // destinos diferentes na mesma linha, e por isso o
+                              // link para de propagar o clique.
+                              className="cursor-pointer hover:bg-muted/30"
+                              onClick={() => setDetalhando(r)}
+                            >
                               <TableCell />
                               <TableCell className="pl-10">
                                 <Link
                                   href={`/medicos/${r.doctorId}`}
+                                  onClick={(e) => e.stopPropagation()}
                                   className="hover:underline underline-offset-2"
                                 >
                                   {r.doctorName}
@@ -287,10 +307,10 @@ export function DailyEntriesTable({
                                 {r.notes && <span className="block text-[11px]">{r.notes}</span>}
                               </TableCell>
                               <TableCell className="text-right tabular-nums">{formatCurrency(r.value)}</TableCell>
-                              <TableCell>
+                              <TableCell onClick={(e) => e.stopPropagation()}>
                                 <PaidToggle entryId={r.id} paid={r.paid} />
                               </TableCell>
-                              <TableCell>
+                              <TableCell onClick={(e) => e.stopPropagation()}>
                                 <div className="flex justify-end gap-1">
                                   <Button
                                     variant="ghost"
@@ -367,6 +387,8 @@ export function DailyEntriesTable({
           onOpenChange={(v) => !v && setEditando(null)}
         />
       )}
+
+      <DetalheLancamento lancamento={detalhando} onOpenChange={(v) => !v && setDetalhando(null)} />
 
       <AlertDialog open={excluindo != null} onOpenChange={(v) => !v && setExcluindo(null)}>
         <AlertDialogContent>
