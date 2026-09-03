@@ -13,7 +13,9 @@ import { startOfDay, endOfDay, todayDateOnly, startOfWeek, firstDayOfMonth } fro
 import { DeleteButton } from "@/components/delete-button";
 import { DreReportFormDialog } from "./dre-report-form-dialog";
 import { deleteDreReport } from "./dre-reports-actions";
-import { ExportCsvButton } from "@/components/export-csv-button";
+import { ExportarDreButton } from "@/components/exportar-dre-button";
+import { montarDre } from "@/lib/dre";
+import { competenciaCurta } from "@/lib/dre-planilha";
 import { SortableHead } from "@/components/sortable-head";
 import { parseSort, sortBy, type Sort } from "@/lib/sorting";
 import { Download, FileText } from "lucide-react";
@@ -513,18 +515,13 @@ export default async function RelatoriosPage({ searchParams }: Props) {
   const totalExpense = expenseRows.reduce((s, r) => s + r.total, 0);
   const result = totalIncome - totalExpense;
 
-  // Exportação CSV só faz sentido no DRE de uma empresa específica — o
-  // comparativo consolidado é pra visualizar na tela, não pra planilha.
-  const csvHeaders = ["Categoria", "Fornecedor", "Tipo", "Centro de Custo", "Total"];
-  // O CSV sai na mesma ordem da tela — exportar algo diferente do que está
-  // à vista é a armadilha silenciosa que a paginação já ensinou.
-  const csvRows: (string | number)[][] = [...entradas, ...saidas].map((r) => [
-    r.categoria,
-    r.fornecedor,
-    r.tipo === "INCOME" ? "Entrada" : "Saída",
-    r.centroCusto,
-    r.total,
-  ]);
+  // O Excel exportado é sempre de UMA competência, e só faz sentido no DRE
+  // de uma empresa específica — o comparativo consolidado é pra visualizar
+  // na tela. Mesmo mês do "DRE em PDF", pela mesma razão: o filtro aceita
+  // qualquer intervalo, mas a planilha que a contabilidade recebe fecha por
+  // mês, e é o mês em que o período termina.
+  const mesDre = range.to.slice(0, 7);
+  const dre = isConsolidated ? null : await montarDre(companyIds, mesDre);
 
   return (
     <div className="space-y-6">
@@ -556,11 +553,10 @@ export default async function RelatoriosPage({ searchParams }: Props) {
             <FileText className="size-4" />
             DRE em PDF
           </Button>
-          {!isConsolidated && (
-            <ExportCsvButton
-              headers={csvHeaders}
-              rows={csvRows}
-              fileName={`dre-${range.from}-a-${range.to}.csv`}
+          {dre && (
+            <ExportarDreButton
+              dre={dre}
+              fileName={`DRE - ${scopeLabel} ${competenciaCurta(mesDre)}.xlsx`}
             />
           )}
         </div>
